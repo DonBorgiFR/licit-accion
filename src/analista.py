@@ -889,6 +889,7 @@ class RecalibradorScoring:
         "subrogacion_critica": -25,
         "subrogacion_alta": -15,
         "subrogacion_baja_o_nula": 5,
+        "subrogacion_baja_documentada": 2,
         "revision_precios_ok": 10,
         "sin_revision_plurianual": -10,
         "precio_dominante": -10
@@ -952,6 +953,13 @@ class RecalibradorScoring:
             adj_val = int(self.ajustes.get("subrogacion_baja_o_nula", 5))
             ajuste += adj_val
             motivos.append(f"Sin obligación de subrogación de personal (+{adj_val} pts)")
+        elif riesgo_sub == "BAJO" and dto.subrogacion.detectada:
+            # Subrogación de 1 a 5 personas con el desglose del Art. 130.1 aportado. El riesgo
+            # existe, pero está acotado y es presupuestable: merece más que el tramo MEDIO
+            # (0 pts) y menos que no tener subrogación ninguna.
+            adj_val = int(self.ajustes.get("subrogacion_baja_documentada", 2))
+            ajuste += adj_val
+            motivos.append(f"Subrogación acotada y documentada conforme al Art. 130.1 (+{adj_val} pts)")
 
         # 2. Evaluación de Revisión de Precios (Art. 103 LCSP)
         if dto.revision_precios.permitida and dto.revision_precios.formula_detectada:

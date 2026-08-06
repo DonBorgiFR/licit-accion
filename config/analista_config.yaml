@@ -56,7 +56,13 @@ recalibracion:
   ajustes:
     subrogacion_critica: -25
     subrogacion_alta: -15
+    # Ausencia total de subrogación: no hay coste laboral heredado.
     subrogacion_baja_o_nula: 5
+    # Subrogación de 1 a 5 personas CON el desglose del Art. 130.1: el riesgo existe pero
+    # está acotado y es presupuestable. Bonificación intermedia, para distinguirla tanto del
+    # tramo MEDIO (0 pts) como de no tener subrogación ninguna. Criterio validado por la
+    # dirección del proyecto el 2026-08-06.
+    subrogacion_baja_documentada: 2
     revision_precios_ok: 10
     sin_revision_plurianual: -10
     # Art. 145 LCSP: el precio por encima del 60 % perjudica la competitividad

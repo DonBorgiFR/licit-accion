@@ -19,12 +19,16 @@ sistema_base: |
                      no procede, o num_trabajadores = 0.
                      ATENCIÓN: expresiones como "no procedeix la subrogació", "no existe
                      obligación de subrogación" o "sin subrogación" significan detectada=false.
-     b) CRÍTICO   -> Hay subrogación y el pliego NO aporta la relación detallada de personal
-                     que exige el Art. 130.1 LCSP (categoría profesional, tipo de contrato,
-                     jornada y antigüedad). Sin ese desglose es imposible presupuestar el
-                     coste real, y ése es el riesgo máximo con independencia del número.
-                     En este caso: desglose_salarial_completo = false.
-     c) CRÍTICO   -> Hay subrogación CON desglose completo y num_trabajadores > 40.
+     b) CRÍTICO   -> Hay subrogación y num_trabajadores > 40, conste o no el desglose.
+                     El tamaño de la plantilla heredada es el único factor que descarta por
+                     sí solo: por encima de 40 personas el coste laboral compromete la
+                     estructura de la cooperativa aunque esté perfectamente documentado.
+     c) ALTO      -> Hay subrogación (de 40 personas o menos, o de número indeterminado) y el
+                     pliego NO aporta la relación detallada de personal que exige el
+                     Art. 130.1 LCSP (categoría profesional, tipo de contrato, jornada y
+                     antigüedad). En este caso: desglose_salarial_completo = false.
+                     No presupone descarte: el desglose suele obtenerse solicitándolo al
+                     órgano de contratación, así que la decisión se deja al analista humano.
      d) ALTO      -> Hay subrogación CON desglose completo y num_trabajadores entre 21 y 40.
      e) ALTO      -> Hay subrogación CON desglose completo pero el número de trabajadores
                      no puede determinarse a partir del texto (num_trabajadores = null).
@@ -32,6 +36,12 @@ sistema_base: |
      g) BAJO      -> Hay subrogación CON desglose completo y num_trabajadores entre 1 y 5.
 
      Estas siete reglas cubren todos los casos posibles: siempre debe aplicarse exactamente una.
+
+     CRITERIO DE NEGOCIO (validado por la dirección del proyecto el 2026-08-06): el tamaño de
+     la plantilla determina el veto; la falta de documentación determina el nivel de riesgo,
+     pero nunca descarta por sí sola. Antes, la ausencia del desglose era CRÍTICA con
+     independencia del número, y dejaba fuera concursos ganables en los que basta con pedir la
+     relación de personal al órgano de contratación.
 
      REGLA CONDICIONAL DE COSTE: si —y sólo si— el Presupuesto Base de Licitación consta
      explícitamente en el texto analizado, eleva el riesgo un nivel cuando el coste salarial
@@ -135,15 +145,16 @@ ejemplos_few_shot:
     salida: |
       {"subrogacion":{"detectada":true,"num_trabajadores":5,"convenio_colectivo":"Conveni Col·lectiu del Lleure Educatiu i Sociocultural de Catalunya","desglose_salarial_completo":true,"coste_estimado_anual":120000.0,"riesgo_evaluado":"BAJO"},"revision_precios":{"permitida":false,"formula_detectada":null,"art_103_aplica":false,"observaciones":"No consta cláusula de revisión de precios en el texto analizado"},"criterios":{"peso_precio_formulas":40,"peso_juicio_valor":60,"requiere_memoria_tecnica":true,"criterios_desglose":[{"nombre":"Oferta econòmica","peso":40},{"nombre":"Projecte tècnic","peso":60}]},"dictamen":{"recomendacion":"RECOMENDADA","motivos":["Subrogación acotada de 5 trabajadores con desglose completo aportado","Ponderación técnica dominante del 60%"],"ajuste_score":5,"resumen_ejecutivo":"Licitación viable con plantilla acotada y coste laboral verificable."},"version_esquema":1}
 
-  # Ejemplo 2 — Misma plantilla pequeña pero SIN el desglose obligatorio -> CRÍTICO.
-  # Enseña la distinción decisiva: lo que dispara el riesgo máximo no es el tamaño de la
-  # plantilla, sino la imposibilidad de presupuestar su coste real.
+  # Ejemplo 2 — Misma plantilla pequeña pero SIN el desglose obligatorio -> ALTO.
+  # Enseña que la falta de la relación del Art. 130.1 eleva el riesgo pero NO descarta:
+  # el desglose suele obtenerse solicitándolo al órgano de contratación. El descarte
+  # automático queda reservado a las plantillas de más de 40 personas.
   - entrada: |
       CLÁUSULA 9. SUBROGACIÓN.
       La empresa adjudicataria deberá subrogarse en el personal adscrito al servicio, compuesto por 6 trabajadores. El licitador deberá recabar por sus propios medios la información laboral que precise.
       CRITERIOS: Precio 70 puntos, Memoria técnica 30 puntos.
     salida: |
-      {"subrogacion":{"detectada":true,"num_trabajadores":6,"convenio_colectivo":null,"desglose_salarial_completo":false,"coste_estimado_anual":null,"riesgo_evaluado":"CRITICO"},"revision_precios":{"permitida":false,"formula_detectada":null,"art_103_aplica":false,"observaciones":"No consta cláusula de revisión de precios en el texto analizado"},"criterios":{"peso_precio_formulas":70,"peso_juicio_valor":30,"requiere_memoria_tecnica":true,"criterios_desglose":[{"nombre":"Precio","peso":70},{"nombre":"Memoria técnica","peso":30}]},"dictamen":{"recomendacion":"DESCARTADA_POR_RIESGO","motivos":["El pliego no aporta la relación de personal exigida por el Art. 130.1 LCSP","Imposible presupuestar el coste laboral heredado"],"ajuste_score":-25,"resumen_ejecutivo":"Riesgo crítico: subrogación obligatoria sin información laboral suficiente para ofertar."},"version_esquema":1}
+      {"subrogacion":{"detectada":true,"num_trabajadores":6,"convenio_colectivo":null,"desglose_salarial_completo":false,"coste_estimado_anual":null,"riesgo_evaluado":"ALTO"},"revision_precios":{"permitida":false,"formula_detectada":null,"art_103_aplica":false,"observaciones":"No consta cláusula de revisión de precios en el texto analizado"},"criterios":{"peso_precio_formulas":70,"peso_juicio_valor":30,"requiere_memoria_tecnica":true,"criterios_desglose":[{"nombre":"Precio","peso":70},{"nombre":"Memoria técnica","peso":30}]},"dictamen":{"recomendacion":"REVISAR_RIESGO","motivos":["El pliego no aporta la relación de personal exigida por el Art. 130.1 LCSP","Solicitar el desglose al órgano de contratación antes de ofertar: sin él no puede presupuestarse el coste laboral heredado","Plantilla acotada de 6 trabajadores, por debajo del umbral de descarte"],"ajuste_score":-15,"resumen_ejecutivo":"Riesgo alto por falta de información laboral, pero plantilla pequeña: viable si se obtiene la relación de personal."},"version_esquema":1}
 
   # Ejemplo 3 — Negación explícita de subrogación -> detectada=false, BAJO.
   # Corrige el error de interpretar la mera aparición de la palabra "subrogación".
