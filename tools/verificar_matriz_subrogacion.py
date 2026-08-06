@@ -38,11 +38,14 @@ CASOS = [
         "ALTO", True,
     ),
     (
+        # Desde el 2026-08-06 este caso es ALTO, no CRÍTICO: la falta del desglose eleva el
+        # riesgo pero no descarta, porque suele obtenerse pidiéndolo al órgano de contratación.
+        # El veto quedó reservado a las plantillas de más de 40 personas.
         "6 trabajadores SIN desglose (Art. 130.1 incumplido)",
         """CLÁUSULA 9. SUBROGACIÓN. Deberá subrogarse el personal adscrito, 6 trabajadores.
         El licitador recabará por sus medios la información laboral que precise.
         CRITERIOS: Precio 70, Memoria 30.""",
-        "CRITICO", True,
+        "ALTO", True,
     ),
     (
         "Negación explícita de subrogación",

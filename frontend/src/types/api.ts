@@ -27,7 +27,11 @@ export const EstadoAlerta = {
   NUEVA_FASE_TEMPRANA: 'NUEVA_FASE_TEMPRANA',
   EN_ESTUDIO_PROACTIVO: 'EN_ESTUDIO_PROACTIVO',
   CONVERTIDA: 'CONVERTIDA_A_LICITACION',
+  /** Descarte decidido por una persona desde el Cockpit. */
   DESCARTADA: 'DESCARTADA_TEMPRANA',
+  /** Descarte automático del pipeline por no alcanzar el umbral: se guarda para auditoría
+   *  y reevaluación, pero no aparece en el canal principal de alertas. */
+  DESCARTADA_POR_REGLAS: 'DESCARTADA_POR_REGLAS',
   ANALISIS_DIFERIDO: 'ANALISIS_DIFERIDO_BOLETIN',
 } as const;
 

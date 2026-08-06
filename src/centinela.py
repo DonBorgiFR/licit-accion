@@ -41,7 +41,14 @@ ESTADOS_BOLETIN_VALIDOS = {
     "NUEVA_FASE_TEMPRANA",
     "EN_ESTUDIO_PROACTIVO",
     "CONVERTIDA_A_LICITACION",
+    # Descarte decidido por una persona desde el Cockpit.
     "DESCARTADA_TEMPRANA",
+    # Descarte automático por no alcanzar el umbral de scoring. NO es lo mismo que el
+    # anterior: si mañana se baja un umbral o cambian los PMP, estas son las que procede
+    # reevaluar; las que rechazó una persona deben quedarse como están. El evaluador ya
+    # emitía este valor, pero no figuraba aquí y el DTO lo rechazaba: no se detectó porque
+    # estas alertas nunca llegaban a persistirse ni a reconstruirse desde la base de datos.
+    "DESCARTADA_POR_REGLAS",
     "ANALISIS_DIFERIDO_BOLETIN"
 }
 
@@ -1234,12 +1241,22 @@ def ejecutar_pipeline_centinela_resiliente(
             memoria_svc = Memoria(db_path=db_path)
             memoria_svc.setup_db()
             guardadas = 0
+            descartadas = 0
 
+            # Se persiste TODO, incluidas las descartadas por reglas. Antes desaparecían sin
+            # dejar registro: no había forma de auditar qué se descartó ni por qué, y cada
+            # ejecución las reprocesaba desde cero. Si mañana se ajusta un umbral o cambian
+            # los PMP, hay algo que reevaluar. Las descartadas no llegan al canal principal:
+            # las consultas de listado las excluyen salvo que se pidan expresamente.
             for a in alertas_priorizadas:
-                if a.estado_operativo != "DESCARTADA_POR_REGLAS":
-                    memoria_svc.guardar_alerta_boletin(a)
+                memoria_svc.guardar_alerta_boletin(a)
+                if a.estado_operativo == "DESCARTADA_POR_REGLAS":
+                    descartadas += 1
+                else:
                     guardadas += 1
+
             metricas_globales["guardadas_db"] = guardadas
+            metricas_globales["descartadas_db"] = descartadas
         except Exception as e_db:
             print(f"[!] Modo Degradado (Persistencia DB Centinela): {e_db}")
             trazabilidad.registrar_evento("boletin_pipeline_degraded", {"error_db": str(e_db)}, estado="WARNING")

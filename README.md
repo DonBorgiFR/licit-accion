@@ -6,7 +6,7 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **163/163**. Queda pendiente abrir la
+> negocio LCSP) están cerrados, con la suite en **171/171** y sin ningún hallazgo de auditoría abierto. Queda pendiente abrir la
 > Capa 9: ninguno. El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
@@ -959,6 +959,10 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 8. **KPIs sobre una sola población**: el win rate y las métricas de conversión salen todos de `vista_win_rate`, filtrando lotes archivados. Antes el resumen y la vista analítica usaban denominadores distintos y el resultado era aritméticamente imposible.
 
 9. **Lo que no se pudo medir, no puntúa**: un análisis degradado no altera la puntuación en ninguna dirección. No basta con no penalizar — bonificar también es inventar. La alerta llega al Cockpit **marcada**, no desaparece.
+
+10. **La matriz de subrogación distingue el papeleo del riesgo real** *(criterio validado el 2026-08-06)*: la ausencia de la relación de personal del Art. 130.1 eleva el riesgo a ALTO pero ya no descarta, porque ese desglose suele obtenerse solicitándolo al órgano de contratación. El veto automático queda reservado a las plantillas de **más de 40 personas**, cuyo coste laboral compromete la estructura de la cooperativa aunque esté documentado. Y la subrogación de 1 a 5 personas con desglose completo recibe una bonificación intermedia de +2 puntos: es un riesgo acotado y presupuestable, no equiparable al de 20 personas.
+
+11. **Nada se descarta en silencio** *(criterio validado el 2026-08-06)*: las alertas del Centinela que no alcanzan el umbral se guardan con sus motivos, fuera del canal principal, para poder auditarlas y reevaluarlas si cambian los umbrales o los PMP. El descarte automático (`DESCARTADA_POR_REGLAS`) y el decidido por una persona (`DESCARTADA_TEMPRANA`) son estados distintos, y una reejecución del pipeline nunca pisa el segundo.
 
 ---
 

@@ -10,6 +10,7 @@ Proporciona el middleware custom TrazabilidadMiddleware para:
 
 import time
 import uuid
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -35,7 +36,12 @@ class TrazabilidadMiddleware(BaseHTTPMiddleware):
         
         client_host = request.client.host if request.client else "unknown"
         
-        trazabilidad_api.registrar_evento(
+        # registrar_evento() abre y escribe un fichero de forma síncrona. Ejecutarlo
+        # directamente aquí bloqueaba el bucle de eventos en CADA petición: mientras se
+        # escribía en pipeline.jsonl, el servidor no podía atender a nadie más. Se delega a
+        # un hilo para que la E/S no detenga el bucle.
+        await run_in_threadpool(
+            trazabilidad_api.registrar_evento,
             "API_HTTP_REQUEST_PROCESSED",
             {
                 "request_id": request_id,

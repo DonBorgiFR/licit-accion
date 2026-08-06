@@ -80,7 +80,11 @@ class EstadoAlertaEnum(str, Enum):
     NUEVA_FASE_TEMPRANA = "NUEVA_FASE_TEMPRANA"
     EN_ESTUDIO_PROACTIVO = "EN_ESTUDIO_PROACTIVO"
     CONVERTIDA = "CONVERTIDA_A_LICITACION"
+    # Descarte decidido por una persona desde el Cockpit.
     DESCARTADA = "DESCARTADA_TEMPRANA"
+    # Descarte automático del pipeline por no alcanzar el umbral. Se persiste para poder
+    # auditarlo y reevaluarlo, pero queda fuera del canal principal de alertas.
+    DESCARTADA_POR_REGLAS = "DESCARTADA_POR_REGLAS"
     ANALISIS_DIFERIDO = "ANALISIS_DIFERIDO_BOLETIN"
 
 

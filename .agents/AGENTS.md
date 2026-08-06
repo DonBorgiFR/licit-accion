@@ -14,14 +14,14 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **Bloques 1 y 2 de remediación cerrados**, suite en verde y Cockpit compilado al día. **La Capa 9 está lista para abrirse.**
+**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 20 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado al día. **La Capa 9 está lista para abrirse.**
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 163/163
+python -m pytest tests/ -q          # debe dar 171/171
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -38,8 +38,7 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-* Validar los umbrales de la matriz de subrogación (7 tramos en `config/prompts_lcsp.yaml`). Son criterio de negocio, no técnico.
-* Decidir si una alerta descartada por reglas debe dejar rastro en la base de datos. Hoy **no se guarda en absoluto**: no hay registro de qué se descartó ni por qué, y cada ejecución la reprocesa desde cero. Si se bajan umbrales o cambian los PMP, no hay nada que reevaluar. Detectado el 2026-08-06; es una decisión de negocio, no un defecto.
+Nada pendiente. Las decisiones de negocio abiertas se resolvieron el 2026-08-06 y constan en la tabla de decisiones del dosier de auditoría: matriz de subrogación, bonificación de la subrogación acotada, rastro de las alertas descartadas y validación del proveedor LLM.
 
 ### 🔧 Herramientas de verificación manual
 
@@ -269,9 +268,18 @@ Un análisis degradado no puede alterar un score en ninguna dirección. No basta
 
 * **Paso D3 — Toda ruta se ancla a la raíz del proyecto** (2026-08-06): 🟢 `config/` y `data/` se resolvían contra el directorio de trabajo (H-18). No fallaba: **decidía distinto**. Sin encontrar `config/perfil_incoop.yaml`, el perfil comercial se cargaba vacío y el sistema continuaba en silencio con los valores por defecto. Medido sobre la misma licitación: **71 puntos desde la raíz, 47 desde otra carpeta**, con el umbral de recomendación en 65. `PROJECT_ROOT` y `ruta_proyecto()` se centralizan en `src/__init__.py`; las rutas absolutas se respetan intactas para que las pruebas puedan seguir inyectando rutas temporales. Regresión en `tests/test_rutas_proyecto.py`. Suite: **163/163**.
 
+* **Paso D4 — Criterios comerciales de subrogación** (2026-08-06): 🟢 Dos decisiones de negocio validadas por la dirección. La falta de la relación de personal del Art. 130.1 pasa de CRÍTICO a ALTO: elevaba el riesgo al máximo y descartaba automáticamente, cuando el desglose suele obtenerse pidiéndolo al órgano de contratación. Al bajarla hubo que **reordenar la matriz**, porque como se aplica la primera regla que encaja, el peor caso (200 trabajadores sin desglose) habría puntuado mejor que el segundo peor (41 documentados): ahora el tamaño determina el veto y la documentación determina el nivel. Y nueva bonificación `subrogacion_baja_documentada` (+2 pts) para la subrogación de 1 a 5 personas con desglose, que antes sumaba 0 igual que el tramo MEDIO. Actualizado el ejemplo *few-shot* que enseñaba la regla anterior.
+
+* **Paso D5 — Rastro de las alertas descartadas y blindaje del criterio humano** (2026-08-06): 🟢 Las alertas que no alcanzan el umbral se persisten en vez de desaparecer (H-20); las consultas de listado las excluyen del canal principal salvo que se pidan expresamente. Al persistirlas afloraron dos defectos latentes: `DESCARTADA_POR_REGLAS` no figuraba en `ESTADOS_BOLETIN_VALIDOS` —el evaluador emitía un estado que su propio DTO rechazaba, invisible porque esas filas nunca se escribían— y el UPSERT no blindaba `DESCARTADA_TEMPRANA`, de modo que una reejecución del pipeline **pisaba el descarte decidido por una persona**. Los dos estados se mantienen distintos a propósito: si se baja un umbral procede reevaluar lo que descartó la máquina, nunca lo que rechazó alguien.
+
+* **Paso D6 — H-06 cerrado, y la herramienta que lo mantenía abierto** (2026-08-06): 🟢 `tools/verificar_proveedor_llm.py` leía la clave `gemini.modelo`, **que no existe en el fichero de configuración**: la búsqueda caía en silencio a un valor codificado `gemini-2.0-flash` y la herramienta llevaba desde julio informando de un 429 sobre un modelo ya sustituido. Por eso H-06 parecía no cerrarse nunca (H-19). Corregida para replicar la lectura de `proveedor_llm_factory()` y ampliada para probar también el modelo de respaldo. Verificación real: `gemini-3.1-flash-lite` **7/7** campos correctos en 1,9 s, respaldo `gemini-3.6-flash` correcto, y matriz de subrogación **5/5 determinista** entre dos familias de modelo distintas.
+
+* **Paso D7 — El middleware deja de bloquear el bucle de eventos** (2026-08-06): 🟢 `registrar_evento()` hacía E/S de fichero síncrona dentro de un `async def`: mientras se escribía en `pipeline.jsonl`, la API no podía atender ninguna otra petición. Delegado a un hilo con `run_in_threadpool`.
+
 ### Pasos pendientes
 
-* **H-06 — Verificar el proveedor LLM con un lote real**: 🟠 La configuración fija `gemini-3.1-flash-lite` como preferente y `gemini-3.6-flash` como respaldo, pero la recomendación procedía de una muestra de **un solo pliego**. Antes de darla por buena, pasar un lote real con `python tools/verificar_proveedor_llm.py`.
+Ninguno. La remediación previa a la Capa 9 está cerrada: 20 hallazgos catalogados, 20 cerrados con prueba de regresión o verificación reproducible.
+
 
 
 

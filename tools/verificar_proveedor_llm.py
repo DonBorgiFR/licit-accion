@@ -104,12 +104,24 @@ def main() -> int:
         print("  fallo de red:", ocultar(e))
         return 1
 
-    # Modelo configurado en el proyecto
-    modelo_cfg = "gemini-2.0-flash"
-    if yaml and os.path.exists("config/analista_config.yaml"):
-        with open("config/analista_config.yaml", "r", encoding="utf-8") as f:
+    # Modelo configurado en el proyecto.
+    #
+    # Esta lectura debe replicar EXACTAMENTE la de proveedor_llm_factory(), o el diagnóstico
+    # informa sobre un modelo que el sistema no usa. Ocurrió: se leía la clave `modelo`, que
+    # no existe en el fichero, la búsqueda caía en silencio al valor por defecto codificado
+    # `gemini-2.0-flash`, y la herramienta llevaba desde julio confirmando un fallo 429 de un
+    # modelo ya sustituido. Por eso el hallazgo H-06 parecía no cerrarse nunca.
+    from src import ruta_proyecto
+
+    cfg_path = ruta_proyecto("config/analista_config.yaml")
+    modelo_cfg = "gemini-3.1-flash-lite"
+    modelo_respaldo = None
+    if yaml and os.path.exists(cfg_path):
+        with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
-        modelo_cfg = (cfg.get("gemini") or {}).get("modelo", modelo_cfg)
+        gemini_cfg = cfg.get("gemini") or {}
+        modelo_cfg = gemini_cfg.get("modelo_principal") or gemini_cfg.get("modelo", modelo_cfg)
+        modelo_respaldo = gemini_cfg.get("modelo_respaldo")
 
     print()
     print("=" * 78)
@@ -166,6 +178,23 @@ def main() -> int:
 
     print(f"\n  Resultado: {aciertos}/{len(comprobaciones)} campos correctos")
     print(f"  modo_degradado = {dto.modo_degradado} (debe ser False)")
+
+    # El modelo de respaldo es la única red que queda cuando el principal agota cuota. Si no
+    # se comprueba, la resiliencia configurada es una suposición.
+    if modelo_respaldo:
+        print()
+        print("=" * 78)
+        print(f" 4b. MODELO DE RESPALDO: {modelo_respaldo}")
+        print("=" * 78)
+        try:
+            t0 = time.perf_counter()
+            res_b = GeminiProvider(modelo=modelo_respaldo, usar_schema=True).consultar(p_sys, p_usr, timeout=120)
+            elapsed_b = time.perf_counter() - t0
+            AnalisisSemanticoDTO.from_json(res_b["raw_response"], estricto=True)
+            print(f"  [+] OK en {elapsed_b:.1f}s | tokens: {res_b['prompt_tokens']} + {res_b['completion_tokens']}")
+        except Exception as e:
+            print(f"  [-] FALLO del respaldo: {ocultar(e)[:200]}")
+            print("      -> Sin red de seguridad: si el principal agota cuota, todo se degrada.")
 
     print()
     print("=" * 78)

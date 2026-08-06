@@ -2157,10 +2157,14 @@ class Memoria:
             motivos_score = excluded.motivos_score,
             categoria_fase_temprana = excluded.categoria_fase_temprana,
             dictamen_ia_json = excluded.dictamen_ia_json,
-            estado_operativo = CASE 
-                WHEN boletines_alertas.estado_operativo IN ('CONVERTIDA_A_LICITACION', 'EN_ESTUDIO_PROACTIVO') 
-                THEN boletines_alertas.estado_operativo 
-                ELSE excluded.estado_operativo 
+            -- Blindaje de la decisión humana: lo que ha decidido una persona desde el Cockpit
+            -- no puede ser sobrescrito por una reejecución del pipeline. DESCARTADA_TEMPRANA
+            -- se añade aquí porque, al empezar a persistirse los descartes automáticos, una
+            -- alerta rechazada a mano volvería a su estado de reglas en la siguiente pasada.
+            estado_operativo = CASE
+                WHEN boletines_alertas.estado_operativo IN ('CONVERTIDA_A_LICITACION', 'EN_ESTUDIO_PROACTIVO', 'DESCARTADA_TEMPRANA')
+                THEN boletines_alertas.estado_operativo
+                ELSE excluded.estado_operativo
             END,
             expediente_licitacion_vinculado = COALESCE(boletines_alertas.expediente_licitacion_vinculado, excluded.expediente_licitacion_vinculado),
             notas_usuario = CASE 
@@ -2239,10 +2243,15 @@ class Memoria:
         self,
         estado: Optional[str] = None,
         fuente: Optional[str] = None,
-        limite: int = 50
+        limite: int = 50,
+        incluir_descartadas: bool = False
     ):
         """
         Devuelve una lista de AlertaBoletinDTO filtrada opcionalmente por estado y fuente.
+
+        Las alertas descartadas por reglas se persisten para poder auditarlas y reevaluarlas,
+        pero **no forman parte del canal principal**: se excluyen salvo que se pidan por su
+        estado explícito o con `incluir_descartadas=True`.
         """
         from src.centinela import AlertaBoletinDTO, DictamenCentinelaDTO
         where_clauses = []
@@ -2251,6 +2260,8 @@ class Memoria:
         if estado:
             where_clauses.append("estado_operativo = ?")
             params.append(estado)
+        elif not incluir_descartadas:
+            where_clauses.append("estado_operativo != 'DESCARTADA_POR_REGLAS'")
         if fuente:
             where_clauses.append("fuente = ?")
             params.append(fuente.upper())
@@ -2627,10 +2638,15 @@ class Memoria:
         min_score: Optional[int] = None,
         categoria: Optional[str] = None,
         estado: Optional[str] = None,
-        conn: Optional[sqlite3.Connection] = None
+        conn: Optional[sqlite3.Connection] = None,
+        incluir_descartadas: bool = False
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
         Devuelve una lista paginada de alertas tempranas de boletines oficiales (DOGC/BOPB) y el recuento total.
+
+        Esta es la consulta que alimenta el canal proactivo del Cockpit. Las alertas
+        descartadas por reglas quedan fuera salvo que se filtren por su estado explícito o se
+        pida `incluir_descartadas=True`: se guardan para auditoría, no para ocupar la pantalla.
         """
         def _ejecutar_listar(c: sqlite3.Connection):
             c.row_factory = sqlite3.Row
@@ -2659,6 +2675,8 @@ class Memoria:
             if estado:
                 where_clauses.append("UPPER(estado_operativo) = ?")
                 params.append(estado.strip().upper())
+            elif not incluir_descartadas:
+                where_clauses.append("UPPER(estado_operativo) != 'DESCARTADA_POR_REGLAS'")
 
             where_str = " AND ".join(where_clauses)
 

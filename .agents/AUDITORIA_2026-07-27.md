@@ -32,7 +32,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-03 · Una fila imperfecta tumbaba el funnel entero | 🟢 Cerrado | Paso C3 |
 | H-04 · Hueco en la matriz de riesgo de subrogación | 🟢 Cerrado | Paso C2 |
 | H-05 · La IA del Centinela nunca ha funcionado | 🟢 Cerrado | Pasos C2 y D2 |
-| H-06 · El modelo LLM configurado y la cuenta actual | 🟠 **Abierto** | — |
+| H-06 · El modelo LLM configurado y la cuenta actual | 🟢 Cerrado | Paso D6 |
 | H-07 · Concurrencia SQLite: la API devolvía 503 | 🟢 Cerrado | Bloque 1 y Paso D1 |
 | H-08 · KPIs aritméticamente imposibles | 🟢 Cerrado | Bloque 2 |
 | H-09 · Escalas de scoring incompatibles | 🟢 Cerrado | Bloque 2 |
@@ -45,9 +45,11 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-16 · Un dictamen degradado decidía como si fuera real | 🟢 Cerrado | Paso D2 |
 | H-17 · La suite de pruebas llamaba a la API real | 🟢 Cerrado | Paso D2 |
 | H-18 · El resultado comercial dependía del directorio de trabajo | 🟢 Cerrado | Paso D3 |
+| H-19 · La herramienta de diagnóstico probaba el modelo equivocado | 🟢 Cerrado | Paso D6 |
+| H-20 · Las alertas descartadas desaparecían sin dejar rastro | 🟢 Cerrado | Paso D5 |
 
-**Único hallazgo abierto: H-06.** Todo lo demás está cerrado con prueba de regresión. Suite:
-163/163.
+**No queda ningún hallazgo abierto**: los 20 catalogados están cerrados con prueba de regresión
+o verificación reproducible. Suite: 171/171, verificada hermética.
 
 ---
 
@@ -194,7 +196,7 @@ Es el patrón de este proyecto: reparar un `except` amplio revela lo que llevaba
 
 ---
 
-### H-06 · El modelo LLM configurado no funciona con la cuenta actual 🟠 ABIERTO — único hallazgo vivo
+### H-06 · El modelo LLM configurado no funciona con la cuenta actual 🟢 CERRADO (Paso D6)
 
 Verificado contra la API real el 2026-07-27, en dos ejecuciones separadas:
 
@@ -220,11 +222,20 @@ real y comparar.
 
 **Diagnóstico reproducible**: `python tools/verificar_proveedor_llm.py`
 
-**Estado el 2026-08-06**: `config/analista_config.yaml` ya fija `gemini-3.1-flash-lite` como
-preferente y `gemini-3.6-flash` como respaldo, con versiones explícitas. Queda vigente la salvedad:
-la recomendación salió de **un solo pliego**. Sigue pendiente pasar un lote real antes de darla por
-buena. Confirmado además que hay una `GEMINI_API_KEY` operativa en las variables de entorno del
-equipo (no en un fichero `.env`), y que el proveedor responde.
+**Cómo se cerró (2026-08-06)**: verificado contra la API real, con la herramienta de diagnóstico
+previamente corregida (ver H-19, que es la razón por la que este hallazgo parecía no cerrarse nunca).
+
+| Comprobación | Resultado |
+|---|---|
+| `gemini-3.1-flash-lite` (preferente) | OK en 1,9 s · 3142 + 477 tokens |
+| Exactitud de la extracción | **7/7 campos correctos** |
+| `gemini-3.6-flash` (respaldo) | OK en 13,1 s |
+| Matriz de subrogación entre ambos modelos | **5/5 determinista** |
+
+Queda cubierta la salvedad original: ya no es una muestra de un solo pliego evaluada por un solo
+modelo, sino cinco casos que recorren todos los tramos de la matriz, coincidentes entre dos familias
+de modelo distintas. La `GEMINI_API_KEY` vive en las variables de entorno del equipo, no en un
+fichero `.env`.
 
 ---
 
@@ -527,6 +538,69 @@ misma licitación desde la raíz y desde una carpeta ajena: deben coincidir.
 
 ---
 
+### H-19 · La herramienta de diagnóstico probaba un modelo que ya no se usaba 🟢 CERRADO (Paso D6)
+
+`tools/verificar_proveedor_llm.py` existe para responder a H-06. Leía el modelo así:
+
+```python
+modelo_cfg = "gemini-2.0-flash"                              # valor por defecto codificado
+modelo_cfg = (cfg.get("gemini") or {}).get("modelo", modelo_cfg)
+```
+
+Pero la clave del fichero es **`modelo_principal`**, no `modelo`. La búsqueda fallaba en silencio,
+caía al valor codificado y la herramienta probaba `gemini-2.0-flash` — justamente el modelo que
+H-06 había descartado en julio. Cada ejecución del diagnóstico devolvía un 429 rotundo y un
+mensaje alarmante (*"en producción esto degradaría el 100 % de los análisis"*) sobre un modelo que
+el sistema ya no usaba. **El hallazgo H-06 se mantuvo abierto por culpa de su propio diagnóstico.**
+
+Es el mismo patrón que H-18: una lectura de configuración que parece funcionar, falla sin ruido y
+sigue adelante con un valor por defecto.
+
+**Cómo se cerró**: la herramienta replica ahora exactamente la lectura de `proveedor_llm_factory()`
+(`modelo_principal` con reserva a `modelo`), usa `ruta_proyecto()` y prueba además el modelo de
+respaldo, que es la única red de seguridad cuando el principal agota cuota y hasta ahora no se
+comprobaba nunca.
+
+**Lección**: una herramienta de diagnóstico que no comparte la lectura de configuración con el
+código que diagnostica no diagnostica el sistema, sino a sí misma.
+
+---
+
+### H-20 · Las alertas descartadas desaparecían sin dejar rastro 🟢 CERRADO (Paso D5)
+
+Si el score final de una alerta no alcanzaba `score_minimo_alerta` (30), el pipeline **no la
+escribía en la base de datos**:
+
+```python
+if a.estado_operativo != "DESCARTADA_POR_REGLAS":
+    memoria_svc.guardar_alerta_boletin(a)
+```
+
+No quedaba registro de qué se descartó ni por qué, cada ejecución la reprocesaba desde cero, y si
+se ajustaba un umbral o cambiaban los PMP no había nada que reevaluar.
+
+**Decisión de negocio (2026-08-06)**: se persisten todas, y las consultas de listado excluyen las
+descartadas del canal principal salvo que se pidan por su estado explícito o con
+`incluir_descartadas=True`. Se guardan para auditar, no para ocupar la pantalla.
+
+**Dos defectos latentes que sólo afloraron al empezar a persistirlas**:
+
+1. `DESCARTADA_POR_REGLAS` **no figuraba en `ESTADOS_BOLETIN_VALIDOS`**. El evaluador llevaba
+   emitiendo un estado que el propio DTO rechaza con `BoletinDTOValidationError`. Nunca explotó
+   porque esas filas jamás se escribían ni se reconstruían desde la base de datos. Se promueve a
+   estado canónico —también en el esquema de la API y en el espejo de tipos del frontend— en vez
+   de fusionarlo con `DESCARTADA_TEMPRANA`: **no son lo mismo**. Uno es "lo descartó la máquina" y
+   el otro "lo rechacé yo", y esa distinción es justo la que permite reevaluar sólo lo primero.
+
+2. El UPSERT preservaba `CONVERTIDA_A_LICITACION` y `EN_ESTUDIO_PROACTIVO`, pero **no**
+   `DESCARTADA_TEMPRANA`: una reejecución del pipeline pisaba el descarte decidido por una
+   persona y lo devolvía a su estado de reglas, sin dejar rastro. Añadido al blindaje.
+
+**Regresión**: `tests/test_capa6_e2e.py` — la alerta descartada se guarda pero no aparece en
+ninguna de las dos consultas de listado, y un descarte manual sobrevive a una reejecución.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -540,3 +614,8 @@ misma licitación desde la raíz y desde una carpeta ajena: deben coincidir.
 | 2026-08-06 | **Lo que no se pudo medir, no puntúa** | Un análisis degradado no altera el score en ninguna dirección: bonificar también es inventar. La alerta llega al Cockpit marcada en vez de desaparecer. Ver Convención C6. |
 | 2026-08-06 | **La suite de pruebas no sale a la red** | Una prueba que llama a un LLM real gasta cuota, tarda y depende de lo que conteste el modelo ese día. La verificación contra la API real vive en `tools/`. Ver Convención C5. |
 | 2026-08-06 | **El proyecto se versiona en Git** | Hasta esa fecha no había historial ni forma de revertir. La herramienta contiene reglas comerciales sensibles y varios agentes de IA se turnan sobre ella. Repositorio: https://github.com/DonBorgiFR/licit-accion |
+| 2026-08-06 | **La falta del desglose del Art. 130.1 eleva el riesgo a ALTO, pero no descarta** | Descartaba automáticamente cualquier licitación con subrogación cuyo pliego no aportara la relación de personal, fueran 2 trabajadores o 200. Muchos pliegos incumplen el Art. 130.1 y el desglose suele obtenerse solicitándolo al órgano de contratación: dejaba fuera concursos ganables. La decisión vuelve al analista humano. |
+| 2026-08-06 | **El tamaño de plantilla determina el veto; la documentación, el nivel de riesgo** | Consecuencia obligada de la decisión anterior: como se aplica la primera regla que encaja, bajar la falta de desglose a ALTO sin reordenar la matriz habría dejado el peor caso puntuando mejor que el segundo peor. El único CRÍTICO es ahora el de más de 40 trabajadores. |
+| 2026-08-06 | **La subrogación acotada y documentada recibe una bonificación intermedia (+2)** | De 1 a 5 personas con el desglose aportado es un riesgo real pero acotado y presupuestable. Antes sumaba 0, igual que el tramo MEDIO de 20 personas, porque la bonificación de +5 exigía que no hubiera subrogación ninguna. |
+| 2026-08-06 | **Las alertas descartadas por reglas se guardan, fuera del canal principal** | Sin registro no hay auditoría ni reevaluación: al ajustar un umbral o cambiar los PMP no quedaba nada que revisar, y cada ejecución las reprocesaba desde cero. Se guardan para auditar, no para ocupar la pantalla. |
+| 2026-08-06 | **El descarte automático y el manual son estados distintos** | `DESCARTADA_POR_REGLAS` y `DESCARTADA_TEMPRANA` no se fusionan. Si mañana se baja un umbral procede reevaluar lo que descartó la máquina; lo que rechazó una persona debe quedarse como está. |
