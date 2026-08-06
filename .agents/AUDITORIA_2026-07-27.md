@@ -52,7 +52,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-23 · La tabla afirmaba cláusulas que nadie había leído | 🟢 Cerrado | Paso D8 |
 
 **No queda ningún hallazgo abierto**: los 23 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: 173/173, verificada hermética.
+o verificación reproducible. Suite: 174/174, verificada hermética.
 
 > **H-21, H-22 y H-23 no salieron de leer código ni de la suite en verde: salieron de abrir el
 > Cockpit contra la base de datos real.** Los tres afectaban a lo que el usuario ve en pantalla y

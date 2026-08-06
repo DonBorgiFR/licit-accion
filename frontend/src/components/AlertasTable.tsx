@@ -148,11 +148,18 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                   setPage(1);
                 }}
                 options={[
+                  // "Todos los Estados" no incluye los descartes automáticos: la API los
+                  // excluye salvo que se filtren expresamente. Se guardan para poder
+                  // auditarlos y reevaluarlos, no para ocupar el canal proactivo.
                   { value: '', label: 'Todos los Estados' },
                   { value: EstadoAlerta.NUEVA_FASE_TEMPRANA, label: 'Nueva Fase Temprana' },
                   { value: EstadoAlerta.EN_ESTUDIO_PROACTIVO, label: 'En Estudio Proactivo' },
                   { value: EstadoAlerta.CONVERTIDA, label: 'Convertida a Licitación' },
                   { value: EstadoAlerta.DESCARTADA, label: 'Descartada Temprana' },
+                  // Único acceso desde el Cockpit a lo que descartó el pipeline por no
+                  // alcanzar el umbral. Es la vista que hay que revisar tras bajar un umbral
+                  // o actualizar los PMP.
+                  { value: EstadoAlerta.DESCARTADA_POR_REGLAS, label: 'Descartada por Reglas (auditoría)' },
                 ]}
               />
             </div>
@@ -301,6 +308,15 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                             onChange={(e) => handleEstadoChange(alerta.id_alerta, e.target.value)}
                             className="text-xs py-1 px-2 font-medium"
                             options={[
+                              // El descarte automático no es una opción que una persona pueda
+                              // fijar: si alguien descarta, es DESCARTADA_TEMPRANA. Mantener
+                              // separados los dos estados es lo que permite reevaluar sólo lo
+                              // que descartó la máquina. Pero sí debe poder MOSTRARSE, o al
+                              // filtrar por él el selector saldría en blanco; y desde ahí se
+                              // rescata la alerta llevándola a un estado humano.
+                              ...(alerta.estado_operativo === EstadoAlerta.DESCARTADA_POR_REGLAS
+                                ? [{ value: EstadoAlerta.DESCARTADA_POR_REGLAS, label: 'Descartada por Reglas' }]
+                                : []),
                               { value: EstadoAlerta.NUEVA_FASE_TEMPRANA, label: 'Nueva Fase Temprana' },
                               { value: EstadoAlerta.EN_ESTUDIO_PROACTIVO, label: 'Estudio Proactivo' },
                               { value: EstadoAlerta.CONVERTIDA, label: 'Convertida a PSCP' },

@@ -145,3 +145,51 @@ def test_get_alerta_by_id_not_found(client, temp_db, monkeypatch):
     assert response.status_code == 404
     data = response.json()
     assert "no encontrada" in data["detail"]
+
+
+def test_los_descartes_por_reglas_solo_se_ven_si_se_piden(client, temp_db, monkeypatch):
+    """
+    Contrato del canal proactivo tras la decisión del 2026-08-06: los descartes automáticos
+    se persisten para poder auditarlos y reevaluarlos, pero no ocupan el canal principal.
+    El único acceso desde el Cockpit es filtrar por DESCARTADA_POR_REGLAS.
+
+    Verifica también que el esquema de la API acepta ese estado: es un valor que el
+    evaluador ya emitía pero que no figuraba en ningún contrato, así que la frontera lo
+    habría rechazado.
+    """
+    monkeypatch.setenv("DB_PATH_INCOOP", temp_db)
+    memoria = Memoria(db_path=temp_db)
+
+    from src.centinela import AlertaBoletinDTO
+
+    def alerta(num, municipio, score, estado):
+        return AlertaBoletinDTO(
+            fuente="DOGC",
+            num_boletin=num,
+            fecha_publicacion="2026-08-01T08:00:00Z",
+            organo_emisor=f"Ajuntament de {municipio}",
+            municipio=municipio,
+            titulo_anuncio=f"Aprovació inicial del pressupost de {municipio}",
+            seccion_boletin="Anuncis",
+            url_anuncio=f"https://dogc.cat/{num}",
+            texto_sumario="Presupuestos municipales",
+            score_temprano=score,
+            motivos_score=["REGLA: Presupuestos (+40 pts)"],
+            estado_operativo=estado,
+        )
+
+    memoria.guardar_alerta_boletin(alerta("777", "Barcelona", 70, "NUEVA_FASE_TEMPRANA"))
+    memoria.guardar_alerta_boletin(alerta("888", "Badalona", 15, "DESCARTADA_POR_REGLAS"))
+
+    # El canal principal no la muestra.
+    sin_filtro = client.get("/api/v1/alertas-tempranas").json()
+    assert sin_filtro["total"] == 1
+    assert [i["municipio"] for i in sin_filtro["items"]] == ["Barcelona"]
+
+    # Pero es consultable pidiéndola expresamente.
+    filtrado = client.get("/api/v1/alertas-tempranas?estado=DESCARTADA_POR_REGLAS")
+    assert filtrado.status_code == 200, "El esquema de la API debe aceptar DESCARTADA_POR_REGLAS"
+    datos = filtrado.json()
+    assert datos["total"] == 1
+    assert datos["items"][0]["municipio"] == "Badalona"
+    assert datos["items"][0]["estado_operativo"] == "DESCARTADA_POR_REGLAS"
