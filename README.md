@@ -4,6 +4,14 @@
 > encuentran en estabilización antes de abrir las Capas 9 y 10. El sistema no contiene datos
 > operativos reales versionados: los datos locales se usan exclusivamente para pruebas. No debe
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
+>
+> **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
+> negocio LCSP) están cerrados, con la suite en **159/159**. Queda un único bloqueante para abrir la
+> Capa 9: **recompilar el Cockpit**, cuyo `frontend/dist/` es del 2026-07-26 y no incluye la gestión
+> de estado por lote ni el distintivo de análisis degradado. Requiere instalar Node.js.
+>
+> **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
+> hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
 
 ## 🎯 Objetivo del Proyecto
 
@@ -209,7 +217,8 @@ graph TD
     C6 --> C7[Capa 7: La Pasarela API<br/>Micro-API REST FastAPI]
     C7 --> C8[Capa 8: El Cockpit Visual<br/>SPA React + Vite + Tailwind]
     C8 --> C85[Capa 8.5: Cimientos de Infraestructura<br/>Concurrencia, Locks y Entorno]
-    C85 --> C9[Capa 9: El Histórico y Depurador<br/>Archivo y Purga de Datos]
+    C85 --> B2[Bloque 2: Coherencia de Negocio LCSP<br/>Escala única, cláusulas y estado por lote]
+    B2 --> C9[Capa 9: El Histórico y Depurador<br/>Archivo y Purga de Datos]
     C9 --> C10[Capa 10: El Lanzador y Despertador<br/>Silent Launcher VBS y Alertas]
 
     style C3 fill:#2d6a4f,stroke:#1b4332,color:#d8f3dc
@@ -876,13 +885,15 @@ Construir un **Dashboard de grado empresarial (Enterprise SaaS)** utilizando Rea
 #### **Fase 4: Detalle Profundo, Render Diferido y Cierre Oficial**
 9. **Paso 9 — Modal / Drawer de Detalle Completo con Render Diferido y Mutaciones**: 🟢 Completado y Validado.
    - Vista detallada de expediente y alerta con apertura instantánea y Skeletons de carga, renderizado del dictamen cualitativo IA (`analisis_semantico`), selector de cambio de estado y notas internas con mutación optimista.
-10. **Paso 10 — Build de Producción y cierre beta de Capa 8**: 🟡 Requiere recompilar tras cada cambio de TypeScript.
+10. **Paso 10 — Build de Producción y cierre beta de Capa 8**: 🟡 **Build desactualizado**. `frontend/dist/` es del 2026-07-26 y es anterior a los cambios de agosto: mutación por lote (H-13), distintivo de análisis degradado y tipado estricto.
      - Hay validación de tipos (`tsc --noEmit`) y compilación `npm run build`; no existe todavía una suite React independiente.
+     - **Node.js no está instalado en el equipo** (verificado el 2026-08-06). Hasta instalarlo y ejecutar `cd frontend && npm run build`, el Cockpit que se abre no refleja el trabajo de los Bloques 1 y 2. Es el único bloqueante para abrir la Capa 9.
 
 ---
 
 ## 🏗️ Capa 8.5: Cimientos de Infraestructura y Concurrencia (Bloque 1 Remediación)
-* **Estado actual**: 🟢 Implementada en beta: WAL, `busy_timeout`, lock con PID/TTL, dependencias declaradas y TypeScript estricto. La ejecución desatendida de la Capa 10 deberá fijar aún el directorio de trabajo en la raíz hasta completar la normalización de todas las rutas auxiliares.
+* **Estado actual**: 🟢 Cerrada: WAL, `busy_timeout` de 30 s, cerrojo con PID/TTL, ruta absoluta para la BD, dependencias declaradas y TypeScript estricto. La ejecución desatendida de la Capa 10 deberá fijar aún el directorio de trabajo en la raíz hasta completar la normalización de las rutas auxiliares de `config/` y `data/`.
+* **Corrección posterior (2026-08-06)**: la limpieza de cerrojos huérfanos **no llegaba a ejecutarse en Windows** — el `os.remove()` se hacía con el fichero aún abierto y el error quedaba silenciado. Un cierre abrupto seguía dejando el sistema bloqueado de forma permanente, pese a figurar como resuelto. Ver hallazgo H-15.
 
 ### 🎯 Objetivo
 Reforzar la estabilidad operativa y la concurrencia del sistema local-first antes de abrir las Capas 9 y 10. Esta capa asegura un acceso multihilo/multiproceso libre de bloqueos en SQLite, la gestión resiliente de cerrojos de proceso (`.lock`) con tiempo de vida (TTL) e ID de proceso (PID), el aislamiento mediante rutas absolutas resueltas dinámicamente respecto a la raíz del repositorio, la formalización del entorno (`requirements.txt`, `.gitignore`, `.env.example`) y la activación del tipado estricto (`strict: true`) en el frontend TypeScript.
@@ -924,8 +935,36 @@ Reforzar la estabilidad operativa y la concurrencia del sistema local-first ante
 
 ---
 
+## ⚖️ Bloque 2: Coherencia de Negocio LCSP (Remediación)
+* **Estado actual**: 🟢 Implementado el 2026-08-06. Contrato de servicio completo en [`.agents/CONTRATO_BLOQUE_2.md`](.agents/CONTRATO_BLOQUE_2.md).
+
+### 🎯 Objetivo
+Evitar que una oportunidad sea recomendada, descartada o presentada con una puntuación incompatible entre capas. El Radar aporta señales preliminares; el Analista IA sólo completa datos que consten en el pliego; y el Cockpit conserva el estado del lote exacto que el usuario ha decidido gestionar.
+
+### 🔍 Correcciones aplicadas
+
+1. **Escala de puntuación única**: `score_total` es un entero canónico en `[0, 100]`. La escala interna se conserva aparte en `score_bruto` para trazabilidad. Antes la Capa 2 llegaba a 165 puntos mientras la Capa 5 y la API asumían 0-100, y dos licitaciones muy distintas se mostraban ambas como 100.
+
+2. **Cada riesgo cuenta una sola vez**: la señal textual preliminar del Radar ya no modifica la puntuación. La subrogación se ajusta **una única vez**, a partir de la clasificación semántica del pliego. Antes un contrato con subrogación crítica acumulaba −45 puntos por un solo hecho.
+
+3. **Las negaciones se respetan**: *"No procedeix la subrogació de personal"* dejaba de penalizar. La detección por subcadena marcaba el riesgo incluso cuando el pliego lo negaba explícitamente.
+
+4. **El LLM informa, no puntúa**: el `ajuste_score` que propone el modelo se conserva como información trazable pero **no se aplica**. Las decisiones de puntuación son deterministas y están configuradas en `config/`.
+
+5. **Art. 145 alineado con este README**: un peso de precio/fórmulas superior al 60 % penaliza −10 puntos, por la guerra de precios que describe la sección de scoring. El predominio del juicio de valor **no** se penaliza: puede ser precisamente la ventaja competitiva de la cooperativa. Antes el código hacía justo lo contrario.
+
+6. **Las seis cláusulas críticas**: el DTO sube a v3 e incorpora garantía definitiva (arts. 107-108), penalidades y resolución (arts. 192-194) y cláusulas sociales (art. 202). Si un dato no consta, se representa como `null` o `false`; nunca se deduce por conocimiento externo.
+
+7. **Mutación por lote**: `lote_numero` recorre el contrato completo, de la API al Cockpit. Antes el backend mutaba siempre el lote 1 mientras el frontend actualizaba optimistamente todos, anulando el modelo 1:N que es la razón de ser de la Capa 3. *(Pendiente de recompilar el frontend para que llegue al usuario.)*
+
+8. **KPIs sobre una sola población**: el win rate y las métricas de conversión salen todos de `vista_win_rate`, filtrando lotes archivados. Antes el resumen y la vista analítica usaban denominadores distintos y el resultado era aritméticamente imposible.
+
+9. **Lo que no se pudo medir, no puntúa**: un análisis degradado no altera la puntuación en ninguna dirección. No basta con no penalizar — bonificar también es inventar. La alerta llega al Cockpit **marcada**, no desaparece.
+
+---
+
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 💤 Pendiente de iniciar.
+* **Estado actual**: 💤 Pendiente de iniciar. Bloqueada únicamente por la recompilación del Cockpit.
 
 ### 🎯 Objetivo
 Administrar el ciclo de vida completo de los datos históricos, facilitando la auditoría de prospecciones anteriores y permitiendo limpiezas selectivas o totales de la base de datos local mediante endpoints dedicados de administración en la API.

@@ -19,7 +19,34 @@ defectos graves eran invisibles en lectura estática porque estaban enmascarados
 de las de producción (otra raíz de importación, dependencias inyectadas en vez de las reales).
 
 **Lección transversal**: en este proyecto, *"los tests pasan"* no ha sido garantía de que el
-sistema funcione. Ver reglas C1–C4 en `AGENTS.md`.
+sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
+
+---
+
+## Cuadro de estado (actualizado el 2026-08-06)
+
+| Hallazgo | Estado | Cerrado en |
+|---|---|---|
+| H-01 · No había forma correcta de arrancar el pipeline | 🟢 Cerrado | Paso B |
+| H-02 · Un fallo del LLM se guardaba como análisis válido | 🟢 Cerrado | Paso C1 |
+| H-03 · Una fila imperfecta tumbaba el funnel entero | 🟢 Cerrado | Paso C3 |
+| H-04 · Hueco en la matriz de riesgo de subrogación | 🟢 Cerrado | Paso C2 |
+| H-05 · La IA del Centinela nunca ha funcionado | 🟢 Cerrado | Pasos C2 y D2 |
+| H-06 · El modelo LLM configurado y la cuenta actual | 🟠 **Abierto** | — |
+| H-07 · Concurrencia SQLite: la API devolvía 503 | 🟢 Cerrado | Bloque 1 y Paso D1 |
+| H-08 · KPIs aritméticamente imposibles | 🟢 Cerrado | Bloque 2 |
+| H-09 · Escalas de scoring incompatibles | 🟢 Cerrado | Bloque 2 |
+| H-10 · La detección ignoraba las negaciones | 🟢 Cerrado | Bloque 2 |
+| H-11 · Doble penalización del mismo riesgo | 🟢 Cerrado | Bloque 2 |
+| H-12 · Faltaban 3 de las 6 cláusulas críticas | 🟢 Cerrado | Bloque 2 |
+| H-13 · El Cockpit no gestionaba estado por lote | 🟢 Cerrado en código | Bloque 2 — *pendiente de recompilar* |
+| H-14 · Higiene del proyecto | 🟢 Cerrado | Bloque 1 y repositorio Git |
+| H-15 · El cerrojo huérfano no se reclamaba en Windows | 🟢 Cerrado | Paso D1 |
+| H-16 · Un dictamen degradado decidía como si fuera real | 🟢 Cerrado | Paso D2 |
+| H-17 · La suite de pruebas llamaba a la API real | 🟢 Cerrado | Paso D2 |
+
+**Único hallazgo abierto: H-06.** Todo lo demás está cerrado con prueba de regresión. Suite:
+159/159. H-13 está resuelto en el código pero **no llega al usuario** hasta recompilar el frontend.
 
 ---
 
@@ -127,9 +154,12 @@ modelos de familias distintas.
 
 ---
 
-## Hallazgos ABIERTOS
+## Hallazgos que estaban abiertos el 2026-07-27
 
-### H-05 · La IA del Centinela nunca ha funcionado 🔴 ABIERTO — prioridad alta
+> Se conserva el diagnóstico original íntegro —es la evidencia de cómo se reprodujo cada uno— y se
+> añade al final de cada hallazgo cómo se cerró. Sólo H-06 sigue abierto.
+
+### H-05 · La IA del Centinela nunca ha funcionado 🟢 CERRADO (Pasos C2 y D2)
 
 `AnalistaBoletinesIA._inicializar_proveedor_llm()` en `src/centinela.py` tiene **tres fallos
 encadenados**:
@@ -153,12 +183,17 @@ ha ejecutado**.
 **Por qué no lo detectaron las pruebas**: los tests inyectan siempre un proveedor simulado por el
 parámetro `proveedor_llm=`, sorteando la factoría real. Ver Convención C4.
 
-**Pendiente**: reparar en el Paso C2. Debe añadirse una prueba que ejercite la factoría **sin**
-inyección.
+**Cómo se cerró**: el Paso C2 creó `proveedor_llm_factory()` y corrigió la llamada a `.consultar()`,
+con `tests/test_centinela_llm_factory.py` ejercitando la factoría sin inyección (Convención C4).
+
+**Pero la reparación destapó dos defectos más**, porque hasta entonces el fallo estaba enmascarado:
+al empezar a construirse un proveedor real, la suite pasó a llamar a la API (H-17) y el dictamen
+degradado empezó a decidir como si fuera un veredicto real (H-16). Ambos cerrados en el Paso D2.
+Es el patrón de este proyecto: reparar un `except` amplio revela lo que llevaba años tapando.
 
 ---
 
-### H-06 · El modelo LLM configurado no funciona con la cuenta actual 🔴 ABIERTO — prioridad alta
+### H-06 · El modelo LLM configurado no funciona con la cuenta actual 🟠 ABIERTO — único hallazgo vivo
 
 Verificado contra la API real el 2026-07-27, en dos ejecuciones separadas:
 
@@ -184,9 +219,15 @@ real y comparar.
 
 **Diagnóstico reproducible**: `python tools/verificar_proveedor_llm.py`
 
+**Estado el 2026-08-06**: `config/analista_config.yaml` ya fija `gemini-3.1-flash-lite` como
+preferente y `gemini-3.6-flash` como respaldo, con versiones explícitas. Queda vigente la salvedad:
+la recomendación salió de **un solo pliego**. Sigue pendiente pasar un lote real antes de darla por
+buena. Confirmado además que hay una `GEMINI_API_KEY` operativa en las variables de entorno del
+equipo (no en un fichero `.env`), y que el proveedor responde.
+
 ---
 
-### H-07 · Concurrencia SQLite: la API devuelve 503 bajo escritura del pipeline 🟠 ABIERTO — Bloque 1
+### H-07 · Concurrencia SQLite: la API devuelve 503 bajo escritura del pipeline 🟢 CERRADO (Bloque 1 y Paso D1)
 
 Reproducido con un escritor externo manteniendo una transacción 8 s:
 
@@ -206,9 +247,20 @@ Tres problemas:
    lanzador VBS de la Capa 10— apuntan a ficheros `.lock` **diferentes** y la exclusión mutua
    desaparece.
 
+**Cómo se cerró**: el Bloque 1 fijó `busy_timeout=30000`, WAL, TTL+PID en el cerrojo y ruta
+absoluta para la BD (`tests/test_concurrencia_sqlite.py`, `tests/test_file_lock.py`).
+
+**Ojo**: el punto 2 no quedó realmente resuelto hasta el Paso D1. La limpieza de huérfanos existía
+pero **no se ejecutaba nunca en Windows** (ver H-15), así que entre el Bloque 1 y el 2026-08-06 el
+bloqueo permanente por cierre abrupto seguía siendo posible pese a figurar como cerrado. Lección:
+una protección declarada no es una protección verificada en la plataforma de destino.
+
+**Sigue pendiente** la normalización de rutas de `config/` y `data/` en Radar, Filtro, Lector y
+reportes, que resuelven contra el directorio actual. Es requisito del lanzador VBS de la Capa 10.
+
 ---
 
-### H-08 · Los KPIs del dashboard son aritméticamente imposibles 🟠 ABIERTO — Bloque 2
+### H-08 · Los KPIs del dashboard son aritméticamente imposibles 🟢 CERRADO (Bloque 2)
 
 `obtener_resumen_kpis()` cuenta ganadas/perdidas sobre `lotes WHERE deleted_at IS NULL`, pero lee
 `win_rate` de `vista_win_rate`, que **no filtra los soft-deleted** y usa otro denominador.
@@ -224,18 +276,24 @@ Además, un lote con `estado='Adjudicada'` y `empresa_adjudicataria='Clece SA'` 
 ramas** del `COUNT(CASE...)`, y un lote registrado sólo por inteligencia competitiva (nunca
 presentado) computa como derrota.
 
+**Cómo se cerró**: todas las métricas de conversión salen ahora de `vista_win_rate`, que filtra
+`deleted_at IS NULL`. Una sola consulta, una sola población.
+
 ---
 
-### H-09 · Escalas de scoring incompatibles entre capas 🟠 ABIERTO — Bloque 2
+### H-09 · Escalas de scoring incompatibles entre capas 🟢 CERRADO (Bloque 2)
 
 `src/filtro.py` no acota el resultado: medido **165 puntos** en un caso favorable realista, y
 puede ser negativo. Pero `RecalibradorScoring` trunca a `[0, 100]`, sus umbrales
 (`umbral_recomendada: 65`) asumen esa escala, y el esquema de la API declara `score_total` como
 0-100. Dos licitaciones de 110 y 165 puntos brutos se muestran ambas como 100.
 
+**Cómo se cerró**: `score` es ahora el valor canónico en `[0, 100]` y `score_bruto` conserva la
+escala interna para trazabilidad. Regresión en `tests/test_bloque2_coherencia.py`.
+
 ---
 
-### H-10 · La detección de subrogación ignora las negaciones 🟠 ABIERTO — Bloque 2
+### H-10 · La detección de subrogación ignora las negaciones 🟢 CERRADO (Bloque 2)
 
 `src/radar.py` marca el flag con `if "subrogac" in title.lower()`. Verificado:
 
@@ -253,14 +311,19 @@ verificado contra la API real). La contradicción entre Capa 1 y Capa 5 sigue ab
 
 ---
 
-### H-11 · Doble penalización del mismo riesgo 🟠 ABIERTO — Bloque 2
+### H-11 · Doble penalización del mismo riesgo 🟢 CERRADO (Bloque 2)
 
 La Capa 2 resta −20 por subrogación. La Capa 5 recalibra **partiendo de ese score ya penalizado**
 y vuelve a restar −15/−25. Un contrato con subrogación crítica acumula −45 por un único hecho.
 
+**Cómo se cerró**: la señal textual preliminar del Radar ya no mueve el score; la subrogación se
+ajusta una sola vez, a partir de la clasificación semántica del pliego. Además, el `ajuste_score`
+que propone el LLM se conserva como información pero **no se aplica**: el scoring comercial es
+determinista y configurado. Regresión en `tests/test_bloque2_coherencia.py`.
+
 ---
 
-### H-12 · Faltan 3 de las 6 cláusulas críticas del README 🟠 ABIERTO — Bloque 2
+### H-12 · Faltan 3 de las 6 cláusulas críticas del README 🟢 CERRADO (Bloque 2)
 
 No existen ni en el DTO, ni en el prompt, ni en la tabla `analisis_semantico`:
 
@@ -283,9 +346,19 @@ competitiva de Incoop como cooperativa de iniciativa social.
 coste procedimental (el Art. 146.2 exige comité de expertos cuando el juicio de valor domina),
 **pero entonces debe documentarse así**. Requiere decisión del usuario.
 
+**Cómo se cerró**: el DTO sube a v3 con `GarantiaDefinitivaDTO` (arts. 107-108), `PenalidadesDTO`
+(arts. 192-194) y `ClausulasSocialesDTO` (art. 202). Si un dato no consta, se representa como
+`null` o `false`; nunca se deduce por conocimiento externo. Regresión en
+`tests/test_bloque2_coherencia.py::test_dto_v3_preserva_las_seis_clausulas_criticas`.
+
+**Decisión del Art. 145 (2026-08-06)**: se alinea con el README. Un peso de precio/fórmulas
+superior al 60 % penaliza −10 pts; el predominio del juicio de valor **no** recibe penalización
+automática, porque puede ser precisamente la ventaja competitiva de la cooperativa. El signo
+invertido queda corregido.
+
 ---
 
-### H-13 · El Cockpit no puede gestionar el estado por lote 🟠 ABIERTO — Bloque 2
+### H-13 · El Cockpit no puede gestionar el estado por lote 🟢 CERRADO EN CÓDIGO (Bloque 2) — pendiente de recompilar
 
 `TransicionEstadoLicitacion` no lleva `lote_numero`, así que la API siempre muta el lote 1.
 Pero `useApiMutations.ts` aplica optimistamente el nuevo estado a **todos** los lotes: el usuario
@@ -295,9 +368,18 @@ que el README describe como razón de ser de la Capa 3.
 El *rollback* tampoco es atómico pese a la documentación: `onMutate` guarda copia del detalle pero
 no de las listas paginadas que también modifica.
 
+**Cómo se cerró**: `lote_numero` recorre ahora el contrato completo — `TransicionEstadoLicitacion`
+en `src/api/schemas.py`, el endpoint de mutación en `src/api/routers/licitaciones.py`, y en el
+frontend `useApiMutations.ts`, `DetailDrawer.tsx` y `LicitacionesTable.tsx`, que actualizan de
+forma optimista **sólo** el lote afectado.
+
+**⚠️ Todavía no llega al usuario**: `frontend/dist/` es del 2026-07-26. Hasta que se instale Node y
+se ejecute `npm run build`, el Cockpit que se abre sigue siendo el que muta el lote 1 y actualiza
+los cinco. El hallazgo está cerrado en el código, no en la pantalla.
+
 ---
 
-### H-14 · Higiene del proyecto 🟠 ABIERTO — Bloque 1
+### H-14 · Higiene del proyecto 🟢 CERRADO (Bloque 1 y repositorio Git)
 
 - `requirements.txt` no declara `fastapi`, `uvicorn`, `pydantic`, `starlette`, `httpx` ni `pytest`.
   Un clon del repositorio no arranca las Capas 7 y 8.
@@ -307,6 +389,108 @@ no de las listas paginadas que también modifica.
   `?: X | null` del espejo de tipos es decorativa: el compilador no la verifica.
 - El middleware de trazabilidad hace E/S de fichero **síncrona** dentro de un `async def`,
   bloqueando el bucle de eventos en cada petición. La rotación de logs no está sincronizada.
+
+**Cómo se cerró**: `requirements.txt` declara las dependencias de las Capas 7 y 8; existen
+`.gitignore` y `.env.example`; `strict` activado en TypeScript; y el proyecto se versiona desde el
+2026-08-06 en https://github.com/DonBorgiFR/licit-accion. La `GEMINI_API_KEY` vive en variables de
+entorno del sistema, nunca en un fichero del repositorio.
+
+**Trampa del `.gitignore` que costó descubrir**: los patrones de empaquetado de Python deben ir
+anclados con `/` a la raíz. Sin la barra inicial, `lib/` casa con **cualquier** carpeta llamada
+`lib` a cualquier profundidad, y excluía `frontend/src/lib/` (`api-client.ts`, `react-query.ts`,
+`utils.ts`): un clon limpio no habría podido compilar el Cockpit, con un error desconcertante.
+No revertir ese anclaje.
+
+**Queda pendiente** (menor, no bloqueante): la E/S síncrona del middleware dentro de `async def`.
+
+---
+
+## Hallazgos posteriores — 2026-08-06
+
+> Los tres salieron al reparar defectos anteriores, no de una auditoría nueva. Es el patrón
+> recurrente del proyecto: un `except Exception` amplio no elimina un defecto, lo aplaza.
+
+### H-15 · El cerrojo huérfano no se reclamaba nunca en Windows 🟢 CERRADO (Paso D1)
+
+El Bloque 1 declaró cerrada la protección TTL+PID contra bloqueos permanentes. **No funcionaba en
+la plataforma de destino.** Dos defectos independientes en `db_lock`:
+
+1. El `os.remove(lock_path)` se ejecutaba **dentro** del `with open(lock_path)`. Windows no permite
+   borrar un fichero con un handle abierto. Un `except Exception: pass` silenciaba el error y el
+   bucle reintentaba lo mismo hasta agotar el timeout.
+
+```
+PermissionError [WinError 32] El proceso no tiene acceso al archivo
+porque está siendo utilizado por otro proceso
+-> RuntimeError: No se pudo adquirir el lock ... tras 2.0s
+```
+
+2. Un cerrojo de **0 bytes** bloqueaba para siempre. El fichero se crea antes de escribir el
+   payload; si el proceso muere en ese hueco, queda sin `pid` ni `created_at`, y el código exigía
+   contenido legible para evaluar la caducidad. Ningún test lo cubría. Reproducido con TTL de 1 s:
+   seguía bloqueado.
+
+**Efecto real**: un corte de luz o un cierre abrupto dejaba el sistema inutilizable hasta que
+alguien borrara un fichero oculto a mano — exactamente lo que el Bloque 1 debía evitar.
+
+**Cómo se cerró**: la lectura vive en `_motivo_lock_huerfano()`, que decide con el fichero ya
+cerrado; el borrado ocurre después. Un cerrojo ilegible caduca por la fecha de modificación del
+propio fichero, **nunca de inmediato**: uno reciente puede ser un proceso sano que todavía no ha
+terminado de escribirlo. La reclamación emite `DB_LOCK_HUERFANO_RECLAMADO` en `data/pipeline.jsonl`,
+porque borrar el cerrojo de otro proceso es destructivo y era invisible.
+
+**Regresión**: `tests/test_file_lock.py`, 6 casos (los 2 que ya existían más ilegible-reciente e
+ilegible-antiguo).
+
+---
+
+### H-16 · Un dictamen degradado del Centinela decidía como si fuera real 🟢 CERRADO (Paso D2)
+
+`DictamenCentinelaDTO.from_dict` aceptaba un `{}` y devolvía un dictamen aparentemente válido:
+
+```python
+nivel_interes = str(data.get("nivel_interes", "NULO"))   # inventa el veredicto
+resumen_ejecutivo = str(data.get("resumen_ejecutivo", ""))
+```
+
+El evaluador restaba entonces **−30 pts** y la alerta se descartaba, sin nada que distinguiera ese
+descarte de un juicio real de la IA. Y el fallback por error de conexión hacía lo simétrico:
+declaraba `"MEDIO"` y **regalaba +15 pts** a un análisis que nunca ocurrió.
+
+Es el mismo defecto que H-02, ya cerrado en la Capa 5 por el Paso C1 — **la Capa 6 nunca recibió
+esa corrección**.
+
+**Efecto real**: como la IA del Centinela jamás funcionó (H-05), el bonus fantasma de +15 se aplicó
+a **todas** las alertas procesadas. En el e2e, una alerta de Badalona con +40 de reglas duras y
+−25 por su PMP de 78 días quedaba en 30, justo el `score_minimo_alerta`. Se guardaba **sólo** por
+los 15 puntos de un análisis inexistente.
+
+**Cómo se cerró**: esquema v2 con `modo_degradado`; `from_json(estricto=True)` valida la forma;
+nuevo `nivel_interes="DESCONOCIDO"` que no es sinónimo de `"NULO"`; y el evaluador conserva el
+score de reglas duras sin inferir interés ni desinterés. Ver Convención C6.
+
+**Decisión de negocio (2026-08-06)**: la alerta cuyo análisis falla **llega al Cockpit marcada**,
+no desaparece (Convención C3).
+
+**Regresión**: `tests/test_centinela_analista.py` y `tests/test_centinela_scoring.py`.
+
+---
+
+### H-17 · La suite de pruebas llamaba a la API real de Gemini 🟢 CERRADO (Paso D2)
+
+Tras reparar la factoría en el Paso C2, `AnalistaBoletinesIA(proveedor_llm=None)` dejó de
+significar "sin LLM": el constructor pasó a fabricar un `GeminiProvider` real. Como hay una
+`GEMINI_API_KEY` en las variables de entorno del equipo, **la suite empezó a salir a la red en cada
+ejecución**: gastaba cuota, tardaba más y su resultado dependía de lo que contestara el modelo ese
+día. Una prueba no reproducible no es una red de seguridad.
+
+Fue la causa directa del fallo intermitente de `tests/test_capa6_e2e.py`.
+
+**Cómo se cerró**: nuevo parámetro `autoinicializar_proveedor=False`. Ver Convenciones C4 y C5.
+
+**Diagnóstico reproducible**: ejecutar la suite con un `sitecustomize.py` en el `PYTHONPATH` que
+intercepte `socket.connect` y `socket.getaddrinfo` y permita sólo `127.0.0.1` (el `TestClient` de
+FastAPI usa tráfico local legítimo). Debe seguir dando 159/159.
 
 ---
 
@@ -318,3 +502,8 @@ no de las listas paginadas que también modifica.
 | 2026-07-27 | **Resiliencia por reintentos, no por segundo proveedor** | Al retirar Ollama se pierde la redundancia. Se sustituye por reintentos con espera exponencial diferenciando 429 / 5xx / red, antes de diferir el pliego. |
 | 2026-07-27 | **El riesgo de subrogación se ordena por trazabilidad del coste, no por tamaño de plantilla** | Sin la relación del Art. 130.1 es imposible presupuestar el coste laboral heredado. Ofertar a ciegas sobre la partida que más pesa en la estructura de Incoop es peor riesgo que una plantilla grande pero conocida. *Umbrales pendientes de validación final por el usuario.* |
 | 2026-07-27 | **La integridad se exige al escribir, no al leer** | En la frontera de lectura, un dato incompleto se degrada a su valor por defecto; nunca rompe la pantalla. |
+| 2026-08-06 | **Art. 145: el peso del precio por encima del 60 % es una señal negativa** | Se alinea con el README, que describe ese escenario como una guerra de precios desfavorable para Incoop. El predominio del juicio de valor **no** se penaliza: puede ser la ventaja competitiva de la cooperativa. Se descarta el criterio de menor carga procedimental del Art. 146.2. |
+| 2026-08-06 | **El scoring comercial es determinista; el LLM informa, no puntúa** | El `ajuste_score` que propone el modelo se conserva como información trazable pero no se aplica. Aplicarlo junto a las reglas configuradas provocaba doble contabilidad del mismo hecho. |
+| 2026-08-06 | **Lo que no se pudo medir, no puntúa** | Un análisis degradado no altera el score en ninguna dirección: bonificar también es inventar. La alerta llega al Cockpit marcada en vez de desaparecer. Ver Convención C6. |
+| 2026-08-06 | **La suite de pruebas no sale a la red** | Una prueba que llama a un LLM real gasta cuota, tarda y depende de lo que conteste el modelo ese día. La verificación contra la API real vive en `tools/`. Ver Convención C5. |
+| 2026-08-06 | **El proyecto se versiona en Git** | Hasta esa fecha no había historial ni forma de revertir. La herramienta contiene reglas comerciales sensibles y varios agentes de IA se turnan sobre ella. Repositorio: https://github.com/DonBorgiFR/licit-accion |
