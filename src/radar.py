@@ -8,9 +8,14 @@ import unicodedata
 import time
 from typing import List, Dict, Any
 
+from src import ruta_proyecto
+
 class Radar:
     def __init__(self, config_dir: str = "config"):
-        self.config_dir = config_dir
+        # Resuelto contra la raíz del proyecto: si se resolviera contra el directorio
+        # de trabajo, el perfil comercial no se cargaría al ejecutar desde otra carpeta
+        # y el Radar seguiría adelante con los valores por defecto, en silencio.
+        self.config_dir = ruta_proyecto(config_dir)
         self.fuentes = self._load_yaml("fuentes.yaml").get("fuentes", [])
         self.perfil = self._load_yaml("perfil_incoop.yaml").get("perfil", {})
         self.headers = {

@@ -8,6 +8,8 @@ import csv
 import re
 from typing import Dict, Any, Tuple
 
+from src import ruta_proyecto
+
 class PMPService:
     """
     Servicio de consulta y evaluación del Periodo Medio de Pago a Proveedores (PMP).
@@ -15,7 +17,7 @@ class PMPService:
     """
 
     def __init__(self, csv_path: str = "config/pmp_ayuntamientos.csv"):
-        self.csv_path = csv_path
+        self.csv_path = ruta_proyecto(csv_path)
         self.pmp_data: Dict[str, int] = {}
         self.default_pmp: int = 30
         self.cargar_datos()

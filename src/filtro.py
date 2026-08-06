@@ -5,9 +5,13 @@ import unicodedata
 from datetime import datetime
 from typing import List, Dict, Any
 
+from src import ruta_proyecto
+
 class Filtro:
     def __init__(self, config_dir: str = "config"):
-        self.config_dir = config_dir
+        # Ver Radar.__init__: la misma licitación puntuaba 71 desde la raíz y 47 desde
+        # otro directorio porque el perfil de Incoop no llegaba a cargarse.
+        self.config_dir = ruta_proyecto(config_dir)
         self.perfil = self._load_yaml("perfil_incoop.yaml").get("perfil", {})
 
         # Contrato de scoring v2. La capa 2 publica exclusivamente la escala canónica

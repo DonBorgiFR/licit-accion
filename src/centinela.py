@@ -14,6 +14,8 @@ import csv
 import os
 from typing import List, Optional, Dict, Any, Tuple
 
+from src import ruta_proyecto
+
 
 # ==============================================================================
 # Excepciones Tipadas de Capa 6 (Paso 1)
@@ -304,6 +306,7 @@ def log_evento_jsonl(evento_tipo: str, detalles: Dict[str, Any], log_path: str =
     """
     Registra eventos estructurados deterministas en el log central JSONL (Regla 3).
     """
+    log_path = ruta_proyecto(log_path)
     try:
         log_dir = os.path.dirname(log_path)
         if log_dir and not os.path.exists(log_dir):
@@ -362,7 +365,7 @@ class IngestorBoletines:
     """
     def __init__(self, config_path: str = "config/centinela_config.yaml"):
         import time
-        self.config_path = config_path
+        self.config_path = ruta_proyecto(config_path)
         self.config = self.cargar_configuracion()
 
     def cargar_configuracion(self) -> Dict[str, Any]:
@@ -632,7 +635,7 @@ class FiltroBoletinesReglas:
     Evalúa anuncios de boletines oficiales contra palabras de veto y patrones clave LCSP.
     """
     def __init__(self, config_path: str = "config/centinela_config.yaml"):
-        self.config_path = config_path
+        self.config_path = ruta_proyecto(config_path)
         self.config = self.cargar_configuracion()
 
     def cargar_configuracion(self) -> Dict[str, Any]:
@@ -826,7 +829,7 @@ class AnalistaBoletinesIA:
         "sin LLM": construye un proveedor real que sale a la red. Sin esta vía no había
         forma de ejercitar el Modo Degradado ni de mantener las pruebas herméticas.
         """
-        self.config_prompts_path = config_prompts_path
+        self.config_prompts_path = ruta_proyecto(config_prompts_path)
         if proveedor_llm is not None:
             self.proveedor_llm = proveedor_llm
         elif autoinicializar_proveedor:
@@ -994,7 +997,7 @@ class EvaluadorScoringCentinela:
     Consolida de forma determinista el score de reglas duras y la cualificación del Analista IA.
     """
     def __init__(self, config_path: str = "config/centinela_config.yaml"):
-        self.config_path = config_path
+        self.config_path = ruta_proyecto(config_path)
         self.config = self.cargar_configuracion()
 
     def cargar_configuracion(self) -> Dict[str, Any]:
@@ -1143,7 +1146,7 @@ class GestorTrazabilidadCentinela:
     Garantiza el registro estructurado de eventos en data/pipeline.jsonl (Regla 3).
     """
     def __init__(self, log_path: str = "data/pipeline.jsonl"):
-        self.log_path = log_path
+        self.log_path = ruta_proyecto(log_path)
         os.makedirs(os.path.dirname(os.path.abspath(self.log_path)), exist_ok=True)
 
     def registrar_evento(self, tipo_evento: str, payload: Dict[str, Any], estado: str = "INFO") -> None:
@@ -1278,6 +1281,7 @@ def exportar_reporte_centinela_csv(
         memoria_svc = Memoria(db_path=db_path)
         alertas = memoria_svc.listar_alertas_tempranas(limite=500)
 
+        output_csv = ruta_proyecto(output_csv)
         os.makedirs(os.path.dirname(os.path.abspath(output_csv)), exist_ok=True)
 
         fieldnames = [

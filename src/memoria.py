@@ -12,7 +12,9 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import Dict, Any, List, Optional, Tuple
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# La definición canónica vive en el paquete raíz. Se reexporta aquí porque
+# `src/api/dependencies.py` ya importaba PROJECT_ROOT desde este módulo.
+from src import PROJECT_ROOT, ruta_proyecto
 
 # =====================================================================
 # HELPER DE VERIFICACIÓN DE PID Y PROCESOS
@@ -765,7 +767,7 @@ class Memoria:
 
         # --- RECREACIÓN DE VISTAS ANALÍTICAS CON TARIFA CONFIGURABLE ---
         tarifa_hora = 35.0
-        yaml_path = "config/perfil_incoop.yaml"
+        yaml_path = ruta_proyecto("config/perfil_incoop.yaml")
         if os.path.exists(yaml_path):
             try:
                 import yaml
@@ -1190,7 +1192,7 @@ class Memoria:
         """
         log_dir = os.path.dirname(self.db_path)
         if not log_dir:
-            log_dir = "data"
+            log_dir = ruta_proyecto("data")
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, "pipeline.jsonl")
@@ -1445,7 +1447,7 @@ class Memoria:
         # 1. Definir rutas y directorios
         db_dir = os.path.dirname(self.db_path)
         if not db_dir:
-            db_dir = "data"
+            db_dir = ruta_proyecto("data")
         backups_dir = os.path.join(db_dir, "backups") if not custom_dest_dir else custom_dest_dir
         
         os.makedirs(backups_dir, exist_ok=True)
@@ -1569,7 +1571,7 @@ class Memoria:
         """
         db_dir = os.path.dirname(self.db_path)
         if not db_dir:
-            db_dir = "data"
+            db_dir = ruta_proyecto("data")
         backups_dir = os.path.join(db_dir, "backups") if not custom_dest_dir else custom_dest_dir
         
         if not os.path.exists(backups_dir):

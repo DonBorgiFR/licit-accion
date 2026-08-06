@@ -6,7 +6,7 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **159/159**. Queda un único bloqueante para abrir la
+> negocio LCSP) están cerrados, con la suite en **163/163**. Queda un único bloqueante para abrir la
 > Capa 9: **recompilar el Cockpit**, cuyo `frontend/dist/` es del 2026-07-26 y no incluye la gestión
 > de estado por lote ni el distintivo de análisis degradado. Requiere instalar Node.js.
 >
@@ -892,8 +892,8 @@ Construir un **Dashboard de grado empresarial (Enterprise SaaS)** utilizando Rea
 ---
 
 ## 🏗️ Capa 8.5: Cimientos de Infraestructura y Concurrencia (Bloque 1 Remediación)
-* **Estado actual**: 🟢 Cerrada: WAL, `busy_timeout` de 30 s, cerrojo con PID/TTL, ruta absoluta para la BD, dependencias declaradas y TypeScript estricto. La ejecución desatendida de la Capa 10 deberá fijar aún el directorio de trabajo en la raíz hasta completar la normalización de las rutas auxiliares de `config/` y `data/`.
-* **Corrección posterior (2026-08-06)**: la limpieza de cerrojos huérfanos **no llegaba a ejecutarse en Windows** — el `os.remove()` se hacía con el fichero aún abierto y el error quedaba silenciado. Un cierre abrupto seguía dejando el sistema bloqueado de forma permanente, pese a figurar como resuelto. Ver hallazgo H-15.
+* **Estado actual**: 🟢 Cerrada: WAL, `busy_timeout` de 30 s, cerrojo con PID/TTL, rutas ancladas a la raíz del proyecto, dependencias declaradas y TypeScript estricto. La ejecución desatendida de la Capa 10 ya **no** necesita fijar el directorio de trabajo.
+* **Correcciones posteriores (2026-08-06)**: la Iteración 3 (aislamiento con `BASE_DIR`) estaba **incompleta**. Sólo la base de datos usaba ruta absoluta; `config/` y `data/` seguían resolviéndose contra el directorio de trabajo, de modo que ejecutar desde otra carpeta cargaba el perfil comercial **vacío** y puntuaba distinto sin avisar (71 frente a 47 en la misma licitación). Cerrado con `ruta_proyecto()` en `src/__init__.py`; ver hallazgo H-18. Además, la limpieza de cerrojos huérfanos **no llegaba a ejecutarse en Windows** — el `os.remove()` se hacía con el fichero aún abierto y el error quedaba silenciado. Un cierre abrupto seguía dejando el sistema bloqueado de forma permanente, pese a figurar como resuelto. Ver hallazgo H-15.
 
 ### 🎯 Objetivo
 Reforzar la estabilidad operativa y la concurrencia del sistema local-first antes de abrir las Capas 9 y 10. Esta capa asegura un acceso multihilo/multiproceso libre de bloqueos en SQLite, la gestión resiliente de cerrojos de proceso (`.lock`) con tiempo de vida (TTL) e ID de proceso (PID), el aislamiento mediante rutas absolutas resueltas dinámicamente respecto a la raíz del repositorio, la formalización del entorno (`requirements.txt`, `.gitignore`, `.env.example`) y la activación del tipado estricto (`strict: true`) en el frontend TypeScript.

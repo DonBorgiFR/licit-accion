@@ -9,6 +9,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
+from src import ruta_proyecto
+
 # =====================================================================
 # JERARQUÍA DE ERRORES ESTRUCTURADOS DE LA CAPA 5
 # =====================================================================
@@ -601,6 +603,7 @@ def proveedor_llm_factory(config_path: str = "config/analista_config.yaml") -> L
     Factoría estandarizada para instanciar el proveedor de LLM según la configuración activa.
     Se utiliza tanto en AnalistaIA como en AnalistaBoletinesIA (Centinela).
     """
+    config_path = ruta_proyecto(config_path)
     config = {}
     if os.path.exists(config_path):
         try:
@@ -810,7 +813,7 @@ class GestorPromptsLCSP:
     PROMPT_FALLBACK_SISTEMA = PROMPT_SISTEMA_LCSP
 
     def __init__(self, yaml_path: str = "config/prompts_lcsp.yaml"):
-        self.yaml_path = yaml_path
+        self.yaml_path = ruta_proyecto(yaml_path)
         self.version = "1.0.0"
         self.sistema_base = ""
         self.ejemplos_few_shot = []
@@ -1014,7 +1017,7 @@ class RecalibradorScoring:
 class AnalistaIA:
     """Orquestador del análisis semántico con IA para la Capa 5."""
     def __init__(self, config_path: str = "config/analista_config.yaml"):
-        self.config_path = config_path
+        self.config_path = ruta_proyecto(config_path)
         self.config = self._cargar_configuracion()
         self.providers: Dict[str, LLMProvider] = {}
         self._inicializar_proveedores()
@@ -1067,6 +1070,7 @@ class AnalistaIA:
         )
 
     def registrar_log_jsonl(self, event_type: str, data: Dict[str, Any], log_dir: str = "data") -> None:
+        log_dir = ruta_proyecto(log_dir)
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, "pipeline.jsonl")
@@ -1327,7 +1331,7 @@ class AnalistaIA:
         hc_recalibrador = self.recalibrador.healthcheck_recalibrador()
 
         # Check logger directory
-        log_dir = "data"
+        log_dir = ruta_proyecto("data")
         can_write_log = os.access(log_dir if os.path.exists(log_dir) else ".", os.W_OK)
 
         return {
@@ -1347,6 +1351,7 @@ class AnalistaIA:
         """
         import csv
         import sqlite3
+        csv_path = ruta_proyecto(csv_path)
         reports_dir = os.path.dirname(csv_path)
         if reports_dir and not os.path.exists(reports_dir):
             os.makedirs(reports_dir, exist_ok=True)
@@ -1453,7 +1458,7 @@ class AnalistaIA:
                 print(f"[!] Error al procesar licitación {exp_id} en lote: {e}")
 
         # Generar reporte CSV comercial
-        csv_path = "data/reports/analisis_semantico_summary.csv"
+        csv_path = ruta_proyecto("data/reports/analisis_semantico_summary.csv")
         try:
             csv_path = self.generar_reporte_csv(memoria=memoria, csv_path=csv_path)
         except Exception as e_csv:

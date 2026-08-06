@@ -44,9 +44,10 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-15 · El cerrojo huérfano no se reclamaba en Windows | 🟢 Cerrado | Paso D1 |
 | H-16 · Un dictamen degradado decidía como si fuera real | 🟢 Cerrado | Paso D2 |
 | H-17 · La suite de pruebas llamaba a la API real | 🟢 Cerrado | Paso D2 |
+| H-18 · El resultado comercial dependía del directorio de trabajo | 🟢 Cerrado | Paso D3 |
 
 **Único hallazgo abierto: H-06.** Todo lo demás está cerrado con prueba de regresión. Suite:
-159/159. H-13 está resuelto en el código pero **no llega al usuario** hasta recompilar el frontend.
+163/163. H-13 está resuelto en el código pero **no llega al usuario** hasta recompilar el frontend.
 
 ---
 
@@ -255,8 +256,9 @@ pero **no se ejecutaba nunca en Windows** (ver H-15), así que entre el Bloque 1
 bloqueo permanente por cierre abrupto seguía siendo posible pese a figurar como cerrado. Lección:
 una protección declarada no es una protección verificada en la plataforma de destino.
 
-**Sigue pendiente** la normalización de rutas de `config/` y `data/` en Radar, Filtro, Lector y
-reportes, que resuelven contra el directorio actual. Es requisito del lanzador VBS de la Capa 10.
+El punto 3 (rutas dependientes del directorio de trabajo) resultó ser mucho más grave de lo que
+sugería este diagnóstico, que sólo contemplaba la pérdida de exclusión mutua entre cerrojos.
+Afectaba también al perfil comercial y, con él, a la puntuación. Ver H-18, cerrado en el Paso D3.
 
 ---
 
@@ -491,6 +493,36 @@ Fue la causa directa del fallo intermitente de `tests/test_capa6_e2e.py`.
 **Diagnóstico reproducible**: ejecutar la suite con un `sitecustomize.py` en el `PYTHONPATH` que
 intercepte `socket.connect` y `socket.getaddrinfo` y permita sólo `127.0.0.1` (el `TestClient` de
 FastAPI usa tráfico local legítimo). Debe seguir dando 159/159.
+
+---
+
+### H-18 · El resultado comercial dependía del directorio de trabajo 🟢 CERRADO (Paso D3)
+
+El Bloque 1 hizo absoluta la ruta de la base de datos, pero `config/` y `data/` seguían
+resolviéndose contra el directorio de trabajo en Radar, Filtro, Lector, PMPService, Analista,
+Centinela y los reportes. Figuraba como "salvedad menor" pendiente para la Capa 10.
+
+**No era menor: no fallaba, decidía distinto.** Al no encontrar `config/perfil_incoop.yaml`, el
+perfil comercial se cargaba **vacío** y el sistema continuaba en silencio con los valores por
+defecto. Reproducido con la misma licitación:
+
+```
+Perfil cargado desde la raíz    : 11 claves   ->  SCORE = 71
+Perfil cargado desde otra carpeta:  0 claves   ->  SCORE = 47
+```
+
+Con `umbral_recomendada` en 65, esos 24 puntos son la diferencia entre **recomendar y descartar**.
+Y es exactamente el escenario de la Capa 10: el lanzador VBS arranca con un directorio de trabajo
+arbitrario. De haberse abierto la Capa 10 sin resolver esto, el sistema habría puntuado mal
+**todas** las licitaciones sin emitir un solo error.
+
+**Cómo se cerró**: `PROJECT_ROOT` y `ruta_proyecto()` se centralizan en `src/__init__.py` (antes
+`PROJECT_ROOT` vivía en `src/memoria.py`, del que tenía que importarlo la API). Toda ruta relativa
+se ancla a la raíz del proyecto en el punto donde se asigna; las absolutas se respetan intactas,
+de modo que las pruebas siguen pudiendo inyectar rutas temporales.
+
+**Regresión**: `tests/test_rutas_proyecto.py`, 4 casos. El central compara la puntuación de la
+misma licitación desde la raíz y desde una carpeta ajena: deben coincidir.
 
 ---
 
