@@ -434,6 +434,63 @@ class Memoria:
         finally:
             conn.close()
 
+    def _motivo_lock_huerfano(self, lock_path: str, ttl: float) -> Optional[str]:
+        """
+        Decide si un cerrojo existente puede reclamarse. Devuelve el motivo textual si
+        es huérfano, o None si debe respetarse.
+
+        Lee el fichero y lo cierra antes de devolver el control: el borrado es
+        responsabilidad del llamante, porque Windows no permite borrar un fichero
+        mientras siga abierto.
+        """
+        try:
+            with open(lock_path, "r", encoding="utf-8") as f_lock:
+                content = f_lock.read().strip()
+        except FileNotFoundError:
+            return None  # Ya no existe: el llamante reintentará y lo creará.
+        except OSError:
+            content = ""
+
+        lock_pid = None
+        lock_time = None
+        if content:
+            try:
+                data = json.loads(content)
+                lock_pid = data.get("pid")
+                lock_time = data.get("created_at")
+            except (ValueError, AttributeError):
+                pass  # Contenido corrupto: se trata como cerrojo ilegible más abajo.
+
+        # 1. El proceso propietario ya no existe.
+        if lock_pid is not None:
+            try:
+                pid_int = int(lock_pid)
+            except (TypeError, ValueError):
+                pid_int = None
+            if pid_int and not es_pid_activo(pid_int):
+                return f"PID {pid_int} inactivo"
+
+        # 2. El propietario sigue vivo pero el cerrojo ha superado su TTL.
+        if lock_time is not None:
+            try:
+                antiguedad = time.time() - float(lock_time)
+            except (TypeError, ValueError):
+                antiguedad = None
+            if antiguedad is not None:
+                return f"TTL superado ({antiguedad:.0f}s > {ttl:.0f}s)" if antiguedad > ttl else None
+
+        # 3. Cerrojo ilegible: sin PID ni fecha utilizables. Ocurre cuando un proceso
+        # muere entre crear el fichero y escribir el payload. Se caduca por la fecha de
+        # modificación del propio fichero, nunca de inmediato: un cerrojo ilegible pero
+        # reciente puede ser un proceso sano que aún no ha terminado de escribirlo.
+        try:
+            antiguedad = time.time() - os.path.getmtime(lock_path)
+        except OSError:
+            return None
+        if antiguedad > ttl:
+            return f"cerrojo ilegible con {antiguedad:.0f}s de antigüedad (TTL {ttl:.0f}s)"
+        return None
+
     @contextmanager
     def db_lock(self, timeout: float = 10.0, ttl: float = 600.0, lock_suffix: str = ".lock"):
         """
@@ -458,30 +515,35 @@ class Memoria:
                     adquirido_fs = True
                     break
                 except FileExistsError:
-                    # Inspeccionar el lock existente para verificar si está huérfano
-                    try:
-                        if os.path.exists(lock_path):
-                            with open(lock_path, "r", encoding="utf-8") as f_lock:
-                                content = f_lock.read().strip()
-                                if content:
-                                    data = json.loads(content)
-                                    lock_pid = data.get("pid")
-                                    lock_time = data.get("created_at", 0)
+                    # La decisión se toma con el fichero ya cerrado y el borrado ocurre
+                    # después: en Windows os.remove() falla con WinError 32 si queda un
+                    # handle abierto, y el lock huérfano no se reclamaba jamás.
+                    motivo = self._motivo_lock_huerfano(lock_path, ttl)
 
-                                    pid_inactivo = bool(lock_pid and not es_pid_activo(int(lock_pid)))
-                                    ttl_expirado = bool(lock_time and (time.time() - float(lock_time) > ttl))
-
-                                    if pid_inactivo or ttl_expirado:
-                                        try:
-                                            os.remove(lock_path)
-                                            continue  # Reintentar inmediatamente adquirir el lock
-                                        except Exception:
-                                            pass
-                    except Exception:
-                        pass
+                    if motivo is not None:
+                        try:
+                            os.remove(lock_path)
+                        except FileNotFoundError:
+                            pass  # Otro proceso lo reclamó primero: reintentar sin más.
+                        except OSError as e_rm:
+                            # No se pudo borrar (permisos, handle vivo). Se espera y se
+                            # reintenta; el estado sigue siendo distinguible porque el
+                            # bucle acabará lanzando RuntimeError si nunca se libera.
+                            print(f"[!] No se pudo reclamar el cerrojo huérfano ({lock_path}): {e_rm}")
+                            time.sleep(random.uniform(0.05, 0.15))
+                            continue
+                        else:
+                            # Borrar el cerrojo de otro proceso es destructivo: debe dejar rastro.
+                            self.registrar_log_json(
+                                run_id=0,
+                                action="DB_LOCK_HUERFANO_RECLAMADO",
+                                reason=f"{lock_path}: {motivo}",
+                                updated_by="memoria"
+                            )
+                        continue  # Reintentar inmediatamente adquirir el lock
 
                     time.sleep(random.uniform(0.05, 0.15))
-                    
+
             if not adquirido_fs:
                 raise RuntimeError(
                     f"No se pudo adquirir el lock de base de datos a nivel de disco ({lock_path}) tras {timeout}s."
