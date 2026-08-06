@@ -1,0 +1,64 @@
+proveedor_preferente: "gemini"  # 'gemini' u 'ollama'
+permitir_fallback: true
+timeout_segundos: 120
+prompts_path: "config/prompts_lcsp.yaml"
+
+reintentos:
+  max_reintentos: 3
+  backoff_inicial_seg: 2.0
+  backoff_factor: 2.0
+
+gemini:
+  modelo_principal: "gemini-3.1-flash-lite"
+  modelo_respaldo: "gemini-3.6-flash"
+  temperature: 0.1
+  usar_response_schema: true
+
+ollama:
+  activo: false
+  host: "http://localhost:11434"
+  modelo: "llama3.1:8b"
+  temperature: 0.1
+  vram_options:
+    num_ctx: 16384
+    num_gpu: 99
+
+chunker:
+  tamano_ventana_caracteres: 1200
+  max_caracteres_prompt: 15000
+  min_caracteres_sin_segmentar: 3000
+  patrones_subrogacion:
+    - "subrogaci[oó]n"
+    - "subrogaci[oó]"
+    - "personal a subrogar"
+    - "convenio colectivo"
+    - "art(?:[íi]culo|\\.)?\\s*130"
+    - "plantilla"
+    - "coste salarial"
+  patrones_revision_precios:
+    - "revisi[oó]n de precios"
+    - "revisi[oó] de preus"
+    - "art(?:[íi]culo|\\.)?\\s*103"
+    - "f[oó]rmula de revisi[oó]n"
+    - "ipc"
+    - "desindexaci[oó]n"
+  patrones_criterios:
+    - "criterios? de adjudicaci[oó]n"
+    - "criteris d'adjudicaci[oó]"
+    - "juicio de valor"
+    - "f[oó]rmula"
+    - "oferta econ[oó]mica"
+    - "memoria t[eé]cnica"
+
+recalibracion:
+  umbral_recomendada: 65.0
+  umbral_descartada: 40.0
+  ajustes:
+    subrogacion_critica: -25
+    subrogacion_alta: -15
+    subrogacion_baja_o_nula: 5
+    revision_precios_ok: 10
+    sin_revision_plurianual: -10
+    # Art. 145 LCSP: el precio por encima del 60 % perjudica la competitividad
+    # cualitativa de Incoop. El juicio de valor no se penaliza automáticamente.
+    precio_dominante: -10

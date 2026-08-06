@@ -1,0 +1,73 @@
+# Configuración del Centinela de Boletines (Capa 6 - Fase Temprana)
+# Ecosistema Automático de Licitaciones (bfr_incoop)
+
+version: "1.0.0"
+
+fuentes_oficiales:
+  dogc:
+    nombre: "Diari Oficial de la Generalitat de Catalunya"
+    tipo: "RSS_ATOM"
+    url_feed: "https://dogc.gencat.cat/es/rss/index.html"
+    dominio: "dogc.gencat.cat"
+    activo: true
+  bopb:
+    nombre: "Butlletí Oficial de la Província de Barcelona"
+    tipo: "OPEN_DATA_RSS"
+    url_feed: "https://bop.diba.cat/rss"
+    dominio: "bop.diba.cat"
+    activo: true
+
+parametros_fase_temprana:
+  score_minimo_alerta: 30
+  score_prioridad_alta: 70
+  
+  palabras_clave_tempranas:
+    presupuestos:
+      - "aprovació inicial del pressupost"
+      - "aprobación inicial del presupuesto"
+      - "pressupost 20"
+      - "presupuesto 20"
+      - "plantilla de personal"
+      - "expedient de modificació de crèdit"
+      - "modificació de crèdit"
+      - "modificacion de credito"
+    subvenciones:
+      - "pla estratègic de subvencions"
+      - "plan estratégico de subvenciones"
+      - "bases reguladores de la convocatòria"
+      - "bases reguladoras de la convocatoria"
+      - "subvenció directa"
+      - "subvención nominativa"
+      - "bases reguladores"
+    convenios_y_encargos:
+      - "encàrrec de gestió"
+      - "encargo de gestión"
+      - "conveni de col·laboració"
+      - "convenio de colaboración"
+      - "encàrrec a mitjà propi"
+      - "encargo a medio propio"
+    consultas_preliminares:
+      - "consultes preliminars"
+      - "consultas preliminares"
+      - "consulta preliminar del mercat"
+      - "consulta preliminar del mercado"
+      - "sondeig de mercat"
+      - "115 lcsp"
+      - "anunci d'informació prèvia"
+      - "anuncio de informacion previa"
+
+  exclusiones_tempranas:
+    - "obra civil"
+    - "asfaltat"
+    - "subministrament informàtic"
+    - "suministro de vehículos"
+    - "multa"
+    - "sanció"
+    - "sancion"
+    - "tràfic"
+    - "trafico"
+    - "pèrdua dni"
+    - "licència d'obres menor"
+    - "licencia de obras menor"
+    - "notificació per compareixença"
+

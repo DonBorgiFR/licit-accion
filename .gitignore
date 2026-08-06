@@ -1,0 +1,70 @@
+# Entorno y Secretos
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+# Los artefactos de empaquetado se anclan con "/" a la raíz del proyecto.
+# Sin la barra inicial, un patrón como "lib/" casa con CUALQUIER carpeta llamada
+# lib a cualquier profundidad y excluía frontend/src/lib/ (api-client, react-query,
+# utils): un clon limpio no compilaba el Cockpit.
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+/env/
+/venv/
+/ENV/
+/.venv/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pytest y Cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Base de Datos y Almacenamiento Local
+*.db
+*.db-wal
+*.db-shm
+*.db.lock
+data/licitaciones.db*
+data/documents/
+data/backups/
+data/pipeline.jsonl
+data/reports/*.csv
+
+# Hojas de cálculo: se excluyen las salidas de ejecución, pero el perfil de CPVs
+# de Incoop es configuración de entrada y viaja con el código.
+*.xlsx
+!CPVs_Incoop.xlsx
+
+# Frontend / Node
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+.eslintcache
+
+# IDEs y Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

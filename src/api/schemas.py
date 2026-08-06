@@ -1,0 +1,356 @@
+"""
+src/api/schemas.py — Modelado de Esquemas Base con Pydantic v2
+Ecosistema Automático de Licitaciones (bfr_incoop)
+
+Módulo responsable de definir los esquemas de datos inmutables y fuertemente tipados (DTOs)
+para la Pasarela API RESTful (Capa 7). Garantiza la validación en tiempo de ejecución,
+la serialización limpia a JSON y la integración automática con OpenAPI 3.1 (/docs).
+"""
+
+from enum import Enum
+from datetime import datetime, timezone
+from typing import Generic, TypeVar, List, Optional, Dict, Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+# ==============================================================================
+# Tolerancia a NULL en la frontera de la API
+# ==============================================================================
+#
+# El DDL de SQLite (src/memoria.py) declara con `DEFAULT` — pero SIN `NOT NULL` —
+# columnas que estos esquemas modelan como obligatorias (`organo`, `fuente`, `pbl`,
+# `estado_operativo`...). Un `DEFAULT` de SQLite sólo actúa cuando la columna se omite
+# en el INSERT: no impide almacenar un NULL explícito.
+#
+# Pydantic rechaza `None` para un campo tipado `str`/`float`/`bool` aunque tenga valor
+# por defecto, porque el defecto sólo aplica si la clave está AUSENTE, no si vale None.
+# Resultado observado en auditoría: un único expediente con `organo` a NULL devolvía 503
+# en su ficha y, por validarse dentro de una comprensión de lista, tumbaba la página
+# entera del funnel.
+#
+# Criterio: en la frontera de lectura, un dato incompleto debe degradarse a su valor por
+# defecto, nunca romper la pantalla. La integridad se exige al escribir, no al leer.
+
+def _sustituir_nulos(data: Any, defectos: Dict[str, Any]) -> Any:
+    """Reemplaza por su valor por defecto las claves presentes con valor None."""
+    if not isinstance(data, dict):
+        return data
+    normalizado = dict(data)
+    for campo, defecto in defectos.items():
+        if normalizado.get(campo, defecto) is None:
+            normalizado[campo] = defecto
+    return normalizado
+
+
+# ==============================================================================
+# Excepciones Tipadas de Esquemas API (Capa 7 - Paso 2)
+# ==============================================================================
+
+class APISchemaError(Exception):
+    """Excepción base para errores de validación de esquemas de la API."""
+    pass
+
+
+class SchemaValidationError(APISchemaError):
+    """Error emitido cuando falla la validación de estructura o tipos de Pydantic v2."""
+    pass
+
+
+class EstadoInvalidoError(APISchemaError):
+    """Error emitido cuando se solicita una transición hacia un estado no permitido."""
+    pass
+
+
+# ==============================================================================
+# Enumeraciones de Negocio Restringidas
+# ==============================================================================
+
+class EstadoLicitacionEnum(str, Enum):
+    NUEVA = "Nueva"
+    ESTUDIANDO = "Estudiando"
+    PRESENTADA = "Presentada"
+    ADJUDICADA = "Adjudicada"
+    PERDIDA = "Perdida"
+    DESCARTADA = "Descartada"
+    ANULADA_ADMINISTRACION = "Anulada_Administracion"
+    INACTIVA = "Inactiva"
+
+
+class EstadoAlertaEnum(str, Enum):
+    NUEVA_FASE_TEMPRANA = "NUEVA_FASE_TEMPRANA"
+    EN_ESTUDIO_PROACTIVO = "EN_ESTUDIO_PROACTIVO"
+    CONVERTIDA = "CONVERTIDA_A_LICITACION"
+    DESCARTADA = "DESCARTADA_TEMPRANA"
+    ANALISIS_DIFERIDO = "ANALISIS_DIFERIDO_BOLETIN"
+
+
+class PrioridadEnum(str, Enum):
+    ALTA = "Alta"
+    MEDIA = "Media"
+    BAJA = "Baja"
+
+
+class FuenteBoletinEnum(str, Enum):
+    DOGC = "DOGC"
+    BOPB = "BOPB"
+
+
+class CategoriaFaseTempranaEnum(str, Enum):
+    PRESUPUESTO = "PRESUPUESTO"
+    SUBVENCION = "SUBVENCION"
+    CONVENIO = "CONVENIO"
+    CONSULTA_PRELIMINAR = "CONSULTA_PRELIMINAR"
+    OTROS = "OTROS"
+
+
+# ==============================================================================
+# Esquemas Base y DTOs de Licitaciones (Funnel PSCP/PCSP)
+# ==============================================================================
+
+class LoteSchema(BaseModel):
+    """Esquema de representación de un Lote individual dentro de un Expediente de Licitación."""
+    id: Optional[int] = Field(None, description="Identificador autoincremental del lote")
+    expediente_id: str = Field(..., description="ID del expediente al que pertenece el lote")
+    lote_numero: int = Field(..., description="Número ordinal de lote")
+    titulo_lote: str = Field(..., description="Título o descripción específica del lote")
+    cpvs: Optional[str] = Field(None, description="Códigos CPV asociados")
+    pbl: float = Field(0.0, description="Presupuesto Base de Licitación sin IVA")
+    vec: float = Field(0.0, description="Valor Estimado del Contrato con prórrogas")
+    garantia_definitiva: Optional[float] = Field(0.0, description="Importe estimado del 5% del PBL para aval")
+    subrogacion: bool = Field(False, description="Flag de obligación de subrogación de personal")
+    revision_precios: bool = Field(False, description="Flag de cláusula de revisión de precios")
+    dias_restantes: Optional[int] = Field(None, description="Días disponibles hasta la fecha límite")
+    score_total: int = Field(0, description="Puntuación comercial otorgada (0-100)")
+    motivos_scoring: Optional[str] = Field(None, description="Desglose explicativo de la puntuación")
+    sector: Optional[str] = Field(None, description="Sector de actividad identificado")
+    prioridad: Optional[str] = Field("Baja", description="Prioridad comercial (Alta, Media, Baja)")
+    pmp_dias: Optional[int] = Field(None, description="Periodo Medio de Pago del ayuntamiento")
+    ratio_prorrogas: Optional[float] = Field(None, description="Ratio VEC / PBL")
+    estado_operativo: str = Field("Nueva", description="Estado comercial operativo del lote")
+    notas_usuario: Optional[str] = Field(None, description="Notas internas del equipo de Incoop")
+    empresa_adjudicataria: Optional[str] = Field(None, description="Empresa adjudicataria post-licitación")
+    importe_adjudicacion: Optional[float] = Field(None, description="Importe final de cierre")
+    dinero_en_la_mesa: Optional[float] = Field(None, description="Diferencia monetaria con la oferta ganadora")
+    horas_internas_invertidas: Optional[int] = Field(0, description="Horas invertidas por el equipo (CAC)")
+    costes_externos: Optional[float] = Field(0.0, description="Gastos externos invertidos (CAC)")
+    importe_garantia_retenida: Optional[float] = Field(0.0, description="Aval real depositado en caja")
+    fecha_devolucion_garantia: Optional[str] = Field(None, description="Fecha estimada de retorno de aval")
+    updated_at: Optional[str] = Field(None, description="Timestamp UTC del último cambio")
+    updated_by: Optional[str] = Field(None, description="Usuario o sistema que realizó la última modificación")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    # Columnas de `lotes` con DEFAULT pero sin NOT NULL en el DDL.
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerar_nulos(cls, data: Any) -> Any:
+        return _sustituir_nulos(data, {
+            "titulo_lote": "(sin título)",
+            "pbl": 0.0,
+            "vec": 0.0,
+            "subrogacion": False,
+            "revision_precios": False,
+            "score_total": 0,
+            "estado_operativo": "Nueva",
+            "lote_numero": 1,
+        })
+
+
+class AnalisisSemanticoResumenSchema(BaseModel):
+    """Esquema resumido del dictamen semántico de la IA (Capa 5)."""
+    subrogacion_detectada: bool = False
+    subrogacion_riesgo: Optional[str] = "BAJO"
+    revision_precios_permitida: bool = False
+    criterios_peso_formulas: Optional[int] = 50
+    criterios_peso_juicio_valor: Optional[int] = 50
+    dictamen_recomendacion: Optional[str] = "REVISAR_RIESGO"
+    dictamen_resumen: Optional[str] = None
+    # Trazabilidad del origen del dictamen: permite al Cockpit advertir cuando el
+    # análisis NO procede de una lectura real del pliego (Regla 5 - Modo Degradado).
+    estado_analisis: Optional[str] = Field("COMPLETADO", description="COMPLETADO | DEGRADADO | ANALISIS_DIFERIDO")
+    modo_degradado: bool = Field(False, description="True si el dictamen no proviene de una lectura real del pliego")
+    modelo_llm: Optional[str] = Field(None, description="Proveedor y modelo que emitió el dictamen")
+    error_detalle: Optional[str] = Field(None, description="Causa de la degradación, si la hubo")
+    subrogacion: Optional[Dict[str, Any]] = None
+    revision_precios: Optional[Dict[str, Any]] = None
+    criterios: Optional[Dict[str, Any]] = None
+    garantia_definitiva: Optional[Dict[str, Any]] = None
+    penalidades: Optional[Dict[str, Any]] = None
+    clausulas_sociales: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LicitacionSchema(BaseModel):
+    """Esquema principal de un Expediente de Licitación de la PSCP / PCSP."""
+    id: str = Field(..., description="Número de expediente o código de licitación")
+    titulo: str = Field(..., description="Título del anuncio o licitación")
+    organo: str = Field(..., description="Órgano de contratación emisor")
+    localidad: Optional[str] = Field(None, description="Municipio o localidad de ejecución")
+    nuts: Optional[str] = Field(None, description="Código NUTS territorial")
+    procedimiento: Optional[str] = Field(None, description="Tipo de procedimiento LCSP")
+    urgente: bool = Field(False, description="Flag de tramitación urgente")
+    fuente: str = Field("PSCP", description="Portal de origen (PSCP / PCSP)")
+    link: Optional[str] = Field(None, description="URL oficial de la licitación")
+    fecha_publicacion: Optional[str] = Field(None, description="Fecha de publicación ISO 8601 UTC")
+    fecha_limite: Optional[str] = Field(None, description="Fecha límite de presentación ISO 8601 UTC")
+    fecha_ingesta: Optional[str] = Field(None, description="Fecha de ingesta ISO 8601 UTC")
+    alerta_modificacion: bool = Field(False, description="Flag de modificación pospublicación")
+    log_cambios: Optional[str] = Field(None, description="Historial de rectificaciones")
+    score_maximo: Optional[int] = Field(0, description="Puntuación máxima entre sus lotes")
+    lotes: List[LoteSchema] = Field(default_factory=list, description="Listado de lotes asociados")
+    analisis_semantico: Optional[Dict[str, Any]] = Field(None, description="Dictamen detallado de la IA")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    # Columnas de `expedientes` con DEFAULT pero sin NOT NULL en el DDL.
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerar_nulos(cls, data: Any) -> Any:
+        return _sustituir_nulos(data, {
+            "titulo": "(sin título)",
+            "organo": "No informado",
+            "fuente": "PSCP",
+            "urgente": False,
+            "alerta_modificacion": False,
+            "score_maximo": 0,
+            "lotes": [],
+        })
+
+
+# ==============================================================================
+# Esquemas de Canal Proactivo (Centinela de Boletines DOGC / BOPB)
+# ==============================================================================
+
+class AlertaBoletinSchema(BaseModel):
+    """Esquema de representación de una Alerta de Boletín Oficial (Capa 6)."""
+    id_alerta: str = Field(..., description="Hash SHA256 identificador único de la alerta")
+    fuente: str = Field(..., description="Boletín emisor (DOGC o BOPB)")
+    num_boletin: str = Field(..., description="Número / Referencia del boletín oficial")
+    fecha_publicacion: str = Field(..., description="Fecha de publicación ISO 8601 UTC")
+    organo_emisor: str = Field(..., description="Ente u órgano emisor")
+    municipio: Optional[str] = Field(None, description="Municipio de ejecución")
+    titulo_anuncio: str = Field(..., description="Título o disposición del anuncio")
+    seccion_boletin: Optional[str] = Field(None, description="Sección oficial del boletín")
+    url_anuncio: Optional[str] = Field(None, description="URL de la disposición oficial")
+    url_pdf: Optional[str] = Field(None, description="URL del archivo PDF oficial")
+    texto_sumario: Optional[str] = Field(None, description="Extracto de texto del anuncio")
+    score_temprano: int = Field(0, description="Puntuación de viabilidad temprana (0-100)")
+    motivos_score: Optional[str] = Field(None, description="Desglose explicativo de la puntuación")
+    categoria_fase_temprana: str = Field("OTROS", description="Categoría LCSP de fase temprana")
+    dictamen_ia_json: Optional[Dict[str, Any]] = Field(None, description="Dictamen cualitativo de la IA")
+    estado_operativo: str = Field("NUEVA_FASE_TEMPRANA", description="Estado operativo proactivo")
+    expediente_licitacion_vinculado: Optional[str] = Field(None, description="ID del expediente PSCP vinculado")
+    notas_usuario: Optional[str] = Field(None, description="Notas internas del equipo")
+    fecha_ingesta: Optional[str] = Field(None, description="Fecha de ingesta ISO 8601 UTC")
+    updated_at: Optional[str] = Field(None, description="Timestamp UTC de actualización")
+
+    model_config = ConfigDict(from_attributes=True)
+
+    # Columnas de `boletines_alertas` con DEFAULT pero sin NOT NULL en el DDL.
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerar_nulos(cls, data: Any) -> Any:
+        return _sustituir_nulos(data, {
+            "score_temprano": 0,
+            "categoria_fase_temprana": "OTROS",
+            "estado_operativo": "NUEVA_FASE_TEMPRANA",
+        })
+
+
+# ==============================================================================
+# Esquemas Analíticos de KPIs (Dashboard Header / Summary)
+# ==============================================================================
+
+class KPISummarySchema(BaseModel):
+    """Esquema de métricas globales agregadas para el Cockpit Visual (Capa 8)."""
+    total_expedientes: int = Field(0, description="Total de expedientes en base de datos")
+    total_lotes: int = Field(0, description="Total de lotes gestionados")
+    licitaciones_estudio: int = Field(0, description="Licitaciones actualmente en estudio")
+    licitaciones_presentadas: int = Field(0, description="Licitaciones presentadas pendientes de fallo")
+    licitaciones_ganadas: int = Field(0, description="Licitaciones adjudicadas a Incoop")
+    licitaciones_perdidas: int = Field(0, description="Licitaciones adjudicadas a la competencia")
+    win_rate_porcentaje: float = Field(0.0, description="Porcentaje de éxito (Ganadas / Presentadas)")
+    volumen_total_pbl: float = Field(0.0, description="Importe total acumulado en PBL (€)")
+    capital_garantias_retenidas: float = Field(0.0, description="Avales inmovilizados en caja (€)")
+    alertas_tempranas_activas: int = Field(0, description="Alertas proactivas de boletines vigentes")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==============================================================================
+# Esquema Genérico de Paginación
+# ==============================================================================
+
+T = TypeVar("T")
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Esquema genérico contenedor para listados paginados."""
+    items: List[T] = Field(..., description="Lista de elementos devueltos en la página actual")
+    total: int = Field(..., description="Total de registros coincidentes en base de datos")
+    page: int = Field(..., description="Número de página actual (1-indexed)")
+    limit: int = Field(..., description="Cantidad de registros por página")
+    total_pages: int = Field(..., description="Total de páginas calculadas")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==============================================================================
+# Esquemas de Mutación / Transición de Estado (PUT Body)
+# ==============================================================================
+
+class TransicionEstadoLicitacionSchema(BaseModel):
+    """DTO para actualizar el estado operativo y notas de una licitación/lote."""
+    nuevo_estado: str = Field(..., description="Nuevo estado operativo solicitado")
+    lote_numero: int = Field(1, ge=1, description="Número de lote exacto al que se aplica la mutación")
+    notas: Optional[str] = Field(None, description="Notas internas opcionales enviadas por el usuario")
+
+    @field_validator("nuevo_estado")
+    @classmethod
+    def validar_estado(cls, v: str) -> str:
+        estados_validos = [e.value for e in EstadoLicitacionEnum]
+        if v not in estados_validos:
+            raise ValueError(f"Estado '{v}' no es válido. Estados permitidos: {estados_validos}")
+        return v
+
+
+class TransicionEstadoAlertaSchema(BaseModel):
+    """DTO para actualizar el estado operativo y notas de una alerta temprana del Centinela."""
+    nuevo_estado: str = Field(..., description="Nuevo estado proactivo solicitado")
+    notas: Optional[str] = Field(None, description="Notas internas opcionales")
+
+    @field_validator("nuevo_estado")
+    @classmethod
+    def validar_estado(cls, v: str) -> str:
+        estados_validos = [e.value for e in EstadoAlertaEnum]
+        if v not in estados_validos:
+            raise ValueError(f"Estado de alerta '{v}' no es válido. Estados permitidos: {estados_validos}")
+        return v
+
+
+# ==============================================================================
+# Esquemas de Operación, Salud y Errores
+# ==============================================================================
+
+class HealthResponseSchema(BaseModel):
+    """Esquema de respuesta del endpoint GET /api/v1/health."""
+    status: str = Field(..., description="Estado de salud general (OK / ERROR)")
+    timestamp: str = Field(..., description="Timestamp ISO 8601 UTC")
+    db_path: str = Field(..., description="Ruta a la base de datos SQLite")
+    directorio_accesible: bool = Field(..., description="Permiso de escritura en disco")
+    wal_mode_active: bool = Field(..., description="Estado activo del diario WAL")
+    schema_version: Optional[int] = Field(None, description="Versión actual del esquema SQLite")
+    query_test_ok: bool = Field(..., description="Resultado de la consulta SQL de prueba")
+    error: Optional[str] = Field(None, description="Detalle del error si status == ERROR")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class APIErrorResponse(BaseModel):
+    """Esquema estandarizado de respuesta para excepciones y errores HTTP en la API."""
+    error_code: str = Field(..., description="Código técnico identificador del error")
+    message: str = Field(..., description="Mensaje explicativo del error para el usuario")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), description="Timestamp UTC del error")
+    details: Optional[Dict[str, Any]] = Field(None, description="Detalles contextuales adicionales")
+
+    model_config = ConfigDict(from_attributes=True)

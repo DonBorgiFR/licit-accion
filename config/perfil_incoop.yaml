@@ -1,0 +1,307 @@
+# Perfil de negocio de Incoop para filtrado y scoring de licitaciones
+perfil:
+  # Contrato de scoring v2: toda puntuación persistida y expuesta por la API vive en [0, 100].
+  # El Filtro conserva sus señales ponderadas internamente y las normaliza contra este máximo.
+  scoring:
+    version: "2.0.0"
+    maximo_bruto: 170
+    umbral_alta: 65
+    umbral_media: 40
+
+  presupuesto:
+    minimo: 35000.00
+    maximo: 2000000.00
+    
+  procedimientos:
+    - "Abierto"
+    - "Abierto simplificado"
+
+  # Filtros Duros de Exclusión por texto (Descarte inmediato)
+  exclusiones:
+    - "obras"
+    - "construcción"
+    - "suministro"
+    - "ingeniería"
+    - "arquitectura"
+    - "software puro"
+    - "renting"
+    - "compra de equipos"
+    - "energía"
+    - "combustible"
+    - "gasóleo"
+    - "seguridad privada"
+    - "vigilancia"
+    - "ambulancia"
+    - "seguro"
+    - "seguros"
+    - "póliza"
+
+  # Palabras Clave de Advertencia (Penalización en Scoring)
+  palabras_alerta:
+    - "mantenimiento integral"
+    - "obra menor"
+    - "suministro de mobiliario"
+    - "auditoría externa"
+    - "equipamiento"
+    - "renovación de calzada"
+    - "impermeabilización"
+
+  # Presencia Histórica y Operativa de Incoop (Prioridad Geográfica Máxima +40 pts)
+  presencia_historica_incoop:
+    municipios:
+      - "solsona"
+      - "terrassa"
+      - "suria"
+      - "sant marti de tous"
+      - "sant cugat"
+      - "sant cugat del valles"
+      - "viladecans"
+      - "montmelo"
+      - "sant adria"
+      - "sant adria de besos"
+      - "llinars del valles"
+      - "santa perpetua"
+      - "santa perpetua de mogoda"
+      - "mataro"
+      - "sabadell"
+      - "arenys de mar"
+      - "arenys"
+      - "malgrat de mar"
+      - "parets del valles"
+      - "pont de vilomara"
+      - "el pont de vilomara i rocafort"
+      - "mollet"
+      - "mollet del valles"
+      - "montornes"
+      - "montornes del valles"
+      - "masnou"
+      - "el masnou"
+      - "canet de mar"
+      - "castellbell i el vilar"
+      - "figueres"
+      - "igualada"
+      - "manresa"
+      - "olius"
+      - "alella"
+      - "santpedor"
+      - "hostalets de balenya"
+      - "el prat"
+      - "el prat de llobregat"
+      - "hospitalet"
+      - "l'hospitalet"
+      - "l'hospitalet de llobregat"
+      - "badalona"
+      - "sant joan despi"
+      - "rubi"
+      - "sant joan de vilatorrada"
+      - "odena"
+      - "ullastrell"
+      - "calaf"
+      - "sentmenat"
+      - "la llagosta"
+      - "consorci de la mina"
+      - "la mina"
+      - "vilassar de dalt"
+      - "castelltercol"
+      - "sant just desvern"
+      - "sant vicenc dels horts"
+      - "vilanova del cami"
+
+    barrios_distritos_barcelona:
+      - "sant andreu"
+      - "baro de viver"
+      - "trinitat vella"
+      - "bon pastor"
+      - "guinardo"
+      - "teixonera"
+      - "horta"
+      - "vall hebron"
+      - "vall d'hebron"
+      - "sant marti"
+      - "verneda"
+      - "clot"
+      - "taulat"
+      - "via trajana"
+      - "besos"
+      - "poblenou"
+      - "nou barris"
+      - "trinitat nova"
+      - "zona nord"
+      - "ciutat meridiana"
+      - "vallbona"
+      - "ciutat vella"
+      - "sagrada familia"
+      - "eixample"
+      - "poble sec"
+      - "sants"
+      - "gornal"
+
+    comarcas_core:
+      - "barcelones"
+      - "valles occidental"
+      - "valles oriental"
+      - "maresme"
+      - "baix llobregat"
+      - "bages"
+      - "anoia"
+      - "solsones"
+      - "osona"
+      - "alt emporda"
+
+  # Geografía Preferente
+  geografia_catalunya:
+    provincias_prefijos:
+      - "08"  # Barcelona
+      - "17"  # Girona
+      - "25"  # Lleida
+      - "43"  # Tarragona
+    
+    # Foco estratégico prioritario (Barcelona, Barcelonès y Corona Metropolitana / Alrededores)
+    nuts_barcelona_metropolita:
+      - "ES511"  # Barcelona y provincia (Barcelonès, Baix Llobregat, Vallès, Maresme, etc.)
+    
+    ciudades_barcelona_alrededores:
+      - "barcelona"
+      - "l'hospitalet"
+      - "hospitalet"
+      - "badalona"
+      - "santa coloma"
+      - "sant adria"
+      - "terrassa"
+      - "sabadell"
+      - "mataro"
+      - "cornella"
+      - "sant boi"
+      - "sant cugat"
+      - "rubi"
+      - "cerdanyola"
+      - "molins de rei"
+      - "viladecans"
+      - "castelldefels"
+      - "granollers"
+      - "mollet"
+      - "el prat"
+      - "manresa"
+      - "montmelo"
+      - "gava"
+      - "gavà"
+      - "sant feliu"
+      - "vilassar"
+      - "premia"
+    
+    # Cobertura secundaria en el resto de Catalunya (Sin exclusión dura, prioridad general)
+    nuts_resto_catalunya:
+      - "ES51"   # NUTS Cataluña general
+      - "ES512"  # Girona
+      - "ES513"  # Lleida
+      - "ES514"  # Tarragona
+
+    ciudades_resto_catalunya:
+      - "girona"
+      - "lleida"
+      - "tarragona"
+      - "reus"
+      - "figueres"
+      - "vic"
+      - "olot"
+      - "tortosa"
+      - "igualada"
+      - "blanes"
+      - "lloret"
+      - "amposta"
+
+
+  # Órganos de Alta Afinidad
+  organos_afines:
+    - "ajuntament"
+    - "consell comarcal"
+    - "diputacio"
+    - "consorci"
+    - "generalitat"
+    - "escola bressol"
+    - "patronat"
+    - "institut social"
+    - "cooperativa"
+
+  # Palabras Clave Positivas del Núcleo Duro (Alta Puntuación)
+  palabras_positivas_nucleo:
+    - "escola bressol"
+    - "escoles bressol"
+    - "guarderia"
+    - "atencio domiciliaria"
+    - "atencion domiciliaria"
+    - "gent gran"
+    - "ancianos"
+    - "dependencia"
+    - "menjador escolar"
+    - "menjadors escolars"
+
+  # Palabras Clave Positivas Secundarias (Media Puntuación)
+  palabras_positivas_secundarias:
+    - "ludoteca"
+    - "extraescolar"
+    - "casal d'estiu"
+    - "casal d estiu"
+    - "social"
+    - "cultural"
+    - "biblioteca"
+    - "centre civic"
+    - "centro civico"
+    - "infantil"
+    - "catering"
+    - "menjador"
+    - "comedor"
+    - "restauracio"
+    - "restauracion"
+    - "neteja"
+    - "limpieza"
+    - "manteniment"
+    - "mantenimiento"
+    - "consultoria"
+    - "assessorament"
+    - "asesoramiento"
+    - "auditoria"
+    - "cooperativa"
+
+  # CPVs de Interés por Sector
+  sectores_cpv:
+    educativo:
+      - "80000000"  # Servicios de enseñanza y formación general
+      - "80100000"  # Educación primaria
+      - "80110000"  # Guarderías escolares / escoles bressol
+      - "80200000"  # Educación secundaria
+      - "80300000"  # Educación superior
+      - "80400000"  # Servicios de formación de adultos y otros servicios de enseñanza
+      - "85312110"  # Guarderías escolares sociales
+    social:
+      - "85300000"  # Servicios de asistencia social general
+      - "85310000"  # Servicios de asistencia social con o sin alojamiento
+      - "85311000"  # Servicios de asistencia social con alojamiento
+      - "85312000"  # Servicios de asistencia social sin alojamiento
+      - "85312100"  # Servicios de centros de día
+      - "85312300"  # Servicios de asesoramiento sobre bienestar social
+      - "85320000"  # Servicios sociales comunitarios
+    cultural:
+      - "92000000"  # Servicios de esparcimiento, culturales y deportivos
+      - "92500000"  # Servicios de bibliotecas, archivos y museos
+      - "92510000"  # Servicios de bibliotecas
+      - "92520000"  # Servicios de museos y conservación de monumentos
+      - "79952000"  # Servicios de organización de eventos
+    restauracion:
+      - "55520000"  # Servicios de suministro de comidas
+      - "55523100"  # Servicios de comidas escolares
+      - "55524000"  # Servicios de catering escolar
+    mantenimiento:
+      - "90910000"  # Servicios de limpieza
+      - "50700000"  # Servicios de reparación y mantenimiento de edificios
+    consultoria:
+      - "79400000"  # Servicios de consultoría de gestión comercial y proyectos
+      - "75120000"  # Servicios administrativos de educación, cultura y salud
+      - "75130000"  # Servicios de apoyo a la administración pública
+      - "85312300"  # Asesoramiento sobre bienestar social
+    comunitario_asociativo:
+      - "98000000"  # Servicios comunitarios, sociales y personales
+      - "98100000"  # Servicios prestados por organizaciones asociativas
+      - "98130000"  # Servicios asociativos y de entidades sociales
+      - "98300000"  # Servicios diversos comunitarios
+      - "75200000"  # Servicios prestados a la comunidad
