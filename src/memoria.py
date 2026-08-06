@@ -2357,8 +2357,15 @@ class Memoria:
         def _ejecutar_kpis(c: sqlite3.Connection) -> Dict[str, Any]:
             cur = c.cursor()
             
-            # Total expedientes
-            cur.execute("SELECT COUNT(*) FROM expedientes;")
+            # Total expedientes vivos. La tabla `expedientes` no tiene `deleted_at`: el
+            # archivado lógico vive en `lotes`, así que un expediente cuyos lotes están todos
+            # archivados es un expediente archivado. Un COUNT(*) plano los seguía contando y
+            # el Cockpit mostraba "51 Expedientes" sobre un desglose que sólo sumaba 22 lotes.
+            # Es el mismo defecto de poblaciones mezcladas que H-08, en el último contador
+            # que se le escapó a aquella corrección.
+            cur.execute("""
+                SELECT COUNT(DISTINCT expediente_id) FROM lotes WHERE deleted_at IS NULL;
+            """)
             total_exp = cur.fetchone()[0] or 0
             
             # Total lotes
@@ -2475,10 +2482,17 @@ class Memoria:
                 GROUP BY expediente_id
             """
 
+            # JOIN interno, no LEFT: la subconsulta ya filtra `deleted_at IS NULL`, pero un
+            # LEFT JOIN dejaba pasar igualmente los expedientes sin ningún lote vivo, con
+            # todos los campos de `sub` a NULL. Resultado: el Funnel listaba los 29
+            # expedientes archivados junto a los 22 vivos, como filas fantasma de "0 € y
+            # 0 pts" —porque el join de lotes sí los excluía— y una de ellas arrastraba un
+            # score de 115, de la escala anterior al Bloque 2. La tabla con la que se decide
+            # a qué concurso presentarse mostraba más del doble de expedientes de los reales.
             count_sql = f"""
                 SELECT COUNT(DISTINCT e.id)
                 FROM expedientes e
-                LEFT JOIN ({sub_lotes}) sub ON e.id = sub.expediente_id
+                JOIN ({sub_lotes}) sub ON e.id = sub.expediente_id
                 WHERE {where_str};
             """
             cur.execute(count_sql, params)
@@ -2495,7 +2509,7 @@ class Memoria:
                     e.fecha_ingesta, e.alerta_modificacion, e.log_cambios,
                     COALESCE(sub.max_score, 0) AS score_maximo
                 FROM expedientes e
-                LEFT JOIN ({sub_lotes}) sub ON e.id = sub.expediente_id
+                JOIN ({sub_lotes}) sub ON e.id = sub.expediente_id
                 WHERE {where_str}
                 ORDER BY e.fecha_publicacion DESC, e.id DESC
                 LIMIT ? OFFSET ?;

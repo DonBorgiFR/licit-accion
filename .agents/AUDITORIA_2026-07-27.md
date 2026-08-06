@@ -47,9 +47,16 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-18 · El resultado comercial dependía del directorio de trabajo | 🟢 Cerrado | Paso D3 |
 | H-19 · La herramienta de diagnóstico probaba el modelo equivocado | 🟢 Cerrado | Paso D6 |
 | H-20 · Las alertas descartadas desaparecían sin dejar rastro | 🟢 Cerrado | Paso D5 |
+| H-21 · El KPI de cabecera contaba los expedientes archivados | 🟢 Cerrado | Paso D8 |
+| H-22 · El Funnel listaba 29 expedientes archivados como filas fantasma | 🟢 Cerrado | Paso D8 |
+| H-23 · La tabla afirmaba cláusulas que nadie había leído | 🟢 Cerrado | Paso D8 |
 
-**No queda ningún hallazgo abierto**: los 20 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: 171/171, verificada hermética.
+**No queda ningún hallazgo abierto**: los 23 catalogados están cerrados con prueba de regresión
+o verificación reproducible. Suite: 173/173, verificada hermética.
+
+> **H-21, H-22 y H-23 no salieron de leer código ni de la suite en verde: salieron de abrir el
+> Cockpit contra la base de datos real.** Los tres afectaban a lo que el usuario ve en pantalla y
+> ninguno rompía nada. Conviene repetir ese arranque en vivo al cerrar cada capa.
 
 ---
 
@@ -598,6 +605,91 @@ descartadas del canal principal salvo que se pidan por su estado explícito o co
 
 **Regresión**: `tests/test_capa6_e2e.py` — la alerta descartada se guarda pero no aparece en
 ninguna de las dos consultas de listado, y un descarte manual sobrevive a una reejecución.
+
+---
+
+## Hallazgos del arranque en vivo — 2026-08-06
+
+> Los tres salieron de **abrir el Cockpit contra la base de datos real**, con la suite en verde y
+> los 20 hallazgos anteriores cerrados. Ninguno rompía nada: los tres mentían en pantalla.
+
+### H-21 · El KPI de cabecera contaba los expedientes archivados 🟢 CERRADO (Paso D8)
+
+La misma tarjeta del panel anunciaba **"51 Expedientes"** sobre un desglose que sumaba **22 lotes**.
+
+`total_expedientes` hacía `SELECT COUNT(*) FROM expedientes`, sin filtro alguno, mientras el resto
+del panel filtraba `deleted_at IS NULL`. La tabla `expedientes` **no tiene `deleted_at`**: el
+archivado lógico vive en `lotes`, así que un expediente cuyos lotes están todos archivados es un
+expediente archivado. En la base de trabajo, 29 de los 51 estaban en esa situación.
+
+Es el mismo defecto de poblaciones mezcladas que H-08, en el contador que se le escapó a aquella
+corrección.
+
+**Cerrado con**: `SELECT COUNT(DISTINCT expediente_id) FROM lotes WHERE deleted_at IS NULL`.
+**Regresión**: `tests/test_bloque2_coherencia.py::test_los_kpis_de_cabecera_y_de_desglose_cuentan_la_misma_poblacion`.
+
+---
+
+### H-22 · El Funnel listaba los expedientes archivados como filas fantasma 🟢 CERRADO (Paso D8)
+
+Más grave que el anterior, porque afecta a **la tabla con la que se decide a qué concurso
+presentarse**. La API devolvía `total: 51`.
+
+`listar_expedientes_paginados()` usa una subconsulta de lotes que sí filtra `deleted_at IS NULL`,
+pero la unía con **`LEFT JOIN`**: los expedientes sin ningún lote vivo pasaban igualmente, con
+todos los campos de la subconsulta a `NULL`. Se pintaban como filas de **"0 € y 0 pts"**, y una de
+ellas arrastraba un `score_total` de **115** — de la escala anterior al Bloque 2, fuera del rango
+canónico 0-100.
+
+```
+API /licitaciones -> total: 51   (22 vivos + 29 archivados)
+   29 filas sin ningún lote, mostradas como 0 € / 0 pts
+   una de ellas con score 115, de la escala antigua
+```
+
+**Cerrado con**: `JOIN` interno en lugar de `LEFT JOIN`, en la consulta de recuento y en la de
+datos. Verificado en vivo: `total` pasa de 51 a 22, cero filas sin lotes, score máximo 85.
+**Regresión**: `tests/test_bloque2_coherencia.py::test_el_funnel_no_lista_expedientes_archivados`.
+
+---
+
+### H-23 · La tabla afirmaba cláusulas que nadie había leído 🟢 CERRADO (Paso D8)
+
+Dos defectos encadenados en la columna "Cláusulas & Riesgo" de `LicitacionesTable.tsx`, ambos de
+la familia de H-02 pero **en el sentido contrario al que cubrió el Paso C1**.
+
+**1. La ausencia total de análisis no se distinguía.** El distintivo *"Pliego sin analizar"* sólo
+aparecía cuando existía un análisis degradado o incompleto:
+
+```tsx
+const analisisDegradado = Boolean(
+  lic.analisis_semantico?.modo_degradado || ...
+);   // analisis_semantico === null  ->  false
+```
+
+Con `analisis_semantico` a `null` —el pliego nunca se analizó— no salía aviso alguno y la fila
+mostraba *"Sin Subrog. · Sin Revisión"*, derivado de un rastreo de palabras clave del título, con
+el mismo aspecto que una lectura verificada del documento. En la base de trabajo eran **21 de 22
+lotes**: el caso abrumadoramente mayoritario en cuanto el Radar puebla la base.
+
+**2. Cuando el análisis existía, la tabla lo contradecía.** Los indicadores leían
+`lotePrincipal.subrogacion`, la señal preliminar del Radar, en vez del resultado del análisis. El
+único expediente analizado de la base (`2026/000030702`) tenía:
+
+| Fuente | Subrogación | Revisión de precios |
+|---|---|---|
+| Análisis semántico (pliego leído, `COMPLETADO`) | **sí**, riesgo BAJO | **sí**, permitida |
+| `lotes.subrogacion` / `lotes.revision_precios` | `NULL` | `NULL` |
+| **Lo que mostraba la tabla** | **"Sin Subrog."** | **"Sin Revisión"** |
+
+No era una ausencia inventada por falta de datos: era **contradecir un análisis real que existía**.
+Un falso negativo en subrogación es el riesgo más caro del negocio de Incoop.
+
+**Cerrado con**: la lectura del pliego manda sobre la señal preliminar; sin análisis se muestra
+*"Subrogación: sin datos"* / *"Revisión: sin datos"* en vez de afirmar una ausencia, y la fila
+lleva el distintivo *"Pliego sin analizar"*. Verificado en vivo en ambos sentidos: las 21 filas sin
+análisis avisan, y la analizada muestra *"Subrogación · Revisión Precios"*.
+**Regla que lo impide**: Convención C3.
 
 ---
 

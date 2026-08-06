@@ -6,7 +6,7 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **171/171** y sin ningún hallazgo de auditoría abierto. Queda pendiente abrir la
+> negocio LCSP) están cerrados, con la suite en **173/173** y sin ningún hallazgo de auditoría abierto. Queda pendiente abrir la
 > Capa 9: ninguno. El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
@@ -83,7 +83,7 @@ El sistema opera sobre licitaciones regidas por la **Ley 9/2017, de 8 de noviemb
 
 ## ▶️ Cómo Ejecutar el Sistema
 
-> Todos los comandos se lanzan **desde la raíz del proyecto**. Los módulos resuelven `config/` y `data/` como rutas relativas al directorio de trabajo.
+> Se recomienda lanzar los comandos desde la raíz del proyecto, pero desde el 2026-08-06 **ya no es obligatorio**: `config/` y `data/` se resuelven contra la raíz del repositorio, no contra el directorio de trabajo (ver hallazgo H-18). Antes, ejecutar desde otra carpeta cargaba el perfil comercial vacío y puntuaba distinto sin avisar.
 
 ### 1. Pipeline de captación (Capas 1 a 6)
 

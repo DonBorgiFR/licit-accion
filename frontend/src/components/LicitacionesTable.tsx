@@ -226,15 +226,34 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
               ) : (
                 data?.items.map((lic: Licitacion) => {
                   const lotePrincipal = lic.lotes?.[0];
-                  const subrogacion = lotePrincipal?.subrogacion || false;
-                  const revisionPrecios = lotePrincipal?.revision_precios || false;
+                  // La lectura del pliego manda sobre la señal preliminar del Radar. Se leía
+                  // sólo el flag del lote, que procede de un rastreo de palabras clave del
+                  // título y puede estar sin rellenar aunque exista análisis: el único
+                  // expediente analizado de la base mostraba "Sin Subrog. · Sin Revisión"
+                  // cuando la IA había leído el documento y encontrado AMBAS cosas. No es una
+                  // ausencia inventada por falta de datos: es contradecir un análisis real.
+                  const semantico = lic.analisis_semantico;
+                  const subrogacion = Boolean(
+                    semantico ? semantico.subrogacion_detectada : lotePrincipal?.subrogacion
+                  );
+                  const revisionPrecios = Boolean(
+                    semantico ? semantico.revision_precios_permitida : lotePrincipal?.revision_precios
+                  );
                   const pmpDias = lotePrincipal?.pmp_dias;
-                  // El pliego existe pero la IA no pudo leerlo: los indicadores de
-                  // riesgo de esta fila proceden del Filtro, no del análisis del pliego.
+                  // Los indicadores de riesgo de esta fila no proceden de la lectura del
+                  // pliego en dos casos distintos que llevan al mismo error de juicio:
+                  //   1. La IA lo intentó y falló (modo degradado).
+                  //   2. La IA no llegó a intentarlo: no hay análisis en absoluto.
+                  //
+                  // El segundo faltaba, y es el caso ABRUMADORAMENTE mayoritario en una base
+                  // recién poblada por el Radar. Sin distintivo, la fila mostraba "Sin
+                  // Subrog. · Sin Revisión" —derivado de un rastreo de palabras clave del
+                  // título— con el mismo aspecto que una lectura verificada del documento.
+                  // Convención C3: un dato poco fiable sin distintivo es peor que uno ausente.
                   const analisisDegradado = Boolean(
-                    lic.analisis_semantico?.modo_degradado ||
-                      (lic.analisis_semantico?.estado_analisis &&
-                        lic.analisis_semantico.estado_analisis !== 'COMPLETADO')
+                    !semantico ||
+                      semantico.modo_degradado ||
+                      (semantico.estado_analisis && semantico.estado_analisis !== 'COMPLETADO')
                   );
 
                   return (
@@ -317,9 +336,19 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                       {/* Cláusulas & Riesgo */}
                       <td className="p-4 align-top text-center">
                         <div className="flex flex-col items-center gap-1">
+                          {/* Sin lectura del pliego no se afirma la ausencia de una cláusula:
+                              "Sin Subrog." es una conclusión, "Sin datos" es la verdad. */}
                           {subrogacion ? (
                             <Badge variant="danger" className="text-[10px]">
                               Subrogación
+                            </Badge>
+                          ) : analisisDegradado ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] opacity-40 italic"
+                              title="El pliego no se ha analizado: no consta si hay subrogación."
+                            >
+                              Subrogación: sin datos
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="text-[10px] opacity-60">
@@ -330,6 +359,14 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                           {revisionPrecios ? (
                             <Badge variant="success" className="text-[10px]">
                               Revisión Precios
+                            </Badge>
+                          ) : analisisDegradado ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] opacity-40 italic"
+                              title="El pliego no se ha analizado: no consta si admite revisión de precios."
+                            >
+                              Revisión: sin datos
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="text-[10px] opacity-60">

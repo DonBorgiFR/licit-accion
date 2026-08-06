@@ -14,14 +14,14 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 20 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado al día. **La Capa 9 está lista para abrirse.**
+**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 23 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 171/171
+python -m pytest tests/ -q          # debe dar 173/173
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -163,6 +163,19 @@ Un análisis degradado no puede alterar un score en ninguna dirección. No basta
 
 **Por qué**: en la Capa 6, un fallo de parseo se rellenaba con `NULO` y restaba −30 pts (la alerta desaparecía), mientras que un fallo de conexión declaraba `MEDIO` y sumaba +15 pts (la alerta subía de prioridad). Como la IA del Centinela nunca funcionó, ese bonus fantasma se aplicó a **todas** las alertas: era la diferencia entre superar el umbral y no superarlo.
 
+### C7. Una capa no se cierra sin arrancar la aplicación contra la base real
+
+La suite en verde y el código revisado no bastan. Antes de dar una capa por cerrada hay que levantar la API y el Cockpit contra `data/licitaciones.db` y **mirar la pantalla**, comparando cada cifra visible con la consulta directa a la base de datos.
+
+```bash
+python -m uvicorn src.api.main:app --port 8000
+cd frontend && npm run dev          # http://localhost:5173
+```
+
+**Por qué**: con la suite en 171/171 y veinte hallazgos cerrados, arrancar la aplicación destapó otros tres en diez minutos (H-21, H-22, H-23). Los tres afectaban a lo que el usuario ve y ninguno rompía nada: un contador sobre una población distinta a su propio desglose, 29 filas fantasma en la tabla con la que se decide a qué concurso presentarse, y una columna de riesgo que contradecía el único análisis real de la base. Ningún test los habría detectado, porque todos afirmaban sobre datos sintéticos coherentes; el defecto estaba en la unión entre consulta, contrato y pantalla.
+
+**Comprobación mínima**: que cada cifra de cabecera cuadre con su desglose, que ninguna fila salga a cero, y que lo que se afirma de un pliego proceda de haberlo leído.
+
 ---
 
 ## 🛠️ Estado Actual del Desarrollo
@@ -276,9 +289,11 @@ Un análisis degradado no puede alterar un score en ninguna dirección. No basta
 
 * **Paso D7 — El middleware deja de bloquear el bucle de eventos** (2026-08-06): 🟢 `registrar_evento()` hacía E/S de fichero síncrona dentro de un `async def`: mientras se escribía en `pipeline.jsonl`, la API no podía atender ninguna otra petición. Delegado a un hilo con `run_in_threadpool`.
 
+* **Paso D8 — Lo que sólo se ve arrancando la aplicación** (2026-08-06): 🟢 Tres defectos (H-21, H-22, H-23) detectados al levantar la API y el Cockpit contra la base de datos real, con la suite en verde y los 20 hallazgos anteriores ya cerrados. Ninguno rompía nada: los tres **mentían en pantalla**. El KPI de cabecera anunciaba "51 Expedientes" sobre un desglose de 22 lotes; el Funnel listaba los 29 expedientes archivados como filas fantasma de "0 € y 0 pts" por un `LEFT JOIN` que debía ser `JOIN`, una de ellas con un score de 115 de la escala antigua; y la columna de cláusulas afirmaba "Sin Subrog. · Sin Revisión" tanto en los 21 pliegos que nadie había analizado como —peor— en el único analizado, **contradiciendo un análisis que sí había encontrado ambas cosas**. Regresiones en `tests/test_bloque2_coherencia.py`. Suite: **173/173**.
+
 ### Pasos pendientes
 
-Ninguno. La remediación previa a la Capa 9 está cerrada: 20 hallazgos catalogados, 20 cerrados con prueba de regresión o verificación reproducible.
+Ninguno. La remediación previa a la Capa 9 está cerrada: 23 hallazgos catalogados, 23 cerrados con prueba de regresión o verificación reproducible.
 
 
 

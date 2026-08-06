@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "src.api.main:app", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "cockpit",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--config", "frontend/vite.config.ts"],
+      "port": 5173
+    }
+  ]
+}
