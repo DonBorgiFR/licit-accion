@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional, Tuple
 
 # La definición canónica vive en el paquete raíz. Se reexporta aquí porque
 # `src/api/dependencies.py` ya importaba PROJECT_ROOT desde este módulo.
-from src import PROJECT_ROOT, ruta_proyecto
+from src import PROJECT_ROOT, ruta_proyecto, ruta_datos
 
 # =====================================================================
 # HELPER DE VERIFICACIÓN DE PID Y PROCESOS
@@ -408,11 +408,20 @@ class Memoria:
 
     def __init__(self, db_path: Optional[str] = None):
         env_path = os.getenv("DB_PATH_INCOOP")
-        raw_path = env_path or db_path or "data/licitaciones.db"
+        raw_path = env_path or db_path or ruta_datos("licitaciones.db")
         if not os.path.isabs(raw_path):
             raw_path = str((PROJECT_ROOT / raw_path).resolve())
         self.db_path = raw_path
         self.db_write_lock = threading.Lock()
+
+        # El directorio de almacenamiento se garantiza aquí, no al conectar. `setup_db()`
+        # adquiere el cerrojo de migración ANTES de abrir la primera conexión, así que en una
+        # instalación nueva —donde `data/` no existe, porque está excluida de Git— fallaba con
+        # FileNotFoundError al crear el .lock. Es decir: un clon limpio del repositorio no
+        # podía arrancar el sistema.
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
 
     @contextmanager
     def conectar(self):
@@ -1192,7 +1201,7 @@ class Memoria:
         """
         log_dir = os.path.dirname(self.db_path)
         if not log_dir:
-            log_dir = ruta_proyecto("data")
+            log_dir = ruta_datos()
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, "pipeline.jsonl")
@@ -1447,7 +1456,7 @@ class Memoria:
         # 1. Definir rutas y directorios
         db_dir = os.path.dirname(self.db_path)
         if not db_dir:
-            db_dir = ruta_proyecto("data")
+            db_dir = ruta_datos()
         backups_dir = os.path.join(db_dir, "backups") if not custom_dest_dir else custom_dest_dir
         
         os.makedirs(backups_dir, exist_ok=True)
@@ -1571,7 +1580,7 @@ class Memoria:
         """
         db_dir = os.path.dirname(self.db_path)
         if not db_dir:
-            db_dir = ruta_proyecto("data")
+            db_dir = ruta_datos()
         backups_dir = os.path.join(db_dir, "backups") if not custom_dest_dir else custom_dest_dir
         
         if not os.path.exists(backups_dir):

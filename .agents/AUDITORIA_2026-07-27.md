@@ -50,9 +50,15 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-21 · El KPI de cabecera contaba los expedientes archivados | 🟢 Cerrado | Paso D8 |
 | H-22 · El Funnel listaba 29 expedientes archivados como filas fantasma | 🟢 Cerrado | Paso D8 |
 | H-23 · La tabla afirmaba cláusulas que nadie había leído | 🟢 Cerrado | Paso D8 |
+| H-24 · Un clon limpio del repositorio no podía arrancar | 🟢 Cerrado | Paso D10 |
+| H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
 
-**No queda ningún hallazgo abierto**: los 23 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: 174/174, verificada hermética.
+**No queda ningún hallazgo abierto**: los 25 catalogados están cerrados con prueba de regresión
+o verificación reproducible. Suite: 175/175.
+
+> ⚠️ **Aviso sobre la verificación de hermeticidad**: durante un tiempo se dio por buena una suite
+> "hermética" comprobada bloqueando la red con excepciones. Era un falso verde — ver H-25. El
+> método válido registra los intentos sin impedirlos.
 
 > **H-21, H-22 y H-23 no salieron de leer código ni de la suite en verde: salieron de abrir el
 > Cockpit contra la base de datos real.** Los tres afectaban a lo que el usuario ve en pantalla y
@@ -690,6 +696,65 @@ Un falso negativo en subrogación es el riesgo más caro del negocio de Incoop.
 lleva el distintivo *"Pliego sin analizar"*. Verificado en vivo en ambos sentidos: las 21 filas sin
 análisis avisan, y la analizada muestra *"Subrogación · Revisión Precios"*.
 **Regla que lo impide**: Convención C3.
+
+---
+
+## Hallazgos del borrado de la beta — 2026-08-06
+
+> Salieron de **vaciar los datos de prueba y arrancar desde cero absoluto**, a petición de la
+> dirección del proyecto. Ninguno era visible mientras hubiera datos en disco.
+
+### H-24 · Un clon limpio del repositorio no podía arrancar 🟢 CERRADO (Paso D10)
+
+`data/` está excluida de Git, así que en un clon nuevo no existe. `setup_db()` adquiere el cerrojo
+de migración **antes** de abrir la primera conexión, y era `conectar()` quien creaba el directorio:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+   '...fr_incoop\data\licitaciones.db.lock'
+```
+
+Cualquiera que clonara el repositorio y ejecutara `python run.py` se topaba con esto. No se había
+detectado nunca porque en el equipo de desarrollo `data/` llevaba existiendo desde julio.
+
+**Cerrado con**: `Memoria.__init__` garantiza su directorio de almacenamiento en cuanto se
+construye el objeto, no al conectar.
+**Regresión**: `tests/test_rutas_proyecto.py::test_el_sistema_arranca_en_una_instalacion_nueva`.
+
+---
+
+### H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini 🟢 CERRADO (Paso D10)
+
+Dos fugas, y la segunda invalida una verificación que se había dado por buena.
+
+**1. Escritura en el directorio de datos del proyecto.** Ejecutar las pruebas creaba
+`data/licitaciones.db`, volcaba `data/pipeline.jsonl` y generaba informes CSV en la carpeta de
+trabajo. Con datos reales dentro, **ejecutar los tests habría tocado la base de producción**.
+El origen estaba repartido: las rutas por defecto de `memoria`, `analista`, `centinela`, `lector`
+y `api/dependencies` apuntaban a `<raíz>/data`.
+
+**2. La suite seguía llamando a la API real de Gemini**, pese a haberse declarado hermética en el
+Paso D2. `tests/test_centinela_trazabilidad.py` instanciaba `AnalistaBoletinesIA()` sin desactivar
+el proveedor.
+
+**Por qué no se detectó**: la comprobación de hermeticidad **bloqueaba la red lanzando una
+excepción**. El `except Exception` amplio de `analizar_alerta` la capturaba y la convertía en
+"modo degradado", así que la prueba pasaba y la suite parecía limpia. Es exactamente el defecto
+que persiguen las Convenciones C2 y C6, aplicado a la propia herramienta de verificación.
+
+```
+Método defectuoso (bloquea):   175/175 en verde  ->  conclusión falsa
+Método correcto (registra):    175/175 en verde  ->  "generativelanguage.googleapis.com"
+```
+
+**Cerrado con**: nueva función `ruta_datos()` en `src/__init__.py`, que centraliza el directorio de
+datos y admite reubicación mediante `DATA_DIR_INCOOP`; `tests/conftest.py` lo redirige a un
+directorio temporal **al importarse, no en un fixture** —`src/api/dependencies.py` crea su gestor
+de trazabilidad como singleton de módulo y ya crea la carpeta al importar, antes de que corra
+ningún fixture—; y `autoinicializar_proveedor=False` en las dos instancias que faltaban.
+
+**Verificado**: borrando `data/`, la suite da 175/175, no contacta ningún dominio externo y
+**`data/` no llega a crearse**. Ver Convención C5 para el método de comprobación.
 
 ---
 

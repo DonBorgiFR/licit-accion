@@ -74,3 +74,27 @@ def test_los_datos_de_pmp_se_encuentran_desde_cualquier_directorio(tmp_path, mon
 
     monkeypatch.chdir(tmp_path)
     assert PMPService().obtener_pmp("Badalona") == pmp_raiz
+
+
+def test_el_sistema_arranca_en_una_instalacion_nueva(tmp_path):
+    """
+    Regresión de H-24: `data/` está excluida de Git, así que en un clon limpio no existe.
+    `setup_db()` adquiere el cerrojo de migración ANTES de abrir la primera conexión, y era
+    `conectar()` quien creaba el directorio: la creación del `.lock` fallaba con
+    FileNotFoundError y **un clon del repositorio no podía arrancar el sistema**.
+
+    Se detectó al borrar los datos de la beta y arrancar desde cero absoluto.
+    """
+    from src.memoria import Memoria
+
+    db_path = tmp_path / "instalacion_nueva" / "subcarpeta" / "licitaciones.db"
+    assert not db_path.parent.exists(), "El directorio no debe existir antes de instanciar"
+
+    memoria = Memoria(db_path=str(db_path))
+    memoria.setup_db()
+
+    assert db_path.exists()
+    kpis = memoria.obtener_resumen_kpis()
+    assert kpis["total_expedientes"] == 0
+    assert kpis["total_lotes"] == 0
+    assert kpis["volumen_total_pbl"] == 0.0

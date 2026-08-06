@@ -14,7 +14,7 @@ import csv
 import os
 from typing import List, Optional, Dict, Any, Tuple
 
-from src import ruta_proyecto
+from src import ruta_proyecto, ruta_datos
 
 
 # ==============================================================================
@@ -313,7 +313,7 @@ def log_evento_jsonl(evento_tipo: str, detalles: Dict[str, Any], log_path: str =
     """
     Registra eventos estructurados deterministas en el log central JSONL (Regla 3).
     """
-    log_path = ruta_proyecto(log_path)
+    log_path = ruta_datos("pipeline.jsonl") if log_path == "data/pipeline.jsonl" else ruta_proyecto(log_path)
     try:
         log_dir = os.path.dirname(log_path)
         if log_dir and not os.path.exists(log_dir):
@@ -1153,7 +1153,7 @@ class GestorTrazabilidadCentinela:
     Garantiza el registro estructurado de eventos en data/pipeline.jsonl (Regla 3).
     """
     def __init__(self, log_path: str = "data/pipeline.jsonl"):
-        self.log_path = ruta_proyecto(log_path)
+        self.log_path = ruta_datos("pipeline.jsonl") if log_path == "data/pipeline.jsonl" else ruta_proyecto(log_path)
         os.makedirs(os.path.dirname(os.path.abspath(self.log_path)), exist_ok=True)
 
     def registrar_evento(self, tipo_evento: str, payload: Dict[str, Any], estado: str = "INFO") -> None:
@@ -1298,7 +1298,7 @@ def exportar_reporte_centinela_csv(
         memoria_svc = Memoria(db_path=db_path)
         alertas = memoria_svc.listar_alertas_tempranas(limite=500)
 
-        output_csv = ruta_proyecto(output_csv)
+        output_csv = ruta_datos("alertas_tempranas.csv") if output_csv == "data/alertas_tempranas.csv" else ruta_proyecto(output_csv)
         os.makedirs(os.path.dirname(os.path.abspath(output_csv)), exist_ok=True)
 
         fieldnames = [

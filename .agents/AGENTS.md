@@ -14,14 +14,14 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 23 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
+**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 25 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 174/174
+python -m pytest tests/ -q          # debe dar 175/175
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -155,7 +155,25 @@ Ninguna prueba puede depender de un servicio externo. Un componente con arranque
 
 **Por qué**: una prueba que llama a un LLM real gasta cuota del usuario, tarda, y su resultado depende de lo que conteste el modelo ese día. Deja de ser una red de seguridad y pasa a ser una fuente de ruido. Se detectó porque el e2e de la Capa 6 fallaba de forma intermitente tras reparar la factoría.
 
-**Cómo se comprueba**: bloqueando las conexiones externas mediante un `sitecustomize.py` que intercepte `socket.connect` y `socket.getaddrinfo`, permitiendo sólo `127.0.0.1` (el `TestClient` de FastAPI usa tráfico local legítimo). La suite debe seguir dando 159/159.
+La suite tampoco puede escribir en el `data/` del proyecto. `tests/conftest.py` redirige `DATA_DIR_INCOOP` a un directorio temporal, y lo hace **al importarse el fichero, no dentro de un fixture**: `src/api/dependencies.py` crea su gestor de trazabilidad como singleton de módulo y ese constructor ya crea la carpeta de destino, lo que ocurre durante la recolección de pruebas, antes de que se ejecute ningún fixture.
+
+**Cómo se comprueba — y cómo NO**: ⚠️ **bloquear la red lanzando una excepción no sirve**. Se intentó y dio un falso verde: un `except Exception` amplio en el analista convertía el bloqueo en "modo degradado" y las pruebas pasaban igual, mientras la suite seguía llamando a Gemini en cada ejecución. Es el mismo defecto que estas convenciones combaten, aplicado a su propia verificación.
+
+El método correcto **registra los intentos sin impedirlos**, para que ningún `except` pueda ocultarlos:
+
+```python
+# sitecustomize.py en el PYTHONPATH — envuelve getaddrinfo SIN lanzar excepciones
+import atexit, socket
+_ext, _gai = set(), socket.getaddrinfo
+def gai(host, *a, **k):
+    if str(host) not in {"127.0.0.1", "localhost", "::1", "0.0.0.0"}:
+        _ext.add(str(host))
+    return _gai(host, *a, **k)
+socket.getaddrinfo = gai
+atexit.register(lambda: print("EXTERNOS:", _ext or "(ninguno)"))
+```
+
+Comprobación completa: borrar `data/`, ejecutar la suite y verificar las tres cosas — que pasa entera, que no aparece ningún dominio externo, y que `data/` **no llega a crearse**.
 
 ### C6. Lo que no se pudo medir, no puntúa
 
@@ -293,9 +311,13 @@ cd frontend && npm run dev          # http://localhost:5173
 
 * **Paso D9 — El Cockpit da acceso a lo descartado** (2026-08-06): 🟢 Nuevo filtro *"Descartada por Reglas (auditoría)"* en el canal Centinela: es el único acceso desde la interfaz a lo que el pipeline descartó por no alcanzar el umbral, y la vista que hay que revisar tras bajar un umbral o actualizar los PMP. El estado **no** se ofrece en el selector de cada fila —si descarta una persona, es `DESCARTADA_TEMPRANA`—, pero sí se muestra cuando la alerta ya lo tiene, o el selector saldría en blanco; desde ahí se rescata llevándola a un estado humano. Verificado en vivo contra una base sembrada: rescate de una alerta descartada a `EN_ESTUDIO_PROACTIVO`, que persiste. Suite: **174/174**.
 
+* **Paso D10 — Borrado de la beta y lo que destapó** (2026-08-06): 🟢 Vaciados los datos de prueba a petición de la dirección. Arrancar desde cero absoluto reveló que **un clon limpio del repositorio no podía iniciar el sistema** (H-24): `data/` está excluida de Git y `setup_db()` creaba el cerrojo antes de que existiera el directorio. Y al comprobar que el estado limpio se mantenía, apareció que **la suite escribía en el `data/` real** —con datos dentro, habría tocado la base de producción— y que **seguía llamando a Gemini** pese a haberse declarado hermética en el Paso D2 (H-25). Nueva función `ruta_datos()` con reubicación por `DATA_DIR_INCOOP`, y `tests/conftest.py` que la redirige al importarse. Suite: **175/175**, sin contactar ningún dominio externo y sin crear `data/`.
+
 ### Pasos pendientes
 
-Ninguno. La remediación previa a la Capa 9 está cerrada: 23 hallazgos catalogados, 23 cerrados con prueba de regresión o verificación reproducible.
+Ninguno. La remediación previa a la Capa 9 está cerrada: 25 hallazgos catalogados, 25 cerrados con prueba de regresión o verificación reproducible.
+
+**Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 
 
 

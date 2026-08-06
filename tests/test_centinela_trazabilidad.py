@@ -69,7 +69,8 @@ def test_ejecutar_pipeline_centinela_resiliente_exito(tmp_path, monkeypatch):
 
     ingestor = MockIngestor()
     filtro = FiltroBoletinesReglas()
-    analista = AnalistaBoletinesIA()
+    # Sin proveedor real: la suite no debe salir a la red (Convención C5).
+    analista = AnalistaBoletinesIA(autoinicializar_proveedor=False)
     evaluador = EvaluadorScoringCentinela()
 
     alertas_res, metricas = ejecutar_pipeline_centinela_resiliente(
@@ -95,7 +96,8 @@ def test_ejecutar_pipeline_centinela_resiliente_degradado(tmp_path, monkeypatch)
 
     ingestor = MockIngestor()
     filtro = FiltroBoletinesReglas()
-    analista = AnalistaBoletinesIA()
+    # Sin proveedor real: la suite no debe salir a la red (Convención C5).
+    analista = AnalistaBoletinesIA(autoinicializar_proveedor=False)
     evaluador = EvaluadorScoringCentinela()
 
     # Forzar error global en ingestor

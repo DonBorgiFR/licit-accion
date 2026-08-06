@@ -16,7 +16,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
-from src import ruta_proyecto
+from src import ruta_proyecto, ruta_datos
 
 # =====================================================================
 # CONTRATOS DE SERVICIO (DATACLASSES)
@@ -338,9 +338,9 @@ class Lector:
 
     def _inicializar_directorios(self) -> bool:
         """Inicializa físicamente las carpetas de almacenamiento y valida permisos de escritura."""
-        db_dir = ruta_proyecto("data")
+        db_dir = ruta_datos()
         if self.db and hasattr(self.db, "db_path"):
-            db_dir = os.path.dirname(self.db.db_path) or ruta_proyecto("data")
+            db_dir = os.path.dirname(self.db.db_path) or ruta_datos()
             
         carpetas = {
             "pliegos": os.path.join(db_dir, "pliegos"),
@@ -407,9 +407,9 @@ class Lector:
         Crea los directorios necesarios.
         Retorna (final_path, temp_path).
         """
-        db_dir = ruta_proyecto("data")
+        db_dir = ruta_datos()
         if self.db and hasattr(self.db, "db_path"):
-            db_dir = os.path.dirname(self.db.db_path) or ruta_proyecto("data")
+            db_dir = os.path.dirname(self.db.db_path) or ruta_datos()
             
         # Normalizar caracteres problemáticos del expediente_id para rutas de Windows
         exp_clean = re.sub(r'[\\/*?:"<>|]', '_', expediente_id).strip()
@@ -698,9 +698,9 @@ class Lector:
         self.registrar_log_JSONL(action="run_downloads_summary", reason=summary_reason, duration_ms=int(duration_total * 1000))
         
         # Generar CSV consolidado en data/reports
-        db_dir = ruta_proyecto("data")
+        db_dir = ruta_datos()
         if self.db and hasattr(self.db, "db_path"):
-            db_dir = os.path.dirname(self.db.db_path) or ruta_proyecto("data")
+            db_dir = os.path.dirname(self.db.db_path) or ruta_datos()
         report_dir = os.path.join(db_dir, "reports")
         os.makedirs(report_dir, exist_ok=True)
         report_csv = os.path.join(report_dir, "downloads_summary.csv")

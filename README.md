@@ -6,7 +6,7 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **174/174** y sin ningún hallazgo de auditoría abierto. Queda pendiente abrir la
+> negocio LCSP) están cerrados, con la suite en **175/175** y sin ningún hallazgo de auditoría abierto. La base de datos está **vacía a propósito**: los datos de la beta se borraron el 2026-08-06 y la primera ejecución real producirá un conjunto coherente, puntuado íntegramente con los criterios vigentes. Queda pendiente abrir la
 > Capa 9: ninguno. El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,

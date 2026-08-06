@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timezone
 from typing import Generator, Dict, Any, Optional
 
+from src import ruta_datos
 from src.memoria import Memoria, PROJECT_ROOT
 
 
@@ -75,7 +76,12 @@ class GestorTrazabilidadAPI:
     Registra eventos estructurados en data/pipeline.jsonl.
     """
     def __init__(self, log_path: str = "data/pipeline.jsonl"):
-        if not os.path.isabs(log_path):
+        # El destino por defecto sale de ruta_datos(), no de PROJECT_ROOT: así la suite de
+        # pruebas puede reubicar el directorio de datos y dejar de escribir en el del
+        # proyecto. Ver tests/conftest.py y la Convención C5.
+        if log_path == "data/pipeline.jsonl":
+            log_path = ruta_datos("pipeline.jsonl")
+        elif not os.path.isabs(log_path):
             log_path = str((PROJECT_ROOT / log_path).resolve())
         self.log_path = log_path
         os.makedirs(os.path.dirname(os.path.abspath(self.log_path)), exist_ok=True)
@@ -115,7 +121,7 @@ def get_db(db_path: Optional[str] = None) -> Generator[sqlite3.Connection, None,
     Garantiza la liberación segura en el bloque `finally` sin atrapar ni alterar
     las excepciones generadas por la lógica de los endpoints.
     """
-    target_path = db_path or os.getenv("DB_PATH_INCOOP", "data/licitaciones.db")
+    target_path = db_path or os.getenv("DB_PATH_INCOOP") or ruta_datos("licitaciones.db")
     memoria = Memoria(db_path=target_path)
     
     try:
@@ -149,7 +155,7 @@ def healthcheck_api_dependencies(db_path: Optional[str] = None) -> Dict[str, Any
     4. Versión del esquema en la tabla `metadata` (esperada: 5).
     5. Ejecución limpia de consulta de prueba (`SELECT 1`).
     """
-    target_path = db_path or os.getenv("DB_PATH_INCOOP", "data/licitaciones.db")
+    target_path = db_path or os.getenv("DB_PATH_INCOOP") or ruta_datos("licitaciones.db")
     db_dir = os.path.dirname(os.path.abspath(target_path))
     
     # 1. Permisos de disco

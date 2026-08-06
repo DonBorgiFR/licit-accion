@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
-from src import ruta_proyecto
+from src import ruta_proyecto, ruta_datos
 
 # =====================================================================
 # JERARQUÍA DE ERRORES ESTRUCTURADOS DE LA CAPA 5
@@ -1078,7 +1078,7 @@ class AnalistaIA:
         )
 
     def registrar_log_jsonl(self, event_type: str, data: Dict[str, Any], log_dir: str = "data") -> None:
-        log_dir = ruta_proyecto(log_dir)
+        log_dir = ruta_datos() if log_dir == "data" else ruta_proyecto(log_dir)
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, "pipeline.jsonl")
@@ -1339,7 +1339,7 @@ class AnalistaIA:
         hc_recalibrador = self.recalibrador.healthcheck_recalibrador()
 
         # Check logger directory
-        log_dir = ruta_proyecto("data")
+        log_dir = ruta_datos()
         can_write_log = os.access(log_dir if os.path.exists(log_dir) else ".", os.W_OK)
 
         return {
@@ -1359,7 +1359,7 @@ class AnalistaIA:
         """
         import csv
         import sqlite3
-        csv_path = ruta_proyecto(csv_path)
+        csv_path = ruta_datos("reports", "analisis_semantico_summary.csv") if csv_path == "data/reports/analisis_semantico_summary.csv" else ruta_proyecto(csv_path)
         reports_dir = os.path.dirname(csv_path)
         if reports_dir and not os.path.exists(reports_dir):
             os.makedirs(reports_dir, exist_ok=True)
@@ -1466,7 +1466,7 @@ class AnalistaIA:
                 print(f"[!] Error al procesar licitación {exp_id} en lote: {e}")
 
         # Generar reporte CSV comercial
-        csv_path = ruta_proyecto("data/reports/analisis_semantico_summary.csv")
+        csv_path = ruta_datos("reports", "analisis_semantico_summary.csv")
         try:
             csv_path = self.generar_reporte_csv(memoria=memoria, csv_path=csv_path)
         except Exception as e_csv:
