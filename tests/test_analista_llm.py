@@ -162,10 +162,11 @@ gemini:
         self.assertEqual(metadatos["estado_analisis"], "DEGRADADO")
         self.assertEqual(metadatos["modelo_llm"], "ninguno/degradado")
         self.assertEqual(dto.dictamen.recomendacion, "REVISAR_RIESGO")
-        # El modo degradado se afirma por campo explícito del DTO (esquema v2),
-        # no por heurística de cadena sobre el resumen ejecutivo.
+        # El modo degradado se afirma por campo explícito del DTO, no por heurística de
+        # cadena sobre el resumen ejecutivo. El esquema subió a v3 al incorporar las tres
+        # cláusulas críticas que faltaban (garantía definitiva, penalidades y sociales).
         self.assertTrue(dto.modo_degradado)
-        self.assertEqual(dto.version_esquema, 2)
+        self.assertEqual(dto.version_esquema, 3)
 
     @patch('urllib.request.urlopen')
     def test_respuesta_json_valida_pero_esquema_invalido_activa_fallback(self, mock_urlopen):

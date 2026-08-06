@@ -106,3 +106,52 @@ def test_healthcheck_scoring_centinela():
     assert hc["status"] == "OK"
     assert hc["score_prioridad_alta"] == 70
     assert hc["score_minimo_alerta"] == 30
+
+
+def test_dictamen_degradado_no_altera_el_score():
+    """
+    Regresión del contrato de Modo Degradado (Bloque 2, regla 4): un análisis que no
+    llegó a producirse no puede mover la puntuación en ninguna dirección.
+
+    Antes, el fallback declaraba nivel_interes="MEDIO" y el evaluador lo bonificaba con
+    +15 pts: una alerta que la IA nunca leyó subía de prioridad. Y si el parseo fallaba,
+    el dictamen se rellenaba con "NULO" y restaba 30 pts, haciéndola desaparecer.
+    """
+    evaluador = EvaluadorScoringCentinela()
+
+    dictamen_degradado = DictamenCentinelaDTO(
+        es_oportunidad_temprana=True,
+        nivel_interes="DESCONOCIDO",
+        categoria_fase_temprana="OTROS",
+        resumen_ejecutivo="Modo Degradado: sin proveedor LLM disponible.",
+        modo_degradado=True
+    )
+
+    sin_dictamen = evaluador.evaluar_alerta(crear_alerta_con_score(40, dictamen=None))
+    degradada = evaluador.evaluar_alerta(crear_alerta_con_score(40, dictamen=dictamen_degradado))
+
+    assert degradada.score_temprano == sin_dictamen.score_temprano
+    assert any("Modo Degradado" in m for m in degradada.motivos_score)
+
+
+def test_alerta_degradada_sigue_llegando_al_cockpit():
+    """
+    La alerta cuyo análisis falló conserva su score de reglas duras y NO se descarta:
+    debe llegar al Cockpit marcada, no desaparecer en silencio (Convención C3).
+    """
+    evaluador = EvaluadorScoringCentinela()
+
+    dictamen_degradado = DictamenCentinelaDTO(
+        es_oportunidad_temprana=True,
+        nivel_interes="DESCONOCIDO",
+        categoria_fase_temprana="OTROS",
+        resumen_ejecutivo="Modo Degradado: error del proveedor.",
+        modo_degradado=True
+    )
+
+    alerta = crear_alerta_con_score(40, dictamen=dictamen_degradado)
+    alerta.estado_operativo = "ANALISIS_DIFERIDO_BOLETIN"
+    resultado = evaluador.evaluar_alerta(alerta)
+
+    assert resultado.estado_operativo != "DESCARTADA_POR_REGLAS"
+    assert resultado.dictamen_ia.modo_degradado is True

@@ -31,7 +31,27 @@ def test_capa6_e2e_flujo_completo(tmp_path):
     memoria = Memoria(db_path=db_path)
     memoria.setup_db()
 
-    # 2. Mock Ingestor con 2 anuncios (uno aceptado en Badalona PMP 78d y uno vetado)
+    # 2. Mock Ingestor con 3 anuncios que cubren las tres salidas posibles del pipeline:
+    #    - Barcelona (PMP 22d, riesgo BAJO): supera el umbral y llega al Cockpit.
+    #    - Badalona (PMP 78d, riesgo ALTO): la penalización financiera lo baja del umbral.
+    #    - Girona (obras): vetado por reglas duras antes de llegar al análisis.
+    #
+    # Badalona se guardaba antes porque el dictamen degradado fingía interés "MEDIO" y le
+    # regalaba +15 pts, justo los que necesitaba para alcanzar el mínimo de 30. Retirado
+    # ese bonus fantasma, queda en 15 pts y se descarta por su PMP real. Esa es la
+    # diferencia entre puntuar un análisis que ocurrió y uno que no.
+    alerta_barcelona = AlertaBoletinDTO(
+        fuente="DOGC",
+        num_boletin="2026-100",
+        fecha_publicacion="2026-07-26T08:00:00Z",
+        organo_emisor="Ajuntament de Barcelona",
+        municipio="Barcelona",
+        titulo_anuncio="Aprovació inicial del pressupost per a serveis educatius (no incluye obras)",
+        seccion_boletin="Anuncis",
+        url_anuncio="https://dogc.cat/100",
+        texto_sumario="Presupuestos municipales para servicios de educación"
+    )
+
     alerta_badalona = AlertaBoletinDTO(
         fuente="DOGC",
         num_boletin="2026-101",
@@ -58,11 +78,14 @@ def test_capa6_e2e_flujo_completo(tmp_path):
 
     class MockIngestor(IngestorBoletines):
         def ejecutar_ingesta_completa(self):
-            return [alerta_badalona, alerta_vetada]
+            return [alerta_barcelona, alerta_badalona, alerta_vetada]
 
     ingestor = MockIngestor()
     filtro = FiltroBoletinesReglas()
-    analista = AnalistaBoletinesIA()
+    # Sin proveedor real: la suite no debe salir a la red ni consumir cuota de la API.
+    # El e2e verifica el flujo completo con el análisis semántico degradado, que es el
+    # escenario que debe seguir entregando alertas al Cockpit.
+    analista = AnalistaBoletinesIA(autoinicializar_proveedor=False)
     evaluador = EvaluadorScoringCentinela()
 
     # 3. Ejecución del Pipeline Resiliente E2E
@@ -74,15 +97,21 @@ def test_capa6_e2e_flujo_completo(tmp_path):
         db_path=db_path
     )
 
-    assert metricas["ingresadas"] == 2
-    assert metricas["aceptadas_filtro"] == 1
+    assert metricas["ingresadas"] == 3
+    assert metricas["aceptadas_filtro"] == 2  # Barcelona y Badalona; Girona queda vetada
     assert metricas["modo_degradado"] is False
 
-    # 4. Verificar persistencia en SQLite v5
+    # El análisis se degradó (no hay proveedor), y eso no puede inventar puntuación:
+    # ninguna alerta debe llevar bonificación ni penalización por dictamen.
+    for alerta in alertas_finales:
+        assert alerta.dictamen_ia.modo_degradado is True
+        assert not any("Interés" in motivo for motivo in alerta.motivos_score)
+
+    # 4. Verificar persistencia en SQLite v5: sólo llega la que supera el umbral
     alertas_db = memoria.listar_alertas_tempranas()
     assert len(alertas_db) == 1
     alerta_guardada = alertas_db[0]
-    assert alerta_guardada.municipio == "Badalona"
+    assert alerta_guardada.municipio == "Barcelona"
 
     # 5. Generación y validación del reporte comercial CSV
     csv_gen = exportar_reporte_centinela_csv(db_path=db_path, output_csv=csv_path)
@@ -92,7 +121,7 @@ def test_capa6_e2e_flujo_completo(tmp_path):
         reader = csv.DictReader(f, delimiter=";")
         rows = list(reader)
         assert len(rows) == 1
-        assert rows[0]["pmp_dias"] == "78"  # PMP real Badalona
+        assert rows[0]["pmp_dias"] == "22"  # PMP real Barcelona
         assert rows[0]["fuente"] == "DOGC"
 
 

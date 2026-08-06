@@ -55,7 +55,11 @@ NIVELES_INTERES_VALIDOS = {
     "ALTO",
     "MEDIO",
     "BAJO",
-    "NULO"
+    "NULO",
+    # Valor exclusivo del Modo Degradado: la IA no pudo emitir un veredicto. No es
+    # sinónimo de "NULO". Existe para que sea imposible leer un análisis fallido
+    # como un desinterés real, aunque quien lo lea ignore `modo_degradado`.
+    "DESCONOCIDO"
 }
 
 # ==============================================================================
@@ -68,11 +72,25 @@ class DictamenCentinelaDTO:
     DTO cualitativo que representa el dictamen del Analista IA sobre un anuncio de boletín.
     """
     es_oportunidad_temprana: bool
-    nivel_interes: str  # 'ALTO', 'MEDIO', 'BAJO', 'NULO'
+    nivel_interes: str  # 'ALTO', 'MEDIO', 'BAJO', 'NULO', 'DESCONOCIDO'
     categoria_fase_temprana: str  # 'PRESUPUESTO', 'SUBVENCION', 'CONVENIO', 'CONSULTA_PRELIMINAR', 'OTROS'
     resumen_ejecutivo: str
     acciones_recomendadas: List[str] = field(default_factory=list)
     estimacion_meses_hasta_licitacion: Optional[int] = None
+    # Esquema v2: el estado degradado se afirma con un campo estructurado, nunca
+    # inspeccionando el texto del resumen (Convención C3).
+    modo_degradado: bool = False
+    version_esquema: int = 2
+
+    # Campos sin los cuales un dictamen no puede proceder de un análisis real. Se
+    # exigen en modo estricto para que un `{}` deje de deserializar como veredicto
+    # válido rellenado con valores por defecto.
+    CAMPOS_OBLIGATORIOS = (
+        "es_oportunidad_temprana",
+        "nivel_interes",
+        "categoria_fase_temprana",
+        "resumen_ejecutivo",
+    )
 
     def __post_init__(self):
         if not isinstance(self.es_oportunidad_temprana, bool):
@@ -97,9 +115,27 @@ class DictamenCentinelaDTO:
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DictamenCentinelaDTO":
+    def from_dict(cls, data: Dict[str, Any], estricto: bool = False) -> "DictamenCentinelaDTO":
         if not isinstance(data, dict):
             raise BoletinDeserializationError("Los datos de entrada deben ser un diccionario Python.")
+
+        # En modo estricto se valida la FORMA del esquema, no sólo que sea un dict.
+        # Sin esto, un `{}` deserializaba como dictamen válido con nivel_interes="NULO"
+        # y el evaluador lo penalizaba con -30 pts: un análisis fallido se convertía
+        # en un descarte comercial indistinguible de un veredicto real (Convención C2).
+        if estricto:
+            ausentes = [
+                campo for campo in cls.CAMPOS_OBLIGATORIOS
+                if campo not in data
+                or data[campo] is None
+                or (isinstance(data[campo], str) and not data[campo].strip())
+            ]
+            if ausentes:
+                raise BoletinDeserializationError(
+                    f"Dictamen incompleto: faltan o vienen vacíos {ausentes}. "
+                    "Un dictamen sin estos campos no procede de un análisis real."
+                )
+
         try:
             return cls(
                 es_oportunidad_temprana=bool(data.get("es_oportunidad_temprana", False)),
@@ -111,7 +147,9 @@ class DictamenCentinelaDTO:
                     int(data["estimacion_meses_hasta_licitacion"])
                     if data.get("estimacion_meses_hasta_licitacion") is not None
                     else None
-                )
+                ),
+                modo_degradado=bool(data.get("modo_degradado", False)),
+                version_esquema=int(data.get("version_esquema", 2))
             )
         except Exception as e:
             if isinstance(e, CentinelaError):
@@ -119,10 +157,10 @@ class DictamenCentinelaDTO:
             raise BoletinDeserializationError(f"Error al deserializar DictamenCentinelaDTO: {e}") from e
 
     @classmethod
-    def from_json(cls, json_str: str) -> "DictamenCentinelaDTO":
+    def from_json(cls, json_str: str, estricto: bool = False) -> "DictamenCentinelaDTO":
         try:
             data = json.loads(json_str)
-            return cls.from_dict(data)
+            return cls.from_dict(data, estricto=estricto)
         except Exception as e:
             if isinstance(e, CentinelaError):
                 raise
@@ -780,9 +818,21 @@ class AnalistaBoletinesIA:
     Utiliza modelos LLM (Ollama con fallback a Gemini o Modo Degradado) para clasificar
     semánticamente anuncios de fase temprana y generar DictamenCentinelaDTO.
     """
-    def __init__(self, proveedor_llm=None, config_prompts_path: str = "config/prompts_lcsp.yaml"):
+    def __init__(self, proveedor_llm=None, config_prompts_path: str = "config/prompts_lcsp.yaml",
+                 autoinicializar_proveedor: bool = True):
+        """
+        `autoinicializar_proveedor=False` fuerza la ausencia de proveedor. Es necesario
+        porque, desde que la factoría funciona, pasar `proveedor_llm=None` ya no expresa
+        "sin LLM": construye un proveedor real que sale a la red. Sin esta vía no había
+        forma de ejercitar el Modo Degradado ni de mantener las pruebas herméticas.
+        """
         self.config_prompts_path = config_prompts_path
-        self.proveedor_llm = proveedor_llm or self._inicializar_proveedor_llm()
+        if proveedor_llm is not None:
+            self.proveedor_llm = proveedor_llm
+        elif autoinicializar_proveedor:
+            self.proveedor_llm = self._inicializar_proveedor_llm()
+        else:
+            self.proveedor_llm = None
 
     def _inicializar_proveedor_llm(self):
         try:
@@ -841,12 +891,17 @@ Devuelve un JSON con: es_oportunidad_temprana (bool), nivel_interes ("ALTO"|"MED
         Construye un dictamen de fallback seguro en Modo Degradado (Regla 5).
         """
         return DictamenCentinelaDTO(
+            # `es_oportunidad_temprana=True` significa aquí "no descartar sin mirar",
+            # no un juicio favorable: quien decide es el humano, no este fallback.
             es_oportunidad_temprana=True,
-            nivel_interes="MEDIO",
+            # Antes decía "MEDIO", y el evaluador lo premiaba con +15 pts: un análisis
+            # que nunca ocurrió subía la prioridad de la alerta. DESCONOCIDO no puntúa.
+            nivel_interes="DESCONOCIDO",
             categoria_fase_temprana="OTROS",
             resumen_ejecutivo=f"Modo Degradado: {motivo}.",
             acciones_recomendadas=["Revisar anuncio manualmente en portal oficial", "Re-analizar cuando el modelo LLM esté disponible"],
-            estimacion_meses_hasta_licitacion=None
+            estimacion_meses_hasta_licitacion=None,
+            modo_degradado=True
         )
 
     def analizar_alerta(self, alerta: AlertaBoletinDTO) -> AlertaBoletinDTO:
@@ -883,8 +938,11 @@ Devuelve un JSON con: es_oportunidad_temprana (bool), nivel_interes ("ALTO"|"MED
                 clean_lines = [l for l in lines if not l.strip().startswith("```")]
                 clean_text = "\n".join(clean_lines).strip()
 
-            dictamen = DictamenCentinelaDTO.from_json(clean_text)
-            
+            # Estricto: si la respuesta no trae la forma completa del esquema, se trata
+            # como fallo y se degrada. Antes se aceptaba y los huecos se rellenaban solos.
+            dictamen = DictamenCentinelaDTO.from_json(clean_text, estricto=True)
+
+
             alerta.dictamen_ia = dictamen
             alerta.estado_operativo = "ANALIZADA_IA"
             log_evento_jsonl("boletin_llm_succeeded", {"id_alerta": alerta.id_alerta, "nivel_interes": dictamen.nivel_interes, "modelo": res_llm.get("modelo")})
@@ -958,8 +1016,17 @@ class EvaluadorScoringCentinela:
         score_ajustado = score_base
         motivos = list(alerta.motivos_score)
 
-        # Ajuste cualitativo según dictamen IA si está disponible
-        if alerta.dictamen_ia is not None:
+        # Ajuste cualitativo según dictamen IA si está disponible.
+        # Un dictamen degradado no expresa ningún juicio: se conserva el score de las
+        # reglas duras, que sí es un dato real, y no se infiere interés ni desinterés
+        # (contrato del Bloque 2, regla 4). Antes, un análisis fallido restaba 30 pts
+        # y hacía desaparecer la alerta.
+        if alerta.dictamen_ia is not None and getattr(alerta.dictamen_ia, "modo_degradado", False):
+            motivos.append(
+                "SCORE: Dictamen IA en Modo Degradado; se conserva la puntuación de reglas "
+                "duras sin inferir interés (0 pts)"
+            )
+        elif alerta.dictamen_ia is not None:
             interes = str(alerta.dictamen_ia.nivel_interes).upper()
             if interes == "ALTO":
                 score_ajustado += 30

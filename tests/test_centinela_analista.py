@@ -71,14 +71,19 @@ def test_analizar_alerta_exito_mock_llm():
 
 def test_analizar_alerta_modo_degradado_sin_llm():
     """Verifica la degradación ordenada (ANALISIS_DIFERIDO_BOLETIN) cuando no hay modelo LLM disponible."""
-    analista = AnalistaBoletinesIA(proveedor_llm=None)
+    # `autoinicializar_proveedor=False` es la única forma de expresar "sin LLM" desde
+    # que la factoría funciona: pasar proveedor_llm=None construiría un proveedor real.
+    analista = AnalistaBoletinesIA(proveedor_llm=None, autoinicializar_proveedor=False)
     alerta = crear_alerta_fase_temprana()
 
     alerta_degradada = analista.analizar_alerta(alerta)
 
     assert alerta_degradada.estado_operativo == "ANALISIS_DIFERIDO_BOLETIN"
     assert alerta_degradada.dictamen_ia is not None
-    assert alerta_degradada.dictamen_ia.nivel_interes == "MEDIO"
+    # El dictamen degradado no finge un veredicto: ni "MEDIO" (que bonificaba +15 pts)
+    # ni "NULO" (que penalizaba -30 pts).
+    assert alerta_degradada.dictamen_ia.nivel_interes == "DESCONOCIDO"
+    assert alerta_degradada.dictamen_ia.modo_degradado is True
     assert "Modo Degradado" in alerta_degradada.dictamen_ia.resumen_ejecutivo
 
 
@@ -94,7 +99,30 @@ def test_analizar_alerta_modo_degradado_error_json():
 
     assert alerta_degradada.estado_operativo == "ANALISIS_DIFERIDO_BOLETIN"
     assert alerta_degradada.dictamen_ia is not None
-    assert alerta_degradada.dictamen_ia.nivel_interes == "MEDIO"
+    assert alerta_degradada.dictamen_ia.nivel_interes == "DESCONOCIDO"
+    assert alerta_degradada.dictamen_ia.modo_degradado is True
+
+
+def test_respuesta_llm_incompleta_no_se_acepta_como_dictamen():
+    """
+    Regresión del defecto de fondo: una respuesta que es JSON válido pero está vacía o
+    incompleta se aceptaba y los huecos se rellenaban con nivel_interes="NULO". El
+    evaluador restaba entonces 30 pts y descartaba la alerta, sin que nada distinguiera
+    ese descarte de un veredicto real de la IA.
+    """
+    mock_llm = MagicMock()
+    mock_llm.consultar.return_value = {"raw_response": "{}", "modelo": "mock-llm"}
+
+    analista = AnalistaBoletinesIA(proveedor_llm=mock_llm)
+    alerta_degradada = analista.analizar_alerta(crear_alerta_fase_temprana())
+
+    assert alerta_degradada.estado_operativo == "ANALISIS_DIFERIDO_BOLETIN"
+    assert alerta_degradada.dictamen_ia.modo_degradado is True
+    assert alerta_degradada.dictamen_ia.nivel_interes == "DESCONOCIDO"
+
+    # Y el DTO rechaza esa forma directamente, no sólo a través del analista.
+    with pytest.raises(Exception):
+        DictamenCentinelaDTO.from_json("{}", estricto=True)
 
 
 def test_analizar_lote_alertas():
