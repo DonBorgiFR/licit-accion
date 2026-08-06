@@ -14,29 +14,30 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **Bloques 1 y 2 de remediación cerrados** y la suite en verde. Lo único que impide abrir la Capa 9 es recompilar el Cockpit (ver más abajo).
+**Estado en una línea**: Capas 1-8 construidas; **Bloques 1 y 2 de remediación cerrados**, suite en verde y Cockpit compilado al día. **La Capa 9 está lista para abrirse.**
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 159/159
+python -m pytest tests/ -q          # debe dar 163/163
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: recompilar el Cockpit y abrir la Capa 9
+### ⏭️ Siguiente tarea concreta: abrir la Capa 9
 
 Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados. El detalle está más abajo, en "Pasos completados"; el contrato del Bloque 2 vive en [`CONTRATO_BLOQUE_2.md`](CONTRATO_BLOQUE_2.md).
 
-**Lo que bloquea hoy**: `frontend/dist/` es del 2026-07-26 y no incluye la gestión de estado por lote (H-13) ni el distintivo de análisis degradado. **Node y npm no están instalados** en el equipo del usuario — verificado el 2026-08-06 en Bash y en PowerShell. Sin eso, todo el trabajo de los Bloques 1 y 2 no llega a la pantalla.
+**Nada bloquea la Capa 9.** Node.js 24.19.0 LTS quedó instalado el 2026-08-06 y `npm run build` se ejecuta limpio, con `tsc -b` en modo estricto sin errores.
+
+**Aviso para no repetir un diagnóstico equivocado**: durante un tiempo se dio por hecho que `frontend/dist/` estaba desfasado, deduciéndolo de su fecha de modificación. Era falso. Al recompilar, Vite generó **exactamente los mismos nombres de fichero** (`index-B6BIdKdG.js`, `index-BKUbaev-.css`), y esos nombres son un hash del contenido: el bundle ya estaba al día. El proyecto vive en OneDrive, así que lo más probable es que se compilara en otra máquina. **La fecha de un artefacto no dice de qué fuente salió: compruébese el contenido.**
 
 **Decisiones ya tomadas que no hay que volver a discutir**: ver la tabla de decisiones al final del dosier de auditoría.
 
 ### ⚠️ Pendiente de acción del usuario
 
-* **Instalar Node.js y ejecutar `cd frontend && npm run build`.** Es el único bloqueante para cerrar la Capa 8 y abrir la Capa 9. Hay cambios TypeScript sin compilar del Paso C1, de la mutación por lote y del contrato de modo degradado.
 * Validar los umbrales de la matriz de subrogación (7 tramos en `config/prompts_lcsp.yaml`). Son criterio de negocio, no técnico.
 * Decidir si una alerta descartada por reglas debe dejar rastro en la base de datos. Hoy **no se guarda en absoluto**: no hay registro de qué se descartó ni por qué, y cada ejecución la reprocesa desde cero. Si se bajan umbrales o cambian los PMP, no hay nada que reevaluar. Detectado el 2026-08-06; es una decisión de negocio, no un defecto.
 
@@ -270,7 +271,6 @@ Un análisis degradado no puede alterar un score en ninguna dirección. No basta
 
 ### Pasos pendientes
 
-* **Recompilar el Cockpit**: 🔜 Requiere instalar Node.js. Es el único bloqueante para cerrar la Capa 8 y abrir la Capa 9.
 * **H-06 — Verificar el proveedor LLM con un lote real**: 🟠 La configuración fija `gemini-3.1-flash-lite` como preferente y `gemini-3.6-flash` como respaldo, pero la recomendación procedía de una muestra de **un solo pliego**. Antes de darla por buena, pasar un lote real con `python tools/verificar_proveedor_llm.py`.
 
 

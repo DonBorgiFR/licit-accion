@@ -39,7 +39,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-10 · La detección ignoraba las negaciones | 🟢 Cerrado | Bloque 2 |
 | H-11 · Doble penalización del mismo riesgo | 🟢 Cerrado | Bloque 2 |
 | H-12 · Faltaban 3 de las 6 cláusulas críticas | 🟢 Cerrado | Bloque 2 |
-| H-13 · El Cockpit no gestionaba estado por lote | 🟢 Cerrado en código | Bloque 2 — *pendiente de recompilar* |
+| H-13 · El Cockpit no gestionaba estado por lote | 🟢 Cerrado | Bloque 2 — verificado en el bundle |
 | H-14 · Higiene del proyecto | 🟢 Cerrado | Bloque 1 y repositorio Git |
 | H-15 · El cerrojo huérfano no se reclamaba en Windows | 🟢 Cerrado | Paso D1 |
 | H-16 · Un dictamen degradado decidía como si fuera real | 🟢 Cerrado | Paso D2 |
@@ -47,7 +47,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-18 · El resultado comercial dependía del directorio de trabajo | 🟢 Cerrado | Paso D3 |
 
 **Único hallazgo abierto: H-06.** Todo lo demás está cerrado con prueba de regresión. Suite:
-163/163. H-13 está resuelto en el código pero **no llega al usuario** hasta recompilar el frontend.
+163/163.
 
 ---
 
@@ -360,7 +360,7 @@ invertido queda corregido.
 
 ---
 
-### H-13 · El Cockpit no puede gestionar el estado por lote 🟢 CERRADO EN CÓDIGO (Bloque 2) — pendiente de recompilar
+### H-13 · El Cockpit no puede gestionar el estado por lote 🟢 CERRADO (Bloque 2)
 
 `TransicionEstadoLicitacion` no lleva `lote_numero`, así que la API siempre muta el lote 1.
 Pero `useApiMutations.ts` aplica optimistamente el nuevo estado a **todos** los lotes: el usuario
@@ -375,9 +375,10 @@ en `src/api/schemas.py`, el endpoint de mutación en `src/api/routers/licitacion
 frontend `useApiMutations.ts`, `DetailDrawer.tsx` y `LicitacionesTable.tsx`, que actualizan de
 forma optimista **sólo** el lote afectado.
 
-**⚠️ Todavía no llega al usuario**: `frontend/dist/` es del 2026-07-26. Hasta que se instale Node y
-se ejecute `npm run build`, el Cockpit que se abre sigue siendo el que muta el lote 1 y actualiza
-los cinco. El hallazgo está cerrado en el código, no en la pantalla.
+**Verificado en la pantalla el 2026-08-06**: recompilado con Node.js 24.19.0, el bundle contiene
+`lote_numero`. Se había supuesto desfasado por la fecha de `frontend/dist/`, pero Vite generó los
+mismos nombres de fichero que ya existían y esos nombres son un hash del contenido: el bundle ya
+estaba al día. **La fecha de un artefacto no acredita de qué fuente salió.**
 
 ---
 

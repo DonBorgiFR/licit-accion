@@ -6,9 +6,8 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **163/163**. Queda un único bloqueante para abrir la
-> Capa 9: **recompilar el Cockpit**, cuyo `frontend/dist/` es del 2026-07-26 y no incluye la gestión
-> de estado por lote ni el distintivo de análisis degradado. Requiere instalar Node.js.
+> negocio LCSP) están cerrados, con la suite en **163/163**. Queda pendiente abrir la
+> Capa 9: ninguno. El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
 > hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
@@ -885,9 +884,9 @@ Construir un **Dashboard de grado empresarial (Enterprise SaaS)** utilizando Rea
 #### **Fase 4: Detalle Profundo, Render Diferido y Cierre Oficial**
 9. **Paso 9 — Modal / Drawer de Detalle Completo con Render Diferido y Mutaciones**: 🟢 Completado y Validado.
    - Vista detallada de expediente y alerta con apertura instantánea y Skeletons de carga, renderizado del dictamen cualitativo IA (`analisis_semantico`), selector de cambio de estado y notas internas con mutación optimista.
-10. **Paso 10 — Build de Producción y cierre beta de Capa 8**: 🟡 **Build desactualizado**. `frontend/dist/` es del 2026-07-26 y es anterior a los cambios de agosto: mutación por lote (H-13), distintivo de análisis degradado y tipado estricto.
+10. **Paso 10 — Build de Producción y cierre beta de Capa 8**: 🟢 Compilado y verificado el 2026-08-06 con Node.js 24.19.0 LTS. `tsc -b` pasa en modo estricto sin errores.
      - Hay validación de tipos (`tsc --noEmit`) y compilación `npm run build`; no existe todavía una suite React independiente.
-     - **Node.js no está instalado en el equipo** (verificado el 2026-08-06). Hasta instalarlo y ejecutar `cd frontend && npm run build`, el Cockpit que se abre no refleja el trabajo de los Bloques 1 y 2. Es el único bloqueante para abrir la Capa 9.
+     - El bundle contiene la mutación por lote, el campo `modo_degradado` y el distintivo *"Pliego sin analizar"*. Se había supuesto desfasado por su fecha de modificación, pero al recompilar Vite generó los mismos nombres de fichero —que son un hash del contenido—, de modo que ya estaba al día.
 
 ---
 
@@ -955,7 +954,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 
 6. **Las seis cláusulas críticas**: el DTO sube a v3 e incorpora garantía definitiva (arts. 107-108), penalidades y resolución (arts. 192-194) y cláusulas sociales (art. 202). Si un dato no consta, se representa como `null` o `false`; nunca se deduce por conocimiento externo.
 
-7. **Mutación por lote**: `lote_numero` recorre el contrato completo, de la API al Cockpit. Antes el backend mutaba siempre el lote 1 mientras el frontend actualizaba optimistamente todos, anulando el modelo 1:N que es la razón de ser de la Capa 3. *(Pendiente de recompilar el frontend para que llegue al usuario.)*
+7. **Mutación por lote**: `lote_numero` recorre el contrato completo, de la API al Cockpit. Antes el backend mutaba siempre el lote 1 mientras el frontend actualizaba optimistamente todos, anulando el modelo 1:N que es la razón de ser de la Capa 3. *(Verificado en el bundle compilado el 2026-08-06.)*
 
 8. **KPIs sobre una sola población**: el win rate y las métricas de conversión salen todos de `vista_win_rate`, filtrando lotes archivados. Antes el resumen y la vista analítica usaban denominadores distintos y el resultado era aritméticamente imposible.
 
