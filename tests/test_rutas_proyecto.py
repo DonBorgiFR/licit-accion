@@ -98,3 +98,36 @@ def test_el_sistema_arranca_en_una_instalacion_nueva(tmp_path):
     assert kpis["total_expedientes"] == 0
     assert kpis["total_lotes"] == 0
     assert kpis["volumen_total_pbl"] == 0.0
+
+
+def test_el_registro_de_respaldo_del_lector_no_escribe_contra_el_directorio_de_trabajo(
+    tmp_path, monkeypatch
+):
+    """
+    Regresión de H-28, último resto de H-18. `Lector.registrar_log_JSONL()` tiene una vía
+    de respaldo para cuando la base de datos no está disponible, y esa vía resolvía
+    `os.path.join("data", "pipeline.jsonl")` **contra el directorio de trabajo**.
+
+    Dos consecuencias, y la segunda es la grave: lanzado desde otra carpeta creaba un
+    `data/` espurio donde no tocaba; y al no pasar por `ruta_datos()` ignoraba
+    `DATA_DIR_INCOOP`, de modo que durante la suite habría escrito en el `data/` real del
+    proyecto — exactamente lo que H-25 vino a impedir.
+
+    Sobrevivió al Paso D3 porque sólo se ejecuta cuando `self.db` no está disponible.
+    """
+    from src import ruta_datos
+    from src.lector import Lector
+
+    destino = tmp_path / "datos_redirigidos"
+    monkeypatch.setenv("DATA_DIR_INCOOP", str(destino))
+
+    cwd_ajeno = tmp_path / "otro_directorio"
+    cwd_ajeno.mkdir()
+    monkeypatch.chdir(cwd_ajeno)
+
+    lector = Lector(db_memoria=None)
+    lector.registrar_log_JSONL(action="prueba_h28", reason="regresion")
+
+    assert (destino / "pipeline.jsonl").exists(), "El registro debe ir al directorio redirigido"
+    assert not (cwd_ajeno / "data").exists(), "No debe crear un data/ en el directorio de trabajo"
+    assert ruta_datos("pipeline.jsonl") == str(destino / "pipeline.jsonl")

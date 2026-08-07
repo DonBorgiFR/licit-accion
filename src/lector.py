@@ -166,8 +166,15 @@ class Lector:
             except Exception:
                 pass
                 
-        # Fallback a escritura directa en pipeline.jsonl si no hay DB
-        log_path = os.path.join("data", "pipeline.jsonl")
+        # Fallback a escritura directa en pipeline.jsonl si no hay DB.
+        #
+        # H-28: esta ruta se resolvía como `os.path.join("data", ...)`, contra el directorio
+        # de trabajo. Era el último resto del defecto que el Paso D3 cerró como H-18, y
+        # sobrevivió porque sólo se ejecuta cuando la base no está disponible. Además de
+        # escribir fuera de sitio al lanzar el proceso desde otra carpeta, ignoraba
+        # `DATA_DIR_INCOOP`: durante la suite habría escrito en el `data/` real del
+        # proyecto, que es justamente lo que H-25 vino a impedir.
+        log_path = ruta_datos("pipeline.jsonl")
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         entry = {
             "timestamp": timestamp,
@@ -183,7 +190,7 @@ class Lector:
             entry["duration_ms"] = duration_ms
             
         try:
-            os.makedirs("data", exist_ok=True)
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         except Exception as e:

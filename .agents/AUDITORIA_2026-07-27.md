@@ -54,6 +54,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
 | H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🟢 Cerrado | Paso D11 |
 | H-27 · El estado archivado se escribe con dos grafías distintas | 🟡 **Abierto, latente** | Previsto: Capa 9, Paso 3 |
+| H-28 · El registro de respaldo del Lector escribía contra el directorio de trabajo | 🟢 Cerrado | Capa 9, Paso 2 |
 
 **Un hallazgo abierto y latente (H-27)**, detectado el 2026-08-07 al redactar el contrato de la
 Capa 9. Los 26 anteriores están cerrados con prueba de regresión o verificación reproducible.
@@ -937,6 +938,38 @@ exactitud: un falso negativo ahí significa borrar algo que no debía borrarse.
 **Cierre previsto**: Capa 9, Paso 3, junto a la migración a esquema v6 — normalizar los valores ya
 almacenados y unificar la escritura contra el enum. Mientras tanto, el contrato obliga a que toda
 comparación de estado en la Capa 9 se haga **normalizada**, nunca contra el literal.
+
+---
+
+### H-28 · El registro de respaldo del Lector escribía contra el directorio de trabajo 🟢 CERRADO
+
+`Lector.registrar_log_JSONL()` delega en la Capa 3, pero tiene una vía de respaldo para
+cuando la base de datos no está disponible. Esa vía resolvía la ruta así:
+
+```python
+log_path = os.path.join("data", "pipeline.jsonl")   # relativa al directorio de trabajo
+os.makedirs("data", exist_ok=True)
+```
+
+Es **el último resto de H-18**, que el Paso D3 dio por cerrado normalizando `config/` y
+`data/` en todo el proyecto. Sobrevivió porque este bloque sólo se ejecuta cuando `self.db`
+no está disponible, y en la práctica siempre lo está. `ruta_datos` ya estaba importado en el
+mismo fichero (`lector.py:19`) y se usa correctamente en las otras cinco resoluciones de ruta:
+era el único punto que no lo usaba.
+
+**Dos consecuencias, y la segunda es la grave**:
+
+1. Lanzado desde otra carpeta, creaba un `data/` espurio donde no tocaba.
+2. Al no pasar por `ruta_datos()`, **ignoraba `DATA_DIR_INCOOP`**. Durante la suite de
+   pruebas habría escrito en el `data/` real del proyecto — exactamente lo que H-25 vino a
+   impedir, y por la misma razón por la que `tests/conftest.py` redirige esa variable.
+
+**Cerrado con**: `ruta_datos("pipeline.jsonl")` y `os.makedirs(os.path.dirname(log_path))`.
+
+**Regresión**: `tests/test_rutas_proyecto.py::test_el_registro_de_respaldo_del_lector_no_escribe_contra_el_directorio_de_trabajo`,
+que redirige `DATA_DIR_INCOOP`, se sitúa en un directorio de trabajo ajeno y exige las dos
+cosas: que el registro aterrice en el directorio redirigido y que **no** aparezca un `data/`
+en el directorio de trabajo. **Verificada contra el código anterior: falla.**
 
 ---
 
