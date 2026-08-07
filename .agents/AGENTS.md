@@ -14,7 +14,7 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 26 hallazgos catalogados, sin ninguno abierto—, suite en **196/196** y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
+**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 26 hallazgos catalogados, sin ninguno abierto—, suite en **196/196** y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia redactada en el README, ningún paso implementado.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -26,7 +26,15 @@ python -m pytest tests/ -q          # debe dar 175/175
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: abrir la Capa 9
+### ⏭️ Siguiente tarea concreta: Capa 9, Paso 1
+
+**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa —objetivo, consideraciones de negocio, modelo de datos v6, contrato REST de administración y los 10 pasos— está redactada en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Ningún paso está implementado todavía.**
+
+La tarea siguiente es el **Paso 1: Contrato de Servicio y Máquina de Estados del Ciclo de Vida** (Reglas 1 y 2). Formalizar por escrito los estados `Vivo → Archivado → Purgado` y `Vivo → Eliminado`, sus transiciones permitidas y prohibidas, y qué es intocable — antes de escribir una línea de código.
+
+**Dos decisiones de dirección ya tomadas** que el contrato debe respetar, y que no hay que volver a plantear:
+* **La memoria comercial no se purga jamás.** Todo lote que llegó a `Presentada`, `Adjudicada` o `Perdida` es intocable. Se purga el peso documental, nunca el registro de negocio.
+* **Retención documental de 180 días**, configurable y versionada, sustituyendo los 90 codificados a fuego.
 
 Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados. El detalle está más abajo, en "Pasos completados"; el contrato del Bloque 2 vive en [`CONTRATO_BLOQUE_2.md`](CONTRATO_BLOQUE_2.md).
 
@@ -312,7 +320,20 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 8 — Canal Proactivo Centinela (Oportunidades Fase Temprana DOGC/BOPB): 🟢 Completado y Validado.
   * Paso 9 — Modal / Drawer de Detalle Completo y Mutación Transaccional: 🟢 Completado y Validado.
   * Paso 10 — Suite de Pruebas Frontend, Build de Producción y Cierre Oficial de Capa 8: 🟢 Completado y Validado.
-* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 💤
+* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Estrategia redactada en el README; ningún paso implementado.
+  * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 💤
+  * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 💤
+  * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 💤
+  * Paso 4 — Motor de Archivado (`src/depurador.py`): 💤
+  * Paso 5 — Motor de Purga Documental: 💤
+  * Paso 6 — Motor de Eliminación Física con Orden de Integridad: 💤
+  * Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`): 💤
+  * Paso 8 — Router Administrativo de Mutación: 💤
+  * Paso 9 — Pantalla de Administración en el Cockpit: 💤
+  * Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9: 💤
+
+  > ⚠️ **La Capa 9 no parte de cero.** Hay piezas suyas ya funcionando pero dispersas y sin gobierno, y el Paso 5 consiste en consolidarlas, no en escribirlas: `lector.ejecutar_purga_obsoletos(dias_retencion=90)` desde `main.py:132`, `memoria.rotar_backups(dias_retencion=7)` desde `main.py:196` —ambos con el plazo **codificado a fuego**, lo que incumple la Regla 4— y el borrado lógico `lotes.deleted_at`, que sólo existe a nivel de lote. **Antes de escribir código nuevo, comprobar qué hace ya el código viejo.**
+
 * **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Servicio Local): 💤
 
 ---

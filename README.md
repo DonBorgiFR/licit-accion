@@ -970,10 +970,139 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 💤 Pendiente de iniciar. Bloqueada únicamente por la recompilación del Cockpit.
+* **Estado actual**: 🛠️ En planificación. Abierta el 2026-08-07 con la remediación cerrada (26 hallazgos) y la suite en 196/196.
 
 ### 🎯 Objetivo
-Administrar el ciclo de vida completo de los datos históricos, facilitando la auditoría de prospecciones anteriores y permitiendo limpiezas selectivas o totales de la base de datos local mediante endpoints dedicados de administración en la API.
+
+Administrar el **ciclo de vida completo del dato**: qué se conserva, qué se archiva, qué se elimina y cuándo. La capa distingue dos naturalezas que hoy conviven mezcladas y que tienen destinos opuestos:
+
+* **El peso documental** — PDFs descargados, texto extraído, copias de seguridad. Crece sin límite, ocupa disco y **pierde valor con el tiempo**. Es purgable.
+* **La memoria comercial** — a qué se presentó Incoop, cuánto costó preparar cada oferta, qué se ganó y qué se perdió. **Gana valor con el tiempo** y es lo que alimenta el win-rate y el análisis CAC. No es purgable jamás.
+
+Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje.
+
+---
+
+### 🔍 Consideraciones Críticas de Diseño e Inteligencia de Negocio
+
+1. **La memoria comercial no se purga nunca** *(decisión de dirección, 2026-08-07)*:
+   - Todo lote que alcanzó `Presentada`, `Adjudicada` o `Perdida` es **intocable**, con su adjudicatario, importe de adjudicación, dinero en la mesa, horas internas, costes externos y garantías.
+   - Es la población de `vista_win_rate` y `vista_analisis_CAC`. Borrarla no libera espacio relevante —son filas, no ficheros— y destruye la única serie histórica que tiene la cooperativa para saber si está mejorando.
+   - Lo que se elimina de esos expedientes es su **peso documental**, no su registro.
+
+2. **Tres estados de ciclo de vida, no dos**. Hoy sólo existe vivo/archivado, y eso confunde dos cosas distintas:
+   - **Vivo**: operativo, visible en el Funnel.
+   - **Archivado** (`deleted_at`): fuera del canal principal, **sigue en la base y sigue contando** para los KPIs históricos. Es lo que produce hoy el Radar al detectar una licitación anulada o inactiva.
+   - **Purgado**: su peso documental ha sido eliminado del disco; la fila permanece con el rastro de qué se borró y cuándo. **Un expediente purgado no es un expediente perdido.**
+   - La eliminación física completa queda reservada a lo que **nunca llegó a ser negocio**: expedientes que caducaron sin salir del estado `Nueva`.
+
+3. **La integridad referencial se conserva: la purga tiene un orden obligado**:
+   - Las claves foráneas de `documentos`, `analisis_semantico` y `lotes` son `ON DELETE RESTRICT`. Hoy la base **impide** borrar un expediente con hijos.
+   - Eso no es un obstáculo que rodear con `PRAGMA foreign_keys=OFF`: es la red que impide dejar huérfanos. La purga elimina de hoja a raíz —documentos, análisis, lotes, expediente— y si una restricción se lo impide, **se detiene y lo reporta** en lugar de forzar.
+
+4. **La política de retención es configuración versionada, no una constante** *(Regla 4)*:
+   - Hoy los plazos están **codificados a fuego**: `dias_retencion=90` en la llamada del pipeline al Lector y `dias_retencion=7` en la rotación de copias. Un criterio operativo que nadie puede consultar ni cambiar sin tocar código.
+   - Pasan a `config/retencion.yaml` con número de versión, y ese número queda registrado en cada purga ejecutada.
+   - **Retención de pliegos: 180 días** *(decisión de dirección, 2026-08-07)*. Los 90 actuales se quedan cortos: el ciclo completo de una licitación —publicación, presentación, evaluación y adjudicación— los supera con frecuencia, y purgar a los 90 días puede borrar el pliego de un concurso todavía sin resolver.
+
+5. **Nada se purga en silencio** *(coherente con el criterio del Paso D5)*:
+   - Cada purga registra en `data/pipeline.jsonl` y en una tabla de auditoría qué se eliminó, cuánto espacio liberó, bajo qué versión de política y a petición de quién.
+   - Una purga manual **exige previsualización**: se muestra exactamente qué va a desaparecer antes de que nadie confirme nada. No hay botón que borre a ciegas.
+
+6. **La purga es irreversible: copia de seguridad previa obligatoria** *(Regla 5, Modo Degradado)*:
+   - `Memoria` ya sabe hacer copias transaccionales en caliente (`_crear_backup_migracion`). Toda purga manual crea una antes de tocar nada.
+   - Si la copia falla, o no hay permiso de escritura, o el disco está lleno, **la purga no se ejecuta**. Se registra la degradación y se informa. Jamás se purga a ciegas.
+
+7. **Idempotencia y determinismo** *(Regla 10)*: purgar dos veces lo mismo no puede fallar ni contar doble. Un documento ya purgado se salta; un expediente ya archivado no vuelve a archivarse ni altera su `deleted_at` original.
+
+8. **El historial de ejecuciones debe poder consultarse**: hoy la tabla `ejecuciones` sólo guarda `id`, `start_time`, `end_time` y `estado`. No permite responder "¿qué encontró la prospección del martes?". La capa la enriquece con las métricas de cada corrida.
+
+9. **No mezclar generaciones de puntuación** *(lección del borrado de la beta, Paso D10)*: los datos de julio se borraron porque estaban puntuados con la lógica anterior al Bloque 2 y convivían con los nuevos en la misma tabla. Para que eso no se repita, cada lote registra **con qué versión de scoring** fue puntuado, y el archivado lo conserva.
+
+---
+
+### 🗄️ Modelo de Datos — Migración a Esquema v6
+
+| Tabla | Cambio | Por qué |
+|---|---|---|
+| `expedientes` | **+** `deleted_at`, `deleted_reason` | Hoy sólo `lotes` tiene borrado lógico. Un expediente entero no puede archivarse. |
+| `lotes` | **+** `version_scoring` | Evita que dos generaciones de puntuación convivan sin distinguirse (lección D10). |
+| `ejecuciones` | **+** métricas de la corrida y `version_politica_retencion` | Convierte la tabla en un historial consultable de prospecciones. |
+| `purgas` *(nueva)* | Auditoría de cada purga | Qué se eliminó, cuánto espacio, quién lo pidió, bajo qué política y con qué copia de seguridad asociada. |
+
+```mermaid
+graph TD
+    subgraph "Peso documental — PURGABLE"
+        PDF[PDFs en data/documents/]
+        TXT[texto_extraido en documentos]
+        BAK[Copias en data/backups/]
+    end
+    subgraph "Memoria comercial — INTOCABLE"
+        WIN[Lotes Presentada/Adjudicada/Perdida]
+        CAC[Horas internas, costes, garantías]
+    end
+    POL[config/retencion.yaml<br/>política versionada] --> MOTOR[Depurador<br/>src/depurador.py]
+    MOTOR -->|purga por retención| PDF
+    MOTOR -->|purga por retención| TXT
+    MOTOR -->|rotación| BAK
+    MOTOR -.->|nunca| WIN
+    MOTOR -.->|nunca| CAC
+    MOTOR -->|copia previa + rastro| AUD[(Tabla purgas<br/>+ pipeline.jsonl)]
+```
+
+---
+
+### 📜 Contrato RESTful de Administración (Capa 9)
+
+| Método | Endpoint | Descripción | Respuesta |
+|---|---|---|---|
+| **GET** | `/api/v1/admin/almacenamiento` | Cuánto ocupa cada cosa: documentos, base, copias. | `200 OK` |
+| **GET** | `/api/v1/admin/retencion` | Política vigente y su versión. | `200 OK` |
+| **GET** | `/api/v1/admin/purga/previsualizacion` | **Qué desaparecería** si se purgara ahora, sin tocar nada. | `200 OK` |
+| **POST** | `/api/v1/admin/purga` | Ejecuta la purga. Exige confirmación explícita y crea copia previa. | `200 OK` / `409 Conflict` (integridad) / `503` (modo degradado) |
+| **GET** | `/api/v1/admin/ejecuciones` | Historial paginado de prospecciones con sus métricas. | `200 OK` |
+| **POST** | `/api/v1/admin/backup` | Copia de seguridad manual bajo demanda. | `200 OK` |
+
+---
+
+### 🛣️ Plan de Ejecución Detallado (10 Pasos Atómicos de la Capa 9)
+
+#### **Fase 1: Contrato, Política y Cimientos de Datos**
+1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida** *(Reglas 1 y 2)*: 💤
+   - Formalización de los estados `Vivo → Archivado → Purgado` y `Vivo → Eliminado`, con transiciones permitidas, prohibidas y estado final. Definición de qué es intocable, por escrito, antes de codificar nada.
+2. **Paso 2 — Política de Retención Versionada (`config/retencion.yaml`)**: 💤
+   - Traslado de los plazos codificados a fuego (90 y 7 días) a configuración versionada. Retención documental a **180 días**. Lectura centralizada, con valores por defecto explícitos si el fichero falta.
+3. **Paso 3 — Migración a Esquema v6 (`src/memoria.py`)**: 💤
+   - `deleted_at`/`deleted_reason` en `expedientes`, `version_scoring` en `lotes`, métricas en `ejecuciones` y nueva tabla `purgas`. Con copia previa y reversión, como las migraciones anteriores.
+
+#### **Fase 2: Motor del Depurador**
+4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 💤
+   - Transición `Vivo → Archivado` por caducidad de plazo, idempotente y sin tocar lo ya archivado. Los archivados salen del canal principal pero siguen contando en los KPIs históricos.
+5. **Paso 5 — Motor de Purga Documental**: 💤
+   - Consolidación de lo que hoy vive disperso en `lector.ejecutar_purga_obsoletos()` y `memoria.rotar_backups()`, ahora gobernado por la política versionada. Libera disco sin tocar ninguna fila de negocio.
+6. **Paso 6 — Motor de Eliminación Física con Orden de Integridad**: 💤
+   - Borrado de hoja a raíz respetando `ON DELETE RESTRICT`, reservado a expedientes que caducaron sin salir de `Nueva`. Copia de seguridad previa obligatoria; si falla, no se ejecuta *(Regla 5)*.
+
+#### **Fase 3: Exposición por la Pasarela API**
+7. **Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`)**: 💤
+   - `/almacenamiento`, `/retencion`, `/purga/previsualizacion` e `/ejecuciones`. Ninguno altera estado: sirven para **mirar antes de decidir**.
+8. **Paso 8 — Router Administrativo de Mutación**: 💤
+   - `POST /purga` y `POST /backup`, con confirmación explícita en el cuerpo, trazabilidad JSONL y errores tipados que distinguen el bloqueo por integridad del fallo por modo degradado.
+
+#### **Fase 4: Cockpit, Verificación y Cierre**
+9. **Paso 9 — Pantalla de Administración en el Cockpit**: 💤
+   - Ocupación de disco, historial de prospecciones y purga en dos tiempos: **previsualizar y luego confirmar**, con lo intocable señalado en pantalla para que se vea que no está en riesgo.
+10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9**: 💤
+    - `tests/test_capa9_depurador.py`, con regresiones que fijen lo esencial: que la memoria comercial sobrevive a una purga total, que la purga es idempotente y que un fallo de copia la aborta. Cierre con arranque real contra base sembrada *(Convención C7)*.
+
+---
+
+### 🛠️ Herramientas y Código a Crear
+- `config/retencion.yaml`: política de retención versionada.
+- `src/depurador.py`: motor de archivado, purga documental y eliminación física.
+- `src/api/routers/admin.py`: endpoints de administración y purga.
+- `tests/test_capa9_depurador.py`: suite de integración y regresiones del ciclo de vida.
+- `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos.
 
 ---
 
