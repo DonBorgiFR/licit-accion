@@ -17,6 +17,11 @@ class Filtro:
         # Contrato de scoring v2. La capa 2 publica exclusivamente la escala canónica
         # [0, 100]; las ponderaciones internas sólo sirven para explicar el resultado.
         scoring = self.perfil.get("scoring", {})
+        # Versión del contrato de scoring, publicada en cada evaluación y persistida junto
+        # al lote (esquema v6). Hasta ahora se declaraba en el perfil pero no la leía nadie:
+        # dos generaciones de puntuación podían convivir en la misma tabla sin nada que las
+        # distinguiera, que es por lo que hubo que tirar los datos de la beta (Paso D10).
+        self.version_scoring = str(scoring.get("version", "desconocida"))
         self.maximo_score_bruto = float(scoring.get("maximo_bruto", 170.0))
         self.umbral_alta = float(scoring.get("umbral_alta", 65.0))
         self.umbral_media = float(scoring.get("umbral_media", 40.0))
@@ -181,6 +186,7 @@ class Filtro:
             "prioridad": "Descartada",
             "score": 0,
             "score_bruto": 0.0,
+            "version_scoring": self.version_scoring,
             "motivos": [],
             "sector_detectado": "Servicios Generales",
             "garantia_estimada": 0.0,

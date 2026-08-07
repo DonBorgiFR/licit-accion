@@ -26,14 +26,19 @@ python -m pytest tests/ -q          # debe dar 175/175
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: Capa 9, Paso 3
+### ⏭️ Siguiente tarea concreta: Capa 9, Paso 4
 
-**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 y 2 cerrados; del 3 al 10, pendientes.**
+**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1, 2 y 3 cerrados; del 4 al 10, pendientes.**
 
 * **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
 * **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`.
+* **Paso 3** 🟢 — esquema **v6**: ciclo de vida en `expedientes`, `version_scoring` en `lotes`, métricas en `ejecuciones` y tabla `purgas`.
 
-La tarea siguiente es el **Paso 3: migración a esquema v6**. Debe llevar `deleted_at`/`deleted_reason` a `expedientes`, `version_scoring` a `lotes`, métricas a `ejecuciones` y crear la tabla `purgas`. **Y cierra H-27** normalizando las dos grafías del estado archivado, incluida la consulta `obtener_documentos_para_purga()` (`memoria.py:1782`), que hoy depende de la grafía en minúsculas.
+La tarea siguiente es el **Paso 4: motor de archivado (`src/depurador.py`)**, primer código del Depurador propiamente dicho. Antes de escribirlo:
+
+1. **Leer el contrato.** Define qué puede tocar el Depurador y qué no. La regla que más condiciona el diseño: **nunca escribe en `estado_operativo`**.
+2. **Decidir los parámetros de archivado con el usuario** y añadirlos a `config/retencion.yaml`. Se dejaron fuera del Paso 2 a propósito, para fijarlos con el contexto del motor que los usa.
+3. **Poblar las métricas de `ejecuciones`**, que el Paso 3 sólo creó como columnas vacías.
 
 **Dos decisiones de dirección ya tomadas** que el contrato respeta, y que no hay que volver a plantear:
 * **La memoria comercial no se purga jamás.** Todo lote que llegó a `Presentada`, `Adjudicada` o `Perdida` es intocable. Se purga el peso documental, nunca el registro de negocio.
@@ -326,7 +331,7 @@ cd frontend && npm run dev          # http://localhost:5173
 * **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Estrategia redactada en el README; ningún paso implementado.
   * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟢 **Completado y validado el 2026-08-07.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
   * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 🟢 **Completado el 2026-08-07.** Los plazos dejan de estar codificados a fuego en `main.py`. Nuevo `src/retencion.py` como único punto de lectura, que **no aplica valores por defecto**: si la política falta o es incoherente lanza `PoliticaRetencionInvalida` y no se purga nada. 19 regresiones en `tests/test_retencion_politica.py`. Verificadas en vivo las dos ramas del cableado real de `main.py`.
-  * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 💤
+  * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 🟢 **Completado el 2026-08-07.** Ciclo de vida a nivel de expediente, `version_scoring` en `lotes` (y poblado de verdad: Filtro → upsert → SQLite), métricas en `ejecuciones` y tabla `purgas`. **Cierra H-27** y destapó H-29. 9 regresiones en `tests/test_migracion_v6.py`, con DDL de v5 escrito a mano para que la migración se pruebe de verdad.
   * Paso 4 — Motor de Archivado (`src/depurador.py`): 💤
   * Paso 5 — Motor de Purga Documental: 💤
   * Paso 6 — Motor de Eliminación Física con Orden de Integridad: 💤

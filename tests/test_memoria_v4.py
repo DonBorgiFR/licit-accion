@@ -44,7 +44,12 @@ class TestMemoriaEsquemaV4(unittest.TestCase):
             conn.execute(SQL_CREATE_EJECUCIONES)
             conn.execute(SQL_CREATE_DOCUMENTOS)
             for query in SQL_CREATE_INDICES:
-                if "analisis_semantico" not in query and "boletines_alertas" not in query:
+                # Esta BD sintética es un v3: sólo puede indexar las tablas que existían
+                # entonces. `purgas` llegó con v6 y `expedientes.deleted_at` también.
+                if not any(
+                    posterior in query
+                    for posterior in ("analisis_semantico", "boletines_alertas", "purgas", "deleted_at")
+                ):
                     conn.execute(query)
 
 

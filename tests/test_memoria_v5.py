@@ -26,7 +26,10 @@ def test_inicializacion_limpia_v5(tmp_db_path):
         cursor.execute("SELECT version FROM metadata LIMIT 1;")
         row = cursor.fetchone()
         assert row is not None
-        assert row[0] == 5
+        # Se ata a la constante, no al literal: lo que esta prueba garantiza es que las
+        # funcionalidades de v5 siguen ahí, no que el esquema se congele en v5.
+        assert row[0] == Memoria.ESQUEMA_VERSION
+        assert Memoria.ESQUEMA_VERSION >= 5
 
         # Verificar existencia de la tabla boletines_alertas
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='boletines_alertas';")
@@ -63,7 +66,7 @@ def test_migracion_desde_v4_a_v5(tmp_db_path):
     with memoria.conectar() as conn_check:
         cursor = conn_check.cursor()
         cursor.execute("SELECT version FROM metadata LIMIT 1;")
-        assert cursor.fetchone()[0] == 5
+        assert cursor.fetchone()[0] == Memoria.ESQUEMA_VERSION
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='boletines_alertas';")
         assert cursor.fetchone() is not None
@@ -164,5 +167,6 @@ def test_healthcheck_v5(tmp_db_path):
 
     hc = memoria.healthcheck_memoria()
     assert hc["status"] == "OK"
-    assert hc["version_actual"] == 5
+    assert hc["version_actual"] == Memoria.ESQUEMA_VERSION
+    assert Memoria.ESQUEMA_VERSION >= 5
     assert "boletines_alertas" in hc["tablas_detectadas"]

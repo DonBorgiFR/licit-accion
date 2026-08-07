@@ -113,8 +113,14 @@ def calcular_feed_hash(licitacion: Dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 # =====================================================================
-# CONSTANTES DDL - ESQUEMA DE BASE DE DATOS (ESQUEMA COMPLETO v5)
+# CONSTANTES DDL - ESQUEMA DE BASE DE DATOS (ESQUEMA COMPLETO v6)
 # =====================================================================
+
+# Versión única del esquema. Antes vivía duplicada —como literal en el INSERT inicial y
+# como atributo de clase—, de modo que una base recién creada podía nacer declarando una
+# versión distinta de la que el código esperaba y disparar una migración sobre un esquema
+# que ya estaba al día. Ahora sólo hay una fuente.
+ESQUEMA_VERSION_ACTUAL = 6
 
 SQL_CREATE_METADATA = """
 CREATE TABLE IF NOT EXISTS metadata (
@@ -122,9 +128,26 @@ CREATE TABLE IF NOT EXISTS metadata (
 );
 """
 
-SQL_INSERT_INITIAL_VERSION = """
-INSERT INTO metadata (version) VALUES (5);
+SQL_INSERT_INITIAL_VERSION = f"""
+INSERT INTO metadata (version) VALUES ({ESQUEMA_VERSION_ACTUAL});
 """
+
+# ---------------------------------------------------------------------
+# Vocabulario canónico de los estados de archivado (H-27)
+#
+# El enum de la API declara estos estados capitalizados, como todos los demás
+# ("Nueva", "Estudiando"...), pero el Radar los escribía en minúsculas. Dos grafías
+# del mismo estado en la misma columna. No rompía nada porque `estado_operativo` está
+# tipado como `str` y las comparaciones del Radar bajan a minúsculas — el sistema era
+# coherente por accidente—, pero la Capa 9 debe seleccionar lo archivado y comprobar
+# por qué estados pasó cada lote: ahí un falso negativo significa borrar lo que no se
+# debía. La grafía canónica es la capitalizada.
+ESTADO_INACTIVA = "Inactiva"
+ESTADO_ANULADA_ADMINISTRACION = "Anulada_Administracion"
+
+# Comparaciones siempre en minúsculas, para tolerar filas escritas antes de la
+# normalización de v6 y no volver a depender de la grafía almacenada.
+ESTADOS_ARCHIVADOS_NORMALIZADOS = ("inactiva", "anulada_administracion")
 
 SQL_CREATE_EXPEDIENTES = """
 CREATE TABLE IF NOT EXISTS expedientes (
@@ -144,7 +167,11 @@ CREATE TABLE IF NOT EXISTS expedientes (
     alerta_modificacion INTEGER DEFAULT 0,
     log_cambios TEXT DEFAULT '',
     last_seen_feed TEXT,
-    feed_hash TEXT
+    feed_hash TEXT,
+    -- Ciclo de vida (Capa 9, esquema v6). Hasta v5 sólo `lotes` tenía borrado lógico, así
+    -- que un expediente entero no podía archivarse. Ver `.agents/CONTRATO_CAPA_9.md`.
+    deleted_at TEXT,
+    deleted_reason TEXT
 );
 """
 
@@ -179,6 +206,11 @@ CREATE TABLE IF NOT EXISTS lotes (
     fecha_devolucion_garantia TEXT,
     deleted_at TEXT,
     deleted_reason TEXT,
+    -- Versión del contrato de scoring bajo la que se puntuó este lote (esquema v6).
+    -- Lección del borrado de la beta (Paso D10): los datos de julio hubo que tirarlos
+    -- porque estaban puntuados con la lógica anterior al Bloque 2 y convivían con los
+    -- nuevos en esta misma tabla, sin nada que permitiera distinguirlos.
+    version_scoring TEXT,
     updated_by TEXT DEFAULT 'radar',
     updated_at TEXT,
     FOREIGN KEY (expediente_id) REFERENCES expedientes(id) ON DELETE RESTRICT,
@@ -191,7 +223,42 @@ CREATE TABLE IF NOT EXISTS ejecuciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     start_time TEXT NOT NULL,
     end_time TEXT,
-    estado TEXT NOT NULL
+    estado TEXT NOT NULL,
+    -- Métricas de la corrida (esquema v6). Hasta v5 esta tabla sólo guardaba cuándo
+    -- empezó y acabó una ejecución, de modo que no permitía responder a "¿qué encontró
+    -- la prospección del martes?". Las escribe el pipeline; el Paso 3 sólo crea el sitio.
+    expedientes_nuevos INTEGER DEFAULT 0,
+    expedientes_actualizados INTEGER DEFAULT 0,
+    lotes_evaluados INTEGER DEFAULT 0,
+    documentos_descargados INTEGER DEFAULT 0,
+    analisis_realizados INTEGER DEFAULT 0,
+    alertas_generadas INTEGER DEFAULT 0,
+    errores INTEGER DEFAULT 0,
+    version_scoring TEXT,
+    version_politica_retencion TEXT
+);
+"""
+
+SQL_CREATE_PURGAS = """
+CREATE TABLE IF NOT EXISTS purgas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ejecutada_at TEXT NOT NULL,
+    -- ARCHIVADO | DOCUMENTAL | ELIMINACION
+    tipo TEXT NOT NULL,
+    -- 'pipeline' cuando la dispara la política; 'usuario' cuando la pide una persona.
+    solicitada_por TEXT NOT NULL,
+    version_politica TEXT NOT NULL,
+    documentos_purgados INTEGER DEFAULT 0,
+    bytes_liberados INTEGER DEFAULT 0,
+    expedientes_archivados INTEGER DEFAULT 0,
+    expedientes_eliminados INTEGER DEFAULT 0,
+    -- Lo que la invariante de memoria comercial impidió borrar. Se cuenta a propósito:
+    -- una purga que bloquea mucho es una señal, no un fallo.
+    bloqueados INTEGER DEFAULT 0,
+    backup_asociado TEXT,
+    -- COMPLETADA | ABORTADA | DEGRADADA
+    resultado TEXT NOT NULL,
+    detalle TEXT
 );
 """
 
@@ -295,7 +362,10 @@ SQL_CREATE_INDICES = [
     "CREATE INDEX IF NOT EXISTS idx_analisis_semantico_estado ON analisis_semantico(estado_analisis);",
     "CREATE INDEX IF NOT EXISTS idx_boletines_fuente_fecha ON boletines_alertas(fuente, fecha_publicacion);",
     "CREATE INDEX IF NOT EXISTS idx_boletines_estado ON boletines_alertas(estado_operativo);",
-    "CREATE INDEX IF NOT EXISTS idx_boletines_expediente ON boletines_alertas(expediente_licitacion_vinculado);"
+    "CREATE INDEX IF NOT EXISTS idx_boletines_expediente ON boletines_alertas(expediente_licitacion_vinculado);",
+    # Esquema v6 — Capa 9
+    "CREATE INDEX IF NOT EXISTS idx_expedientes_deleted_at ON expedientes(deleted_at);",
+    "CREATE INDEX IF NOT EXISTS idx_purgas_fecha_tipo ON purgas(ejecutada_at, tipo);"
 ]
 
 
@@ -403,7 +473,8 @@ class Memoria:
     migración automática y segura del esquema (v5), blindaje de datos de usuario,
     vistas analíticas dinámicas y backups transaccionales en caliente catalogados.
     """
-    ESQUEMA_VERSION = 5
+    # Fuente única: ver ESQUEMA_VERSION_ACTUAL arriba. No duplicar el número aquí.
+    ESQUEMA_VERSION = ESQUEMA_VERSION_ACTUAL
 
 
     def __init__(self, db_path: Optional[str] = None):
@@ -650,6 +721,7 @@ class Memoria:
                         conn.execute(SQL_CREATE_DOCUMENTOS)
                         conn.execute(SQL_CREATE_ANALISIS_SEMANTICO)
                         conn.execute(SQL_CREATE_BOLETINES_ALERTAS)
+                        conn.execute(SQL_CREATE_PURGAS)
                         for query in SQL_CREATE_INDICES:
                             conn.execute(query)
                 print(f"[+] Base de datos nueva inicializada correctamente en esquema v{self.ESQUEMA_VERSION}.")
@@ -723,7 +795,61 @@ class Memoria:
                                         # Migración a v5
                                         if version_actual < 5:
                                             conn_mig.execute(SQL_CREATE_BOLETINES_ALERTAS)
-                                            
+
+                                        # Migración a v6 — Capa 9: ciclo de vida del dato
+                                        if version_actual < 6:
+                                            # Borrado lógico a nivel de expediente. Hasta v5
+                                            # sólo lo tenían los lotes.
+                                            if not _columna_existe("expedientes", "deleted_at"):
+                                                conn_mig.execute("ALTER TABLE expedientes ADD COLUMN deleted_at TEXT;")
+                                            if not _columna_existe("expedientes", "deleted_reason"):
+                                                conn_mig.execute("ALTER TABLE expedientes ADD COLUMN deleted_reason TEXT;")
+
+                                            # Generación de scoring con la que se puntuó el lote.
+                                            if not _columna_existe("lotes", "version_scoring"):
+                                                conn_mig.execute("ALTER TABLE lotes ADD COLUMN version_scoring TEXT;")
+
+                                            # Métricas de la corrida. `ejecuciones` puede no
+                                            # existir si se viene de un esquema anterior a v2,
+                                            # y ALTER TABLE sobre una tabla ausente aborta la
+                                            # migración entera: se garantiza primero. Si la
+                                            # crea aquí, nace ya con las columnas v6 y los
+                                            # ALTER de abajo se saltan solos.
+                                            conn_mig.execute(SQL_CREATE_EJECUCIONES)
+                                            for columna, tipo in (
+                                                ("expedientes_nuevos", "INTEGER DEFAULT 0"),
+                                                ("expedientes_actualizados", "INTEGER DEFAULT 0"),
+                                                ("lotes_evaluados", "INTEGER DEFAULT 0"),
+                                                ("documentos_descargados", "INTEGER DEFAULT 0"),
+                                                ("analisis_realizados", "INTEGER DEFAULT 0"),
+                                                ("alertas_generadas", "INTEGER DEFAULT 0"),
+                                                ("errores", "INTEGER DEFAULT 0"),
+                                                ("version_scoring", "TEXT"),
+                                                ("version_politica_retencion", "TEXT"),
+                                            ):
+                                                if not _columna_existe("ejecuciones", columna):
+                                                    conn_mig.execute(
+                                                        f"ALTER TABLE ejecuciones ADD COLUMN {columna} {tipo};"
+                                                    )
+
+                                            conn_mig.execute(SQL_CREATE_PURGAS)
+
+                                            # H-27: normalización de las dos grafías del estado
+                                            # archivado. Se hace aquí, con copia previa ya
+                                            # tomada, porque a partir de v6 la Capa 9 compara
+                                            # estados para decidir qué puede borrarse.
+                                            conn_mig.execute(
+                                                "UPDATE lotes SET estado_operativo = ? "
+                                                "WHERE LOWER(estado_operativo) = 'inactiva';",
+                                                (ESTADO_INACTIVA,)
+                                            )
+                                            conn_mig.execute(
+                                                "UPDATE lotes SET estado_operativo = ? "
+                                                "WHERE LOWER(estado_operativo) = 'anulada_administracion';",
+                                                (ESTADO_ANULADA_ADMINISTRACION,)
+                                            )
+
+
                                         # Re-crear índices (v2, v3, v4 y v5)
                                         for query in SQL_CREATE_INDICES:
                                             try:
@@ -1000,6 +1126,8 @@ class Memoria:
             "prioridad": evaluacion.get("prioridad", "Media"),
             "pmp_dias": evaluacion.get("pmp_detectado", 30),
             "ratio_prorrogas": evaluacion.get("ratio_prorrogas", 1.0),
+            # Generación de scoring con la que se puntuó (esquema v6, lección del Paso D10).
+            "version_scoring": evaluacion.get("version_scoring"),
             "updated_by": "radar",
             "updated_at": timestamp_now
         }
@@ -1035,12 +1163,12 @@ class Memoria:
             expediente_id, lote_numero, titulo_lote, cpvs, pbl, vec,
             garantia_definitiva, subrogacion, revision_precios, dias_restantes,
             score_total, motivos_scoring, sector, prioridad, pmp_dias, ratio_prorrogas,
-            updated_by, updated_at
+            version_scoring, updated_by, updated_at
         ) VALUES (
             :expediente_id, :lote_numero, :titulo_lote, :cpvs, :pbl, :vec,
             :garantia_definitiva, :subrogacion, :revision_precios, :dias_restantes,
             :score_total, :motivos_scoring, :sector, :prioridad, :pmp_dias, :ratio_prorrogas,
-            :updated_by, :updated_at
+            :version_scoring, :updated_by, :updated_at
         ) ON CONFLICT(expediente_id, lote_numero) DO UPDATE SET
             titulo_lote = excluded.titulo_lote,
             cpvs = excluded.cpvs,
@@ -1056,6 +1184,7 @@ class Memoria:
             prioridad = excluded.prioridad,
             pmp_dias = excluded.pmp_dias,
             ratio_prorrogas = excluded.ratio_prorrogas,
+            version_scoring = excluded.version_scoring,
             updated_by = excluded.updated_by,
             updated_at = excluded.updated_at;
         """
@@ -1099,18 +1228,18 @@ class Memoria:
                     for lote_id, estado_op in lotes:
                         if estado_op.lower() == "nueva":
                             cursor.execute(
-                                "UPDATE lotes SET estado_operativo = 'inactiva', deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
-                                (fecha_actual_utc, "Ausente en el feed de licitaciones vigentes (Expirado)", fecha_actual_utc, lote_id)
+                                "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
+                                (ESTADO_INACTIVA, fecha_actual_utc, "Ausente en el feed de licitaciones vigentes (Expirado)", fecha_actual_utc, lote_id)
                             )
                             cursor.execute(
                                 "UPDATE expedientes SET log_cambios = log_cambios || ? WHERE id = ?;",
-                                (f"\n[{fecha_actual_utc}] [radar] Estado cambiado de 'Nueva' a 'inactiva' (Ausente en feed)", exp_id)
+                                (f"\n[{fecha_actual_utc}] [radar] Estado cambiado de 'Nueva' a '{ESTADO_INACTIVA}' (Ausente en feed)", exp_id)
                             )
                         elif estado_op.lower() not in ("inactiva", "anulada_administracion"):
                             if fecha_limite and fecha_limite != "N/A" and fecha_limite > fecha_actual_utc:
                                 cursor.execute(
-                                    "UPDATE lotes SET estado_operativo = 'anulada_administracion', deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
-                                    (fecha_actual_utc, "Ausente en feed antes de la fecha límite (Posible anulación)", fecha_actual_utc, lote_id)
+                                    "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
+                                    (ESTADO_ANULADA_ADMINISTRACION, fecha_actual_utc, "Ausente en feed antes de la fecha límite (Posible anulación)", fecha_actual_utc, lote_id)
                                 )
                                 cursor.execute(
                                     "UPDATE expedientes SET alerta_modificacion = 1, log_cambios = log_cambios || ? WHERE id = ?;",
@@ -1269,12 +1398,12 @@ class Memoria:
             expediente_id, lote_numero, titulo_lote, cpvs, pbl, vec,
             garantia_definitiva, subrogacion, revision_precios, dias_restantes,
             score_total, motivos_scoring, sector, prioridad, pmp_dias, ratio_prorrogas,
-            updated_by, updated_at
+            version_scoring, updated_by, updated_at
         ) VALUES (
             :expediente_id, :lote_numero, :titulo_lote, :cpvs, :pbl, :vec,
             :garantia_definitiva, :subrogacion, :revision_precios, :dias_restantes,
             :score_total, :motivos_scoring, :sector, :prioridad, :pmp_dias, :ratio_prorrogas,
-            :updated_by, :updated_at
+            :version_scoring, :updated_by, :updated_at
         ) ON CONFLICT(expediente_id, lote_numero) DO UPDATE SET
             titulo_lote = excluded.titulo_lote,
             cpvs = excluded.cpvs,
@@ -1290,6 +1419,7 @@ class Memoria:
             prioridad = excluded.prioridad,
             pmp_dias = excluded.pmp_dias,
             ratio_prorrogas = excluded.ratio_prorrogas,
+            version_scoring = excluded.version_scoring,
             updated_by = excluded.updated_by,
             updated_at = excluded.updated_at;
         """
@@ -1415,6 +1545,7 @@ class Memoria:
                                 "prioridad": eval_data.get("prioridad", "Media"),
                                 "pmp_dias": eval_data.get("pmp_detectado", 30),
                                 "ratio_prorrogas": eval_data.get("ratio_prorrogas", 1.0),
+                                "version_scoring": eval_data.get("version_scoring"),
                                 "updated_by": "radar",
                                 "updated_at": timestamp_now
                             }
@@ -1778,8 +1909,13 @@ class Memoria:
         WHERE d.estado = 'DESCARGADO' AND d.local_path IS NOT NULL
           AND (
             NOT EXISTS (
-              SELECT 1 FROM lotes l 
-              WHERE l.expediente_id = e.id AND l.estado_operativo NOT IN ('inactiva', 'anulada_administracion')
+              SELECT 1 FROM lotes l
+              -- LOWER() y no el literal: hasta v6 convivieron dos grafías del mismo
+              -- estado (H-27), y esta consulta dependía de que el Radar escribiera en
+              -- minúsculas. Comparar normalizado la hace indiferente a la grafía
+              -- almacenada, también en bases migradas desde v5.
+              WHERE l.expediente_id = e.id
+                AND LOWER(l.estado_operativo) NOT IN ('inactiva', 'anulada_administracion')
             )
             OR datetime(e.fecha_ingesta) <= datetime('now', ?)
           );

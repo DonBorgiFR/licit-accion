@@ -1072,8 +1072,12 @@ graph TD
    - Formalización de los estados `Vivo → Archivado → Eliminado` y del ciclo documental hasta `Purgado`, con transiciones permitidas, prohibidas y estado final. El contrato vive en [`.agents/CONTRATO_CAPA_9.md`](.agents/CONTRATO_CAPA_9.md).
 2. **Paso 2 — Política de Retención Versionada (`config/retencion.yaml`)**: 🟢 Completado y Validado.
    - Traslado de los plazos codificados a fuego (90 y 7 días) a configuración versionada. Retención documental a **180 días**. Lectura centralizada en `src/retencion.py`, que **no aplica valores por defecto**: una política ausente o incoherente impide la purga en lugar de sustituirse por plazos inventados *(lección de H-18)*.
-3. **Paso 3 — Migración a Esquema v6 (`src/memoria.py`)**: 💤
+3. **Paso 3 — Migración a Esquema v6 (`src/memoria.py`)**: 🟢 Completado y Validado.
    - `deleted_at`/`deleted_reason` en `expedientes`, `version_scoring` en `lotes`, métricas en `ejecuciones` y nueva tabla `purgas`. Con copia previa y reversión, como las migraciones anteriores.
+   - **Cierra H-27**: normaliza las dos grafías del estado archivado y hace indiferente a la grafía la consulta de purga documental, que dependía de la escritura en minúsculas.
+   - La versión del esquema deja de estar duplicada: `ESQUEMA_VERSION_ACTUAL` es la única fuente.
+
+> ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v6** desde el 2026-08-07.
 
 #### **Fase 2: Motor del Depurador**
 4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 💤

@@ -73,7 +73,10 @@ export const HealthIndicator: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
             <div className="flex items-center gap-1.5 font-bold text-slate-800">
               <Database className="w-4 h-4 text-indigo-600" />
-              <span>Autodiagnóstico SQLite v5</span>
+              {/* La versión se lee del propio healthcheck. Estaba codificada como "v5" y
+                  siguió anunciando v5 después de migrar a v6: un panel de diagnóstico que
+                  afirma una versión distinta de la real es peor que no decir ninguna. */}
+              <span>Autodiagnóstico SQLite{data?.schema_version ? ` v${data.schema_version}` : ''}</span>
             </div>
             <Info className="w-3.5 h-3.5 text-slate-400" />
           </div>

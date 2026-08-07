@@ -544,7 +544,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
                   className="w-full h-36 p-3 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all placeholder:text-slate-400"
                 />
                 <p className="text-[11px] text-slate-400">
-                  Las notas quedan blindadas en SQLite v5 y no se sobrescriben durante la ingesta diaria del Radar.
+                  Las notas quedan blindadas en SQLite y no se sobrescriben durante la ingesta diaria del Radar.
                 </p>
               </CardContent>
             </Card>

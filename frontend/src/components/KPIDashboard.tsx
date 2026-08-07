@@ -87,7 +87,9 @@ export const KPIDashboard: React.FC = () => {
             )}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Métricas consolidadas en tiempo real desde SQLite v5 (WAL Mode).
+            {/* Sin número de versión: aquí era decorativo y quedó desfasado al migrar a v6.
+                La versión real se consulta en el autodiagnóstico de la cabecera. */}
+            Métricas consolidadas en tiempo real desde SQLite (WAL Mode).
           </p>
         </div>
 

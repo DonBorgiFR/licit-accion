@@ -53,16 +53,12 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-24 · Un clon limpio del repositorio no podía arrancar | 🟢 Cerrado | Paso D10 |
 | H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
 | H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🟢 Cerrado | Paso D11 |
-| H-27 · El estado archivado se escribe con dos grafías distintas | 🟡 **Abierto, latente** | Previsto: Capa 9, Paso 3 |
+| H-27 · El estado archivado se escribe con dos grafías distintas | 🟢 Cerrado | Capa 9, Paso 3 |
 | H-28 · El registro de respaldo del Lector escribía contra el directorio de trabajo | 🟢 Cerrado | Capa 9, Paso 2 |
+| H-29 · El Cockpit anunciaba una versión de esquema codificada a mano | 🟢 Cerrado | Capa 9, Paso 3 |
 
-**Un hallazgo abierto y latente (H-27)**, detectado el 2026-08-07 al redactar el contrato de la
-Capa 9. Los 26 anteriores están cerrados con prueba de regresión o verificación reproducible.
-Suite: **196/196**.
-
-> **H-27 no causa daño hoy** y por eso no bloquea nada: el sistema es coherente por accidente,
-> porque compara los estados en minúsculas. Se cierra en el Paso 3 de la Capa 9, junto a la
-> migración de esquema, porque es entonces cuando empieza a importar.
+**No queda ningún hallazgo abierto**: los 29 catalogados están cerrados con prueba de regresión
+o verificación reproducible. Suite: **225/225**.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -913,7 +909,7 @@ La base sembrada se eliminó al terminar: el proyecto vuelve al estado de instal
 
 ## Hallazgo de la apertura de la Capa 9 — 2026-08-07
 
-### H-27 · El estado archivado se escribe con dos grafías distintas 🟡 ABIERTO (latente)
+### H-27 · El estado archivado se escribe con dos grafías distintas 🟢 CERRADO (Capa 9, Paso 3)
 
 `EstadoLicitacionEnum` declara `"Inactiva"` y `"Anulada_Administracion"` capitalizados
 (`src/api/schemas.py:75-76`), mientras el Radar escribe `'inactiva'` y `'anulada_administracion'`
@@ -935,9 +931,44 @@ y comprobar por qué estados pasó cada lote. Un `WHERE estado_operativo = 'Inac
 **ninguna fila**, y la invariante que protege la memoria comercial depende de comparar estados con
 exactitud: un falso negativo ahí significa borrar algo que no debía borrarse.
 
-**Cierre previsto**: Capa 9, Paso 3, junto a la migración a esquema v6 — normalizar los valores ya
-almacenados y unificar la escritura contra el enum. Mientras tanto, el contrato obliga a que toda
-comparación de estado en la Capa 9 se haga **normalizada**, nunca contra el literal.
+**No era tan latente como pareció al catalogarlo.** Al cablear el Paso 2 apareció que
+`obtener_documentos_para_purga()` (`memoria.py`) filtraba con
+`estado_operativo NOT IN ('inactiva', 'anulada_administracion')`: **ya había código productivo
+dependiendo de la grafía accidental**. Normalizar sin tocar esa consulta habría dejado la purga
+documental sin encontrar nada, en silencio y sin error.
+
+**Cerrado con** (Capa 9, Paso 3):
+
+* Constantes `ESTADO_INACTIVA` y `ESTADO_ANULADA_ADMINISTRACION` con la grafía canónica —la
+  capitalizada, la que ya declaraba el enum y usan todos los demás estados—.
+* El Radar escribe esas constantes en lugar de literales en minúsculas.
+* La migración a v6 **normaliza las filas existentes**, con la copia preventiva ya tomada.
+* `obtener_documentos_para_purga()` compara con `LOWER(...)`, de modo que es indiferente a la
+  grafía almacenada y sigue funcionando también en bases migradas desde v5.
+
+**Regresión**: `tests/test_migracion_v6.py`, tres pruebas — que la migración normaliza lo viejo,
+que el Radar escribe la grafía canónica, y que la consulta de purga tolera ambas. La segunda
+importa tanto como la primera: no basta con arreglar lo almacenado si se sigue escribiendo mal.
+
+---
+
+### H-29 · El Cockpit anunciaba una versión de esquema codificada a mano 🟢 CERRADO (Capa 9, Paso 3)
+
+Al arrancar la aplicación tras migrar a v6 (Convención C7), el panel de KPIs seguía diciendo
+*"Métricas consolidadas en tiempo real desde **SQLite v5** (WAL Mode)"* y el tooltip de
+autodiagnóstico, *"Autodiagnóstico **SQLite v5**"*. La base era v6.
+
+Tres literales en `frontend/src/`: `KPIDashboard.tsx`, `HealthIndicator.tsx` y `DetailDrawer.tsx`.
+Ninguno rompía nada — es de la misma familia que H-21, H-22 y H-23: **la pantalla afirmaba algo
+que no era cierto**. Y lo llamativo es dónde: el panel de *autodiagnóstico*, que es justamente
+donde alguien va a mirar cuando sospecha que algo no cuadra.
+
+**Cerrado con**: el autodiagnóstico lee `schema_version` del propio `/api/v1/health`, que ya lo
+exponía y que el tipo TypeScript ya declaraba; en los otros dos el número era decorativo y se
+retira, porque un dato que sólo puede volver a desfasarse no aporta nada.
+
+**Verificado en vivo**: el tooltip muestra *"Autodiagnóstico SQLite v6"* leyéndolo de la API, y
+`npm run build` compila limpio con `tsc -b` en modo estricto.
 
 ---
 
