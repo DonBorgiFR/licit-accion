@@ -1,8 +1,8 @@
 # Contrato de Servicio — Capa 9: El Histórico y Depurador
 
-**Versión:** 1.0.0 · **Estado:** redactado el 2026-08-07, **pendiente de validación de dirección**.
-Corresponde al **Paso 1** de la Capa 9 (Reglas 1 y 2). Ningún paso posterior se implementa hasta
-que este contrato quede validado.
+**Versión:** 1.0.0 · **Estado:** 🟢 **validado por dirección el 2026-08-07.**
+Corresponde al **Paso 1** de la Capa 9 (Reglas 1 y 2). Los cuatro criterios de aceptación del final
+del documento quedaron aprobados sin modificaciones.
 
 ---
 
@@ -91,7 +91,7 @@ de estos estados:
 | `Adjudicada` | Es la memoria de lo ganado: adjudicatario, importe, garantía retenida. |
 | `Perdida` | **Se aprende más de esto que de lo ganado.** Es el denominador del win-rate. |
 | `Estudiando` | Alguien dedicó tiempo a evaluarla; consta como esfuerzo aunque no cristalizara. |
-| `Descartada` | Una persona la rechazó explícitamente. Borrarla permitiría que el pipeline la volviera a capturar y a mostrar, resucitando lo que alguien ya decidió. *(Criterio del Paso D5.)* |
+| `Descartada` | Una persona la rechazó explícitamente. **Motivo de dirección (2026-08-07): evitar reprocesos.** Si se borrase, el pipeline volvería a capturarla y a presentarla, y el equipo comercial gastaría atención en mirar otra vez algo que ya descartó. El coste de conservar la fila es despreciable; el de volver a evaluarla, no. *(Coincide con el criterio del Paso D5 para el Centinela.)* |
 
 Es decir, sólo es eliminable lo que **nunca salió** de `Nueva`, `Inactiva` o
 `Anulada_Administracion`: oportunidades que entraron por el feed, caducaron y a las que nadie
@@ -223,13 +223,14 @@ se hace normalizada**, nunca contra el literal.
 
 ---
 
-## Criterios de aceptación del Paso 1
+## Criterios de aceptación del Paso 1 — 🟢 validados el 2026-08-07
 
-Este paso se considera cerrado cuando la dirección valide:
-
-1. La separación entre estado comercial y estado de ciclo de vida, y que el Depurador no escriba
+1. 🟢 La separación entre estado comercial y estado de ciclo de vida, y que el Depurador no escriba
    jamás en `estado_operativo`.
-2. La lista de estados que bloquean la eliminación, **incluido `Descartada`**: borrar lo que una
-   persona rechazó permitiría al pipeline resucitarlo.
-3. Que el rescate `ARCHIVADO → VIVO` exista pero sea siempre manual.
-4. Que en caso de duda el Depurador no haga nada, en lugar de purgar parcialmente.
+2. 🟢 La lista de estados que bloquean la eliminación, **incluido `Descartada`**. Validado con un
+   motivo adicional al previsto: **evitar reprocesos**. No se trata sólo de respetar la decisión de
+   una persona, sino de no volver a gastar atención comercial en mirar lo mismo dos veces.
+3. 🟢 Que el rescate `ARCHIVADO → VIVO` exista pero sea siempre manual.
+4. 🟢 Que en caso de duda el Depurador no haga nada, en lugar de purgar parcialmente.
+
+**Paso 1 cerrado.** Procede el Paso 2: política de retención versionada.

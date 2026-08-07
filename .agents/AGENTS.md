@@ -321,7 +321,7 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 9 — Modal / Drawer de Detalle Completo y Mutación Transaccional: 🟢 Completado y Validado.
   * Paso 10 — Suite de Pruebas Frontend, Build de Producción y Cierre Oficial de Capa 8: 🟢 Completado y Validado.
 * **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Estrategia redactada en el README; ningún paso implementado.
-  * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟡 **Redactado el 2026-08-07, pendiente de validación de dirección.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
+  * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟢 **Completado y validado el 2026-08-07.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
   * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 💤
   * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 💤
   * Paso 4 — Motor de Archivado (`src/depurador.py`): 💤
