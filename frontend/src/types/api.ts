@@ -95,6 +95,14 @@ export interface Lote {
   fecha_devolucion_garantia?: string | null;
   updated_at?: string | null;
   updated_by?: string | null;
+  /**
+   * Ciclo de vida (Capa 9). Un lote archivado está fuera del canal principal pero
+   * sigue siendo editable: archivar gobierna la visibilidad, no la editabilidad.
+   * La pantalla debe marcarlo — mostrarlo sin distintivo llevaría a decidir sobre él
+   * como si siguiera vivo (Convención C3).
+   */
+  deleted_at?: string | null;
+  deleted_reason?: string | null;
 }
 
 export interface AnalisisSemanticoResumen {
@@ -147,6 +155,10 @@ export interface Licitacion {
   alerta_modificacion: boolean;
   log_cambios?: string | null;
   score_maximo?: number | null;
+  /** Ciclo de vida (Capa 9): cierto cuando ninguno de sus lotes sigue vivo. */
+  archivada?: boolean;
+  deleted_at?: string | null;
+  deleted_reason?: string | null;
   lotes: Lote[];
   analisis_semantico?: AnalisisSemanticoResumen | null;
 }
@@ -234,6 +246,12 @@ export interface LicitacionesQueryParams {
   pmp_max?: number;
   subrogacion_critica?: boolean;
   estado?: string;
+  /**
+   * Única vía desde el Cockpit para llegar a lo que el Depurador sacó del canal
+   * principal (Capa 9). Por defecto no se incluyen: el Funnel es la tabla con la que
+   * se decide a qué concurso presentarse y no debe arrastrar histórico.
+   */
+  incluir_archivadas?: boolean;
 }
 
 export interface AlertasQueryParams {

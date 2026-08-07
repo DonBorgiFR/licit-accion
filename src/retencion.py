@@ -16,13 +16,18 @@ no purgar**, que es la degradación segura para una operación irreversible.
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
-from src import ruta_proyecto
+from src import ESTADOS_OPERATIVOS_VALIDOS, normalizar_estado_operativo, ruta_proyecto
 
 NOMBRE_FICHERO = "retencion.yaml"
+
+#: Estados que el archivado automático no puede tocar por mucho que lo diga el fichero.
+#: `Presentada` es una oferta entregada y sin resolver: lo más vivo del embudo. Archivarla
+#: la sacaría del canal principal justo mientras se espera la adjudicación.
+ESTADOS_NO_ARCHIVABLES = ("presentada",)
 
 
 class PoliticaRetencionInvalida(Exception):
@@ -34,16 +39,36 @@ class PoliticaRetencionInvalida(Exception):
 
 
 @dataclass(frozen=True)
+class PoliticaArchivado:
+    """Criterio de archivado automático (Capa 9, Paso 4).
+
+    Archivar es la operación reversible del Depurador: escribe `deleted_at` y saca el lote
+    del canal principal, sin tocar ni un fichero ni la columna `estado_operativo`.
+    """
+
+    dias_tras_fecha_limite: int
+    #: Normalizados en minúsculas: toda comparación de estado se hace así (H-27).
+    estados_archivables: Tuple[str, ...]
+    archivar_expediente_con_todos_sus_lotes: bool
+
+
+@dataclass(frozen=True)
 class PoliticaRetencion:
     """Plazos vigentes y la versión bajo la que se ejecuta una purga.
 
     Inmutable a propósito: la política se lee una vez y no puede alterarse a mitad de una
     purga, de modo que el evento de auditoría y lo realmente borrado siempre concuerdan.
+
+    `archivado` es opcional y vale `None` cuando el fichero no declara el bloque. No es una
+    excepción a la doctrina de "sin valores por defecto", sino su aplicación: sin criterio
+    declarado **no se archiva nada**, y el pipeline lo dice en voz alta. Lo que no se
+    tolera es un bloque presente y mal formado, que se rechaza como cualquier otro error.
     """
 
     version: str
     documentos_dias: int
     backups_dias: int
+    archivado: Optional[PoliticaArchivado] = None
 
 
 def _entero_positivo(datos: Dict[str, Any], clave: str) -> int:
@@ -65,6 +90,67 @@ def _entero_positivo(datos: Dict[str, Any], clave: str) -> int:
             "Un plazo de 0 días purgaría lo recién descargado."
         )
     return valor
+
+
+def _leer_archivado(datos: Dict[str, Any]) -> Optional[PoliticaArchivado]:
+    """Lee y valida el bloque `archivado`, que es opcional pero no puede ser aproximado.
+
+    Ausente → `None`, y el Depurador no archiva. Presente → se exige entero, lista de
+    estados reconocibles y booleano explícito.
+    """
+    if "archivado" not in datos:
+        return None
+
+    bloque = datos["archivado"]
+    if not isinstance(bloque, dict):
+        raise PoliticaRetencionInvalida(
+            f"El bloque 'archivado' de {NOMBRE_FICHERO} debe ser un mapa de claves, "
+            f"y se recibió {bloque!r}."
+        )
+
+    dias = _entero_positivo(bloque, "dias_tras_fecha_limite")
+
+    crudos = bloque.get("estados_archivables")
+    if not isinstance(crudos, list) or not crudos:
+        raise PoliticaRetencionInvalida(
+            "'estados_archivables' debe ser una lista no vacía de estados operativos. "
+            "Una lista vacía no significa 'archívalo todo': significa que no hay criterio."
+        )
+
+    estados = []
+    for crudo in crudos:
+        if not isinstance(crudo, str):
+            raise PoliticaRetencionInvalida(
+                f"'estados_archivables' contiene {crudo!r}, que no es un estado operativo."
+            )
+        estado = normalizar_estado_operativo(crudo)
+        if estado not in ESTADOS_OPERATIVOS_VALIDOS:
+            raise PoliticaRetencionInvalida(
+                f"'{crudo}' no es un estado operativo reconocido. Válidos: "
+                f"{', '.join(ESTADOS_OPERATIVOS_VALIDOS)}. Un estado mal escrito no "
+                "archivaría nada y el fallo pasaría inadvertido."
+            )
+        if estado in ESTADOS_NO_ARCHIVABLES:
+            raise PoliticaRetencionInvalida(
+                f"'{crudo}' no puede archivarse automáticamente. Una oferta presentada y "
+                "sin resolver es lo más vivo del embudo: archivarla escondería el trabajo "
+                "en curso justo mientras se espera la adjudicación."
+            )
+        if estado not in estados:
+            estados.append(estado)
+
+    cascada = bloque.get("archivar_expediente_con_todos_sus_lotes")
+    if not isinstance(cascada, bool):
+        raise PoliticaRetencionInvalida(
+            "'archivar_expediente_con_todos_sus_lotes' debe ser true o false de forma "
+            f"explícita, y se recibió {cascada!r}."
+        )
+
+    return PoliticaArchivado(
+        dias_tras_fecha_limite=dias,
+        estados_archivables=tuple(estados),
+        archivar_expediente_con_todos_sus_lotes=cascada,
+    )
 
 
 def cargar_politica(ruta: str = None) -> PoliticaRetencion:
@@ -114,4 +200,5 @@ def cargar_politica(ruta: str = None) -> PoliticaRetencion:
         version=version.strip(),
         documentos_dias=_entero_positivo(datos, "documentos_dias"),
         backups_dias=_entero_positivo(datos, "backups_dias"),
+        archivado=_leer_archivado(datos),
     )

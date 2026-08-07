@@ -23,7 +23,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 
 ---
 
-## Cuadro de estado (actualizado el 2026-08-06)
+## Cuadro de estado (actualizado el 2026-08-07)
 
 | Hallazgo | Estado | Cerrado en |
 |---|---|---|
@@ -56,9 +56,12 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-27 · El estado archivado se escribe con dos grafías distintas | 🟢 Cerrado | Capa 9, Paso 3 |
 | H-28 · El registro de respaldo del Lector escribía contra el directorio de trabajo | 🟢 Cerrado | Capa 9, Paso 2 |
 | H-29 · El Cockpit anunciaba una versión de esquema codificada a mano | 🟢 Cerrado | Capa 9, Paso 3 |
+| H-30 · Archivar lo adjudicado habría vaciado el win-rate | 🟢 Cerrado | Capa 9, Paso 4 |
+| H-31 · No existía rastro de los estados por los que pasó un lote | 🟢 Cerrado | Capa 9, Paso 4 |
+| H-32 · Un lote archivado no puede editarse desde el Cockpit | 🟢 Cerrado | Capa 9, Paso 4 |
 
-**No queda ningún hallazgo abierto**: los 29 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: **225/225**.
+**No queda ningún hallazgo abierto**: los 32 catalogados están cerrados con prueba de regresión o
+verificación reproducible. Suite: **266/266**.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -1001,6 +1004,134 @@ era el único punto que no lo usaba.
 que redirige `DATA_DIR_INCOOP`, se sitúa en un directorio de trabajo ajeno y exige las dos
 cosas: que el registro aterrice en el directorio redirigido y que **no** aparezca un `data/`
 en el directorio de trabajo. **Verificada contra el código anterior: falla.**
+
+---
+
+## Hallazgos del motor de archivado — 2026-08-07 (Capa 9, Paso 4)
+
+Los tres salieron de implementar el archivado y, sobre todo, **de arrancar la aplicación contra
+una base sembrada** (Convención C7). Ninguno se habría visto leyendo código.
+
+### H-30 · Archivar lo adjudicado habría vaciado el win-rate 🟢 CERRADO (Capa 9, Paso 4)
+
+`vista_win_rate` terminaba con `WHERE deleted_at IS NULL` (`memoria.py:389`). Con `Adjudicada` y
+`Perdida` entre los estados archivables —decisión de dirección del 2026-08-07—, la primera
+ejecución del motor habría dejado de contar como ganado o perdido justamente lo ganado y lo
+perdido.
+
+Contradice el contrato de la Capa 9, que promete que lo archivado "sigue en la base y sigue
+contando en los KPIs históricos". Y contradecía ya a `vista_analisis_CAC`, que **no** filtra por
+`deleted_at`: las dos vistas discrepaban sobre qué es la población histórica.
+
+**Medido sobre base sembrada**, con un lote adjudicado y otro perdido, ambos archivados:
+
+| | ganadas | perdidas |
+|---|---|---|
+| Vista anterior | **0** | **0** |
+| Vista actual | 1 | 1 |
+
+Ningún dato se había borrado. El indicador de si la cooperativa gana o pierde concursos se
+habría puesto a cero él solo, en silencio, en la primera corrida tras activar el archivado.
+
+**Cerrado con**: la vista deja de filtrar por `deleted_at`. El archivado gobierna qué se ve en el
+canal principal, no qué ha ocurrido.
+
+**Regresión**: `tests/test_capa9_archivado.py::test_el_win_rate_no_cambia_al_archivar_lo_adjudicado_y_lo_perdido`.
+La regresión de H-21 (`test_los_kpis_de_cabecera_y_de_desglose_cuentan_la_misma_poblacion`) no lo
+detectó porque sólo siembra lotes en `Nueva`: nunca ejercitaba el bloque de conversión.
+
+---
+
+### H-31 · No existía rastro de los estados por los que pasó un lote 🟢 CERRADO (Capa 9, Paso 4)
+
+El contrato de la Capa 9 apoya la invariante que protege la memoria comercial en "el rastro
+completo en `expedientes.log_cambios`". Ese rastro **no existía**:
+
+* `log_cambios` sólo lo escribía el Radar, y sólo para cambios de fecha límite y ausencias del
+  feed. Ningún cambio de estado hecho por una persona quedaba registrado.
+* `lotes.updated_at` / `updated_by` no sirven de sustituto: el upsert del Radar los sobreescribe
+  con `'radar'` y la fecha de la corrida (`memoria.py:1188`) cada vez que la licitación sigue
+  apareciendo en el feed. La marca de la última intervención humana se perdía.
+
+**Por qué es grave**: el escenario que el propio contrato cita como ejemplo —"un lote puede estar
+hoy en `Inactiva` habiendo pasado por `Presentada`"— ocurre de verdad en
+`soft_delete_obsoletos()` (`memoria.py:1238-1243`), que reescribe el estado sin dejar constancia
+del anterior. Un lote con oferta presentada pero sin costes registrados habría quedado
+indistinguible de una `Nueva` caducada, y por tanto **elegible para eliminación física** en el
+Paso 6. La invariante central de la capa no era comprobable.
+
+**Cerrado con**: `entrada_log_cambio_estado()` y `anexar_log_cambios()` en `memoria.py`, con
+formato estable (`MARCA_LOG_ESTADO`) para que el Paso 6 pueda interrogarlo. Cableado en las tres
+vías por las que cambia un estado: la del Cockpit (`mutar_estado_lote_transaccional`), la del DAO
+(`actualizar_estado_lote`) y las dos ramas del Radar (`soft_delete_obsoletos`).
+
+**Momento**: se cerró con `data/` inexistente, antes de la primera ejecución real. El rastro sólo
+puede construirse hacia delante: cada corrida que hubiera pasado sin él sería historia
+irrecuperable.
+
+**Regresión**: cuatro pruebas en `tests/test_capa9_archivado.py`, incluida
+`test_el_radar_deja_constancia_del_estado_que_pisa`.
+
+---
+
+### H-32 · Un lote archivado no puede editarse desde el Cockpit 🟢 CERRADO (Capa 9, Paso 4)
+
+`mutar_estado_lote_transaccional()` filtra `WHERE ... AND deleted_at IS NULL`
+(`memoria.py:2925`), de modo que **archivar un lote lo deja fuera del alcance de la interfaz**.
+
+**Medido en vivo**, con la API levantada contra base sembrada:
+
+```
+PUT /api/v1/licitaciones/EXP-03/estado   (lote vivo)       -> 200 OK
+PUT /api/v1/licitaciones/EXP-04/estado   (lote archivado)  -> 404 "no encontrada en el sistema"
+```
+
+No era un problema mientras sólo se archivaba lo ausente del feed, que nadie necesita editar. Lo
+es desde que la política incluye estados que sí se editan:
+
+* **`Adjudicada` / `Perdida`**: se resuelven casi siempre más de 60 días después de la fecha
+  límite, así que se archivarían en la corrida siguiente a marcarlas. A partir de ahí no se
+  podrían registrar el importe de adjudicación, las garantías retenidas ni los costes — que son
+  precisamente los datos que alimentan el win-rate y el CAC.
+* **`Estudiando`**: quien estaba evaluándola no podría moverla ni a `Presentada` ni a
+  `Descartada`. Queda congelada.
+* **`Nueva` / `Descartada`**: sin consecuencia. Nadie las edita.
+
+**Efecto colateral en la cabecera de KPIs**: con lotes resueltos archivados, `total_lotes` (que
+cuenta población viva) deja de cuadrar con `licitaciones_ganadas` y `licitaciones_perdidas` (que
+ahora, correctamente, cuentan población histórica). Es el patrón de H-08 y H-21 otra vez: dos
+poblaciones bajo la misma tarjeta. Medido: `total_lotes = 3` con `ganadas = 1` y `perdidas = 1`
+sobre lotes que no están entre esos 3.
+
+**Cerrado con un cambio de criterio, no con un recorte de la política** *(decisión de dirección,
+2026-08-07: "la idea es evitar bloqueos")*. La raíz era conceptual: `deleted_at` gobernaba dos
+cosas a la vez, **si algo se ve** y **si algo se puede tocar**, cuando el contrato sólo pide la
+primera. Ahora archivar gobierna la visibilidad en el canal principal; la editabilidad no se toca.
+
+| Pieza | Qué cambia |
+|---|---|
+| Escritura | `mutar_estado_lote_transaccional()` alcanza también lo archivado. El lote **sigue archivado** tras editarse. |
+| Lectura — ficha | `obtener_expediente_completo()` devuelve todos los lotes, con su `deleted_at` y `deleted_reason`. Antes la ficha de un expediente archivado se abría con la lista vacía. `score_maximo` pasa a calcularse sobre todos los lotes, o anunciaría "0 pts" sobre lotes que sí se puntuaron. |
+| Lectura — listado | `listar_expedientes_paginados(incluir_archivadas=...)`, expuesto como parámetro del endpoint. Por defecto **no** se incluyen: H-22 no se reabre. |
+| Contrato API | `LoteSchema` gana `deleted_at`/`deleted_reason`; `LicitacionSchema` gana `archivada`, `deleted_at` y `deleted_reason`. |
+| Cockpit | Botón *"Incluir archivadas"* en el Funnel y distintivo **Archivada** en la fila, con el motivo en el `title` (Convención C3). Etiquetas de la tarjeta de KPIs separadas por población: *"Lotes en el canal principal"* frente a *"Ratio de Éxito (Win-Rate histórico)"*. |
+
+**Lo que deliberadamente NO se hizo: desarchivar.** Editar no devuelve el lote al canal principal.
+Si lo hiciera, la corrida siguiente volvería a archivarlo —la fecha límite sigue vencida— y el lote
+entraría y saldría de la pantalla solo: es la oscilación que prohíbe la transición nº 7 del
+contrato. El rescate `ARCHIVADO → VIVO` sigue siendo una acción explícita, y vive en el Paso 8.
+
+**Verificado en vivo**, con la API y el Cockpit levantados contra base sembrada: el Funnel muestra
+3 filas por defecto y 7 con el botón activado, marcando las 4 archivadas; y cambiar el estado de un
+lote archivado desde la tabla persiste en la base (`adjudicada → Perdida`) **sin desarchivarlo**.
+
+**Un defecto propio detectado en esa verificación**, que ningún test habría visto: la fila marcaba
+como archivado un expediente con un lote caducado y otro todavía en juego, porque miraba
+`lotes[0].deleted_at` en vez de la señal `archivada` que el backend ya calculaba. En expedientes
+loteados —lo normal— sacaba visualmente del canal algo que estaba dentro. Corregido y recompilado.
+
+**Regresiones**: cinco pruebas en `tests/test_capa9_archivado.py`, incluida
+`test_editar_un_lote_archivado_no_lo_desarchiva`.
 
 ---
 

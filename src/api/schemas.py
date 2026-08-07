@@ -141,6 +141,12 @@ class LoteSchema(BaseModel):
     fecha_devolucion_garantia: Optional[str] = Field(None, description="Fecha estimada de retorno de aval")
     updated_at: Optional[str] = Field(None, description="Timestamp UTC del último cambio")
     updated_by: Optional[str] = Field(None, description="Usuario o sistema que realizó la última modificación")
+    # Ciclo de vida (Capa 9). Un lote archivado sigue siendo editable —archivar gobierna la
+    # visibilidad en el canal principal, no la editabilidad—, pero la pantalla tiene que
+    # poder decir que lo está y por qué. Sin distintivo, se decidiría sobre él como si
+    # siguiera vivo (Convención C3).
+    deleted_at: Optional[str] = Field(None, description="Fecha de archivado; nulo si el lote sigue vivo")
+    deleted_reason: Optional[str] = Field(None, description="Motivo por el que se archivó")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -202,6 +208,12 @@ class LicitacionSchema(BaseModel):
     alerta_modificacion: bool = Field(False, description="Flag de modificación pospublicación")
     log_cambios: Optional[str] = Field(None, description="Historial de rectificaciones")
     score_maximo: Optional[int] = Field(0, description="Puntuación máxima entre sus lotes")
+    # Ciclo de vida (Capa 9). `archivada` es la señal que la tabla necesita para marcar la
+    # fila: es cierta cuando ninguno de sus lotes sigue vivo. `deleted_at` sólo lo tiene el
+    # expediente archivado en cascada por el Depurador.
+    archivada: bool = Field(False, description="El expediente está fuera del canal principal")
+    deleted_at: Optional[str] = Field(None, description="Fecha de archivado del expediente")
+    deleted_reason: Optional[str] = Field(None, description="Motivo por el que se archivó")
     lotes: List[LoteSchema] = Field(default_factory=list, description="Listado de lotes asociados")
     analisis_semantico: Optional[Dict[str, Any]] = Field(None, description="Dictamen detallado de la IA")
 

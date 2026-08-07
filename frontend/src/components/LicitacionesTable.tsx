@@ -14,6 +14,7 @@ import {
   Building,
   AlertCircle,
   Users,
+  Archive,
 } from 'lucide-react';
 import { useLicitacionesQuery } from '../hooks/useApiQueries';
 import { useMutateEstadoLicitacion } from '../hooks/useApiMutations';
@@ -43,6 +44,9 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
   const [minScore, setMinScore] = useState<number>(0);
   const [estado, setEstado] = useState<string>('');
   const [subrogacionCritica, setSubrogacionCritica] = useState<boolean>(false);
+  // Acceso a lo que el Depurador sacó del canal principal (Capa 9). Apagado por defecto:
+  // esta tabla es con la que se decide a qué concurso presentarse.
+  const [incluirArchivadas, setIncluirArchivadas] = useState<boolean>(false);
 
   // Consulta TanStack Query Server-Side
   const { data, isLoading, isError, isFetching, refetch } = useLicitacionesQuery({
@@ -52,6 +56,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
     min_score: minScore > 0 ? minScore : undefined,
     subrogacion_critica: subrogacionCritica ? true : undefined,
     estado: estado || undefined,
+    incluir_archivadas: incluirArchivadas ? true : undefined,
   });
 
   // Mutación Optimista de Estado Operativo
@@ -84,6 +89,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
     setMinScore(0);
     setEstado('');
     setSubrogacionCritica(false);
+    setIncluirArchivadas(false);
     setPage(1);
   };
 
@@ -160,8 +166,25 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
               Subrogación
             </Button>
 
+            {/* Acceso al histórico archivado (Capa 9).
+                Es la única vía desde el Cockpit para ver lo que el Depurador sacó del
+                canal principal, y para poder actuar sobre ello: un lote archivado sigue
+                siendo editable —registrar el importe de una adjudicación, por ejemplo—,
+                pero antes no había forma de llegar a él. */}
+            <Button
+              variant={incluirArchivadas ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setIncluirArchivadas(!incluirArchivadas);
+                setPage(1);
+              }}
+              leftIcon={<Archive className="w-3.5 h-3.5" />}
+            >
+              Incluir archivadas
+            </Button>
+
             {/* Botón Reset de Filtros */}
-            {(search || estado || minScore > 0 || subrogacionCritica) && (
+            {(search || estado || minScore > 0 || subrogacionCritica || incluirArchivadas) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -256,10 +279,25 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                       (semantico.estado_analisis && semantico.estado_analisis !== 'COMPLETADO')
                   );
 
+                  // Fuera del canal principal (Capa 9). Sólo puede aparecer si se han
+                  // pedido expresamente, pero entonces convive con las vivas en la misma
+                  // tabla: sin distintivo se decidiría sobre ella como si siguiera en juego.
+                  // Sigue siendo editable — archivar no es congelar (Convención C3, H-32).
+                  // La marca es del EXPEDIENTE, no de su primer lote. Mirar
+                  // `lotes[0].deleted_at` marcaba como archivado un expediente con un lote
+                  // caducado y otro todavía en juego —el caso de los expedientes loteados,
+                  // que es lo normal— y lo sacaba visualmente del canal estando dentro.
+                  // El backend ya resuelve la pregunta correcta: cierto sólo si ninguno de
+                  // sus lotes sigue vivo.
+                  const archivada = Boolean(lic.archivada);
+                  const motivoArchivado = lic.deleted_reason;
+
                   return (
                     <tr
                       key={lic.id}
-                      className="hover:bg-slate-50/80 transition-colors group"
+                      className={`hover:bg-slate-50/80 transition-colors group ${
+                        archivada ? 'bg-slate-50/60' : ''
+                      }`}
                     >
                       {/* ID / Origen */}
                       <td className="p-4 align-top">
@@ -271,6 +309,15 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                             <Badge variant="outline" className="text-[10px] py-0">
                               {lic.fuente || 'PSCP'}
                             </Badge>
+                            {archivada && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] py-0 border-slate-400 text-slate-600 bg-slate-100"
+                                title={motivoArchivado || 'Fuera del canal principal'}
+                              >
+                                Archivada
+                              </Badge>
+                            )}
                             {lic.urgente && (
                               <Badge variant="danger" className="text-[10px] py-0">
                                 Urgencia

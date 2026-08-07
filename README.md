@@ -1,16 +1,16 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
 > **Estado del producto: Beta 0.2 (2026-08-07).** Las Capas 1–8 están implementadas y la **Capa 9
-> está en curso** (Pasos 1 a 3 cerrados). El sistema no contiene datos operativos reales
+> está en curso** (Pasos 1 a 4 cerrados). El sistema no contiene datos operativos reales
 > versionados: los datos locales se usan exclusivamente para pruebas. No debe tomarse una decisión
 > de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, con la suite en **225/225** y los **29 hallazgos** catalogados cerrados, sin
+> están cerrados, con la suite en **266/266** y los **32 hallazgos** catalogados cerrados, sin
 > ninguno abierto. La base de datos está **vacía a propósito**: los datos de la beta se borraron el
 > 2026-08-06 y la primera ejecución real producirá un conjunto coherente, puntuado íntegramente con
-> los criterios vigentes. El esquema vigente es **v6**. El Cockpit compila limpio con `tsc -b` en
-> modo estricto y su bundle está al día.
+> los criterios vigentes. El esquema vigente es **v6** y la política de retención, **v1.1.0**. El
+> Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
 > hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
@@ -490,7 +490,7 @@ Descargar los archivos PDF de Pliegos de Cláusulas Administrativas (PCA), Plieg
   - Context manager de file lock cross-process (`licitaciones.db.lock`) para prevenir colisiones en disco.
   - Pre-deduplicación de feed para evitar descargas duplicadas de red (bypass completo a 0 ms).
   - Backpressure dinámica por host mediante cooldown colectivo compartido en el pool de hilos.
-  - Job de purga física de PDFs y sidecars para expedientes inactivos o expirados (>90 días).
+  - Job de purga física de PDFs y sidecars para expedientes inactivos o expirados. El plazo era de 90 días codificados a fuego; desde la Capa 9 lo fija `config/retencion.yaml` (**180 días**).
   - Generación de reportes de métricas CSV acumulativos y logs estructurados de auditoría.
 - **Paso 4: Motor de Extracción de Texto Nativo (PyMuPDF / FitZ)**: 🟢 Completado y Validado.
   - Extracción vectorial multipágina con PyMuPDF (`fitz`), limpieza de texto y normalización de espacios.
@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1, 2 y 3 cerrados**, del 4 al 10 pendientes. Esquema de base de datos en **v6**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 4 cerrados**, del 5 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.1.0**.
 
 ### 🎯 Objetivo
 
@@ -1000,9 +1000,9 @@ Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje
    - Las claves foráneas de `documentos`, `analisis_semantico` y `lotes` son `ON DELETE RESTRICT`. Hoy la base **impide** borrar un expediente con hijos.
    - Eso no es un obstáculo que rodear con `PRAGMA foreign_keys=OFF`: es la red que impide dejar huérfanos. La purga elimina de hoja a raíz —documentos, análisis, lotes, expediente— y si una restricción se lo impide, **se detiene y lo reporta** en lugar de forzar.
 
-4. **La política de retención es configuración versionada, no una constante** *(Regla 4)*:
-   - Hoy los plazos están **codificados a fuego**: `dias_retencion=90` en la llamada del pipeline al Lector y `dias_retencion=7` en la rotación de copias. Un criterio operativo que nadie puede consultar ni cambiar sin tocar código.
-   - Pasan a `config/retencion.yaml` con número de versión, y ese número queda registrado en cada purga ejecutada.
+4. **La política de retención es configuración versionada, no una constante** *(Regla 4)*: 🟢 **hecho en el Paso 2.**
+   - Los plazos estaban **codificados a fuego**: `dias_retencion=90` en la llamada del pipeline al Lector y `dias_retencion=7` en la rotación de copias. Un criterio operativo que nadie podía consultar ni cambiar sin tocar código.
+   - Viven en `config/retencion.yaml` con número de versión —hoy **v1.1.0**—, y ese número queda registrado en cada purga ejecutada.
    - **Retención de pliegos: 180 días** *(decisión de dirección, 2026-08-07)*. Los 90 actuales se quedan cortos: el ciclo completo de una licitación —publicación, presentación, evaluación y adjudicación— los supera con frecuencia, y purgar a los 90 días puede borrar el pliego de un concurso todavía sin resolver.
 
 5. **Nada se purga en silencio** *(coherente con el criterio del Paso D5)*:
@@ -1080,8 +1080,11 @@ graph TD
 > ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v6** desde el 2026-08-07.
 
 #### **Fase 2: Motor del Depurador**
-4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 💤
-   - Transición `Vivo → Archivado` por caducidad de plazo, idempotente y sin tocar lo ya archivado. Los archivados salen del canal principal pero siguen contando en los KPIs históricos.
+4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 🟢 Completado y Validado.
+   - Transición `Vivo → Archivado` a los **60 días de la fecha límite** *(decisión de dirección, 2026-08-07)*, idempotente y sin tocar lo ya archivado. Los archivados salen del canal principal pero siguen contando en los KPIs históricos.
+   - Criterios en el bloque `archivado` de `config/retencion.yaml`. `Presentada` **no es archivable jamás** y el código lo rechaza aunque se declare: una oferta entregada y sin resolver es lo más vivo del embudo.
+   - **Cierra H-30**: `vista_win_rate` excluía lo archivado, de modo que archivar lo adjudicado habría puesto a cero el indicador de si la cooperativa gana concursos. Y **H-31**: no existía rastro de los estados por los que pasaba un lote, del que depende la invariante del Paso 6.
+   - **Y H-32**: un lote archivado no podía editarse desde el Cockpit, lo que habría congelado el registro de un contrato ganado justo cuando toca anotar su importe y sus garantías. Se cierra separando las dos cosas que `deleted_at` gobernaba a la vez: **archivar decide qué se ve en el canal principal, no qué se puede tocar**. El Funnel gana el filtro *"Incluir archivadas"* y las filas archivadas llegan marcadas. Editar **no desarchiva**: el rescate sigue siendo explícito y vive en el Paso 8.
 5. **Paso 5 — Motor de Purga Documental**: 💤
    - Consolidación de lo que hoy vive disperso en `lector.ejecutar_purga_obsoletos()` y `memoria.rotar_backups()`, ahora gobernado por la política versionada. Libera disco sin tocar ninguna fila de negocio.
 6. **Paso 6 — Motor de Eliminación Física con Orden de Integridad**: 💤
@@ -1102,11 +1105,11 @@ graph TD
 ---
 
 ### 🛠️ Herramientas y Código a Crear
-- `config/retencion.yaml`: política de retención versionada.
-- `src/depurador.py`: motor de archivado, purga documental y eliminación física.
-- `src/api/routers/admin.py`: endpoints de administración y purga.
-- `tests/test_capa9_depurador.py`: suite de integración y regresiones del ciclo de vida.
-- `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos.
+- `config/retencion.yaml`: política de retención versionada. 🟢 **Creado (Paso 2, v1.1.0)**, con el bloque `archivado` añadido en el Paso 4. Se lee desde `src/retencion.py`.
+- `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟡 **Creado (Paso 4)** con la operación de archivado; le faltan la purga documental y la eliminación física.
+- `src/api/routers/admin.py`: endpoints de administración y purga. 💤 Pasos 7 y 8.
+- `tests/test_capa9_archivado.py`: regresiones del ciclo de vida. 🟢 **Creado (Paso 4)**, 41 pruebas. La suite E2E del Paso 10 se sumará aquí.
+- `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 💤 Paso 9.
 
 ---
 

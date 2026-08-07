@@ -15,7 +15,9 @@
 retencion:
   # Versión de la política. Cada purga registra bajo qué versión se ejecutó, para que
   # un cambio de criterio no reescriba la historia de lo ya purgado.
-  version: "1.0.0"
+  #
+  # 1.1.0 (2026-08-07, Paso 4): incorpora el bloque `archivado`.
+  version: "1.1.0"
 
   # Días que se conservan los pliegos descargados y su texto extraído.
   #
@@ -32,6 +34,44 @@ retencion:
   # Se generan en cada ejecución del pipeline, así que crecen deprisa.
   backups_dias: 7
 
-# Los parámetros de archivado (cuándo un expediente vivo y caducado pasa a archivado)
-# se incorporarán en el Paso 4, junto al motor que los usa. Añadirlos ahora obligaría a
-# fijar un criterio de negocio sin el contexto en el que se va a aplicar.
+  # -----------------------------------------------------------------------------------
+  # ARCHIVADO (Capa 9, Paso 4) — decisiones de dirección del 2026-08-07.
+  #
+  # Archivar NO borra nada: escribe `deleted_at` y `deleted_reason`, con lo que el lote
+  # sale del canal principal del Funnel pero sigue en la base. Es la única operación
+  # reversible del Depurador —basta con vaciar `deleted_at` para rescatarlo— y por eso
+  # es la que puede ejecutarse sola en cada corrida del pipeline.
+  #
+  # Si este bloque falta, el Depurador NO archiva y lo dice. No se inventan plazos:
+  # misma doctrina que el resto del fichero. Si está presente pero es incoherente, la
+  # política entera se rechaza y tampoco se purgan documentos.
+  archivado:
+    # Días transcurridos desde la fecha límite de presentación para que un lote se
+    # archive. 60 por decisión de dirección: dos meses de margen sobre la fecha en que
+    # ya no se puede presentar oferta. Si el órgano de contratación prorroga el plazo,
+    # el Radar refresca `fecha_limite` en la siguiente corrida y el contador se reinicia
+    # solo, de modo que una prórroga nunca provoca un archivado prematuro.
+    dias_tras_fecha_limite: 60
+
+    # Estados que el motor puede archivar automáticamente al cumplirse ese plazo.
+    #
+    # `Presentada` NO figura, y el código lo rechaza expresamente si se añade: una oferta
+    # presentada y sin resolver es lo más vivo del embudo —está esperando adjudicación—,
+    # y archivarla escondería precisamente el trabajo en curso.
+    #
+    # `Inactiva` y `Anulada_Administracion` tampoco figuran, pero por el motivo contrario:
+    # el Radar ya les escribe `deleted_at` al detectar su ausencia en el feed, así que
+    # llegan aquí archivadas de nacimiento.
+    estados_archivables:
+      - "Nueva"          # entró por el feed, venció y nadie llegó a mirarla
+      - "Descartada"     # una persona la rechazó; la fila se conserva para evitar reprocesos
+      - "Estudiando"     # se evaluó y no se resolvió
+      - "Adjudicada"     # resuelta: sigue contando íntegra en win-rate y CAC
+      - "Perdida"        # resuelta: es el denominador del win-rate
+
+    # Cuándo se archiva el expediente entero, además de sus lotes.
+    #
+    # `true`: sólo cuando ninguno de sus lotes sigue vivo. El expediente es el contenedor;
+    # mientras un solo lote siga en juego, el expediente sigue en juego. Evita que un
+    # expediente de cinco lotes desaparezca porque cuatro caducaron.
+    archivar_expediente_con_todos_sus_lotes: true

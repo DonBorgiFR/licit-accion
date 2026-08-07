@@ -154,8 +154,12 @@ export const KPIDashboard: React.FC = () => {
         <Card className="border-amber-100 bg-gradient-to-br from-white to-amber-50/30">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
+              {/* Población histórica: cuenta también lo archivado (Capa 9). La memoria
+                  comercial no caduca ni desaparece del indicador porque el Depurador saque
+                  el expediente del canal principal. Se etiqueta explícitamente para que no
+                  se lea sobre la misma población que la cartera viva de abajo. */}
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-700">
-                Ratio de Éxito (Win-Rate)
+                Ratio de Éxito (Win-Rate histórico)
               </span>
               <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
                 <Award className="w-5 h-5" />
@@ -223,7 +227,11 @@ export const KPIDashboard: React.FC = () => {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <span className="text-xs text-slate-500 block">Total Lotes Gestionados</span>
+                {/* Cartera viva: excluye lo archivado, igual que la tabla del Funnel. No
+                    cuadra con "ganadas" y "perdidas" de abajo, y no debe: aquéllas cuentan
+                    todo el histórico. Nombrar cada población evita el error de sumarlas
+                    —el mismo que costó H-08 y H-21—. */}
+                <span className="text-xs text-slate-500 block">Lotes en el canal principal</span>
                 <span className="text-lg font-bold text-slate-900 font-mono tabular-nums">
                   {data?.total_lotes || 0}
                 </span>

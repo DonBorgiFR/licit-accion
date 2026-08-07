@@ -36,6 +36,32 @@ def ruta_proyecto(ruta) -> str:
     return str((PROJECT_ROOT / p).resolve())
 
 
+#: Estados operativos válidos de un lote, en su forma normalizada (minúsculas).
+#: Definición canónica: `EstadoLicitacionEnum` (`src/api/schemas.py`) declara las mismas
+#: ocho, y `src/memoria.py` las reexporta. Viven aquí, en la raíz del paquete, porque
+#: `src/retencion.py` necesita validarlas contra la política sin arrastrar FastAPI ni la
+#: capa de persistencia.
+#:
+#: Por qué normalizadas: H-27 documentó que el mismo estado se escribía con dos grafías
+#: —`Inactiva` e `inactiva`— y que el sistema era coherente por accidente. Toda comparación
+#: de estado se hace normalizada, nunca contra el literal.
+ESTADOS_OPERATIVOS_VALIDOS = (
+    "nueva",
+    "estudiando",
+    "presentada",
+    "adjudicada",
+    "perdida",
+    "descartada",
+    "anulada_administracion",
+    "inactiva",
+)
+
+
+def normalizar_estado_operativo(estado) -> str:
+    """Reduce un estado operativo a su forma comparable: sin espacios y en minúsculas."""
+    return str(estado or "").strip().lower()
+
+
 def ruta_datos(*partes) -> str:
     """
     Resuelve una ruta **dentro del directorio de datos**: base de datos, documentos

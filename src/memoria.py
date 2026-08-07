@@ -14,7 +14,13 @@ from typing import Dict, Any, List, Optional, Tuple
 
 # La definición canónica vive en el paquete raíz. Se reexporta aquí porque
 # `src/api/dependencies.py` ya importaba PROJECT_ROOT desde este módulo.
-from src import PROJECT_ROOT, ruta_proyecto, ruta_datos
+from src import (
+    ESTADOS_OPERATIVOS_VALIDOS,
+    PROJECT_ROOT,
+    normalizar_estado_operativo,
+    ruta_proyecto,
+    ruta_datos,
+)
 
 # =====================================================================
 # HELPER DE VERIFICACIÓN DE PID Y PROCESOS
@@ -88,6 +94,50 @@ def normalizar_fecha_utc(fecha_str: str) -> str:
             return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         return fecha_str
+
+# =====================================================================
+# HELPER DE RASTRO DE CAMBIOS DE ESTADO (H-31)
+# =====================================================================
+
+#: Marca que identifica una entrada de cambio de estado dentro de `expedientes.log_cambios`.
+#: El formato es estable a propósito: la invariante de memoria comercial del Paso 6 —qué
+#: expedientes NO pueden eliminarse jamás— tiene que poder responder "¿este lote llegó
+#: alguna vez a Presentada?", y este rastro es la única evidencia que quedará.
+MARCA_LOG_ESTADO = "ESTADO"
+
+
+def entrada_log_cambio_estado(lote_numero: int, anterior: str, nuevo: str, autor: str = "user") -> str:
+    """Compone una línea de rastro para un cambio de estado operativo.
+
+    Por qué existe (H-31): hasta la Capa 9 no quedaba ninguna constancia de por qué estados
+    había pasado un lote. `lotes.updated_at`/`updated_by` no sirven —el Radar los sobreescribe
+    en cada reingesta mientras la licitación siga en el feed— y `log_cambios` sólo recogía
+    cambios de fecha límite y ausencias. El escenario que el propio contrato de la Capa 9 pone
+    como ejemplo, "un lote puede estar hoy en Inactiva habiendo pasado por Presentada", ocurre
+    de verdad: `soft_delete_obsoletos()` reescribe el estado sin dejar constancia de cuál era.
+    Sin este rastro, un lote con negocio invertido pero sin costes registrados sería
+    indistinguible de una `Nueva` caducada, y por tanto elegible para eliminación física.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    anterior_txt = normalizar_estado_operativo(anterior) or "?"
+    nuevo_txt = normalizar_estado_operativo(nuevo) or "?"
+    return (
+        f"[{timestamp}] [{autor}] {MARCA_LOG_ESTADO} lote {lote_numero}: "
+        f"'{anterior_txt}' -> '{nuevo_txt}'"
+    )
+
+
+def anexar_log_cambios(cursor, expediente_id: str, entrada: str) -> None:
+    """Añade una entrada al histórico del expediente sin perder lo ya escrito.
+
+    Se concatena en SQL (`log_cambios || ?`) en vez de leer-modificar-escribir para que la
+    escritura sea atómica respecto a la fila y no pise lo que otra operación haya anexado.
+    """
+    cursor.execute(
+        "UPDATE expedientes SET log_cambios = COALESCE(log_cambios, '') || ? WHERE id = ?;",
+        (f"\n{entrada}", expediente_id),
+    )
+
 
 # =====================================================================
 # HELPER DE NORMALIZACIÓN Y CÁLCULO DE HASH
@@ -373,6 +423,16 @@ SQL_CREATE_INDICES = [
 # DDL DE VISTAS ANALÍTICAS (SQL VIEWS v2)
 # =====================================================================
 
+# La vista NO filtra por `deleted_at` (H-30, corregido en la Capa 9, Paso 4). Lo hacía, y
+# eso convertía el archivado en destrucción de indicadores: en el momento en que el
+# Depurador archivara un lote `Adjudicada` o `Perdida` —tal como se decidió que haría—,
+# ese lote dejaría de contar como ganado o perdido. Ganadas y perdidas caerían a cero y la
+# tasa de éxito quedaría en blanco, sin haberse borrado un solo dato.
+#
+# El contrato de la Capa 9 es explícito: lo archivado "sigue en la base y sigue contando en
+# los KPIs históricos". La memoria comercial cuenta esté archivada o no; el archivado
+# gobierna qué se ve en el canal principal, no qué ha ocurrido. `vista_analisis_CAC` ya se
+# comportaba así, de modo que las dos vistas discrepaban sobre qué es la población histórica.
 SQL_CREATE_VIEW_WIN_RATE = """
 CREATE VIEW IF NOT EXISTS vista_win_rate AS
 SELECT 
@@ -385,8 +445,7 @@ SELECT
         NULLIF(COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('adjudicada', 'adjudicada_incoop', 'perdida', 'adjudicada_competencia', 'presentada') THEN 1 END), 0), 0) * 100,
         2
     ) AS tasa_exito_porcentaje
-FROM lotes
-WHERE deleted_at IS NULL;
+FROM lotes;
 """
 
 SQL_CREATE_VIEW_ANALISIS_CAC_TEMPLATE = """
@@ -1009,6 +1068,128 @@ class Memoria:
                     (estado, now_str, ejecucion_id)
                 )
 
+    #: Columnas de métricas que `ejecuciones` admite (esquema v6). La lista blanca evita
+    #: que un nombre de columna llegue interpolado desde fuera y, sobre todo, que una
+    #: métrica mal escrita se pierda en silencio: se rechaza con un error explícito.
+    METRICAS_EJECUCION_VALIDAS = (
+        "expedientes_nuevos",
+        "expedientes_actualizados",
+        "lotes_evaluados",
+        "documentos_descargados",
+        "analisis_realizados",
+        "alertas_generadas",
+        "errores",
+        "version_scoring",
+        "version_politica_retencion",
+    )
+
+    def registrar_metricas_ejecucion(self, ejecucion_id: int, **metricas) -> None:
+        """
+        Persiste las métricas de una corrida en la tabla `ejecuciones` (esquema v6).
+
+        Hasta ahora estas cifras se imprimían por terminal y se perdían: la tabla sólo sabía
+        cuándo empezó y acabó cada ejecución, de modo que no había forma de responder a
+        "¿qué encontró la prospección del martes?". El Paso 3 creó las columnas; aquí se
+        pueblan por primera vez.
+
+        Los valores a `None` se omiten, para no pisar con nulos lo que otra fase ya escribió.
+        """
+        campos = {k: v for k, v in metricas.items() if v is not None}
+        if not campos:
+            return
+
+        desconocidas = set(campos) - set(self.METRICAS_EJECUCION_VALIDAS)
+        if desconocidas:
+            raise ValueError(
+                f"Métricas de ejecución desconocidas: {', '.join(sorted(desconocidas))}. "
+                f"Válidas: {', '.join(self.METRICAS_EJECUCION_VALIDAS)}."
+            )
+
+        asignaciones = ", ".join(f"{campo} = :{campo}" for campo in campos)
+        parametros = dict(campos)
+        parametros["ejecucion_id"] = ejecucion_id
+
+        with self.conectar() as conn:
+            with conn:
+                conn.execute(
+                    f"UPDATE ejecuciones SET {asignaciones} WHERE id = :ejecucion_id;",
+                    parametros
+                )
+
+    def contar_documentos_descargados_desde(self, desde_utc: str) -> int:
+        """
+        Documentos que quedaron descargados o procesados durante la corrida en curso.
+
+        Se cuenta contra la base y no con un contador en memoria porque la descarga es
+        multihilo y resiliente: un documento puede reintentarse, diferirse a OCR o fallar,
+        y lo que interesa registrar es cuántos acabaron realmente en disco. `DETECTADO` no
+        cuenta: detectar una URL no es haberla descargado.
+        """
+        with self.conectar() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM documentos "
+                "WHERE updated_at >= ? AND estado IN ('DESCARGADO', 'PROCESADO');",
+                (desde_utc,)
+            )
+            return cursor.fetchone()[0]
+
+    def registrar_purga(
+        self,
+        tipo: str,
+        solicitada_por: str,
+        version_politica: str,
+        resultado: str,
+        documentos_purgados: int = 0,
+        bytes_liberados: int = 0,
+        expedientes_archivados: int = 0,
+        expedientes_eliminados: int = 0,
+        bloqueados: int = 0,
+        backup_asociado: Optional[str] = None,
+        detalle: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> int:
+        """
+        Registra una operación del Depurador en la tabla de auditoría `purgas` (esquema v6).
+
+        Se registran también las abortadas y las degradadas: "nada se purga en silencio"
+        incluye, sobre todo, lo que se intentó y no salió. `conn` permite escribir dentro de
+        la misma transacción que la operación auditada, para que el rastro y el hecho no
+        puedan quedar desacoplados.
+        """
+        sql = """
+        INSERT INTO purgas (
+            ejecutada_at, tipo, solicitada_por, version_politica,
+            documentos_purgados, bytes_liberados, expedientes_archivados,
+            expedientes_eliminados, bloqueados, backup_asociado, resultado, detalle
+        ) VALUES (
+            :ejecutada_at, :tipo, :solicitada_por, :version_politica,
+            :documentos_purgados, :bytes_liberados, :expedientes_archivados,
+            :expedientes_eliminados, :bloqueados, :backup_asociado, :resultado, :detalle
+        );
+        """
+        parametros = {
+            "ejecutada_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "tipo": tipo,
+            "solicitada_por": solicitada_por,
+            "version_politica": version_politica,
+            "documentos_purgados": documentos_purgados,
+            "bytes_liberados": bytes_liberados,
+            "expedientes_archivados": expedientes_archivados,
+            "expedientes_eliminados": expedientes_eliminados,
+            "bloqueados": bloqueados,
+            "backup_asociado": backup_asociado,
+            "resultado": resultado,
+            "detalle": detalle,
+        }
+
+        if conn is not None:
+            return conn.execute(sql, parametros).lastrowid
+
+        with self.conectar() as c:
+            with c:
+                return c.execute(sql, parametros).lastrowid
+
     # =====================================================================
     # UPSERT DE INGESTA CON DETECCION DE CAMBIOS POR HASH
     # =====================================================================
@@ -1220,30 +1401,47 @@ class Memoria:
             with conn:
                 for exp_id, fecha_limite in obsoletos:
                     cursor.execute(
-                        "SELECT id, estado_operativo FROM lotes WHERE expediente_id = ?;",
+                        "SELECT id, lote_numero, estado_operativo FROM lotes WHERE expediente_id = ?;",
                         (exp_id,)
                     )
                     lotes = cursor.fetchall()
                     
-                    for lote_id, estado_op in lotes:
-                        if estado_op.lower() == "nueva":
+                    for lote_id, lote_numero, estado_op in lotes:
+                        if normalizar_estado_operativo(estado_op) == "nueva":
                             cursor.execute(
                                 "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
                                 (ESTADO_INACTIVA, fecha_actual_utc, "Ausente en el feed de licitaciones vigentes (Expirado)", fecha_actual_utc, lote_id)
                             )
                             cursor.execute(
-                                "UPDATE expedientes SET log_cambios = log_cambios || ? WHERE id = ?;",
+                                "UPDATE expedientes SET log_cambios = COALESCE(log_cambios, '') || ? WHERE id = ?;",
                                 (f"\n[{fecha_actual_utc}] [radar] Estado cambiado de 'Nueva' a '{ESTADO_INACTIVA}' (Ausente en feed)", exp_id)
                             )
-                        elif estado_op.lower() not in ("inactiva", "anulada_administracion"):
+                            # Rastro estructurado además del literario (H-31): el Paso 6
+                            # tendrá que responder por qué estados pasó este lote.
+                            anexar_log_cambios(
+                                cursor, exp_id,
+                                entrada_log_cambio_estado(lote_numero, estado_op, ESTADO_INACTIVA, autor="radar")
+                            )
+                        elif normalizar_estado_operativo(estado_op) not in ESTADOS_ARCHIVADOS_NORMALIZADOS:
                             if fecha_limite and fecha_limite != "N/A" and fecha_limite > fecha_actual_utc:
                                 cursor.execute(
                                     "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
                                     (ESTADO_ANULADA_ADMINISTRACION, fecha_actual_utc, "Ausente en feed antes de la fecha límite (Posible anulación)", fecha_actual_utc, lote_id)
                                 )
                                 cursor.execute(
-                                    "UPDATE expedientes SET alerta_modificacion = 1, log_cambios = log_cambios || ? WHERE id = ?;",
+                                    "UPDATE expedientes SET alerta_modificacion = 1, log_cambios = COALESCE(log_cambios, '') || ? WHERE id = ?;",
                                     (f"\n[{fecha_actual_utc}] [radar] [ALERTA] Licitación ausente del feed antes de su vencimiento. Posible anulación.", exp_id)
+                                )
+                                # Esta es la rama que el contrato de la Capa 9 cita como
+                                # ejemplo: un lote puede acabar en `Anulada_Administracion`
+                                # habiendo pasado por `Presentada`. Hasta ahora el estado
+                                # anterior se perdía aquí, y con él la prueba de que hubo
+                                # negocio invertido.
+                                anexar_log_cambios(
+                                    cursor, exp_id,
+                                    entrada_log_cambio_estado(
+                                        lote_numero, estado_op, ESTADO_ANULADA_ADMINISTRACION, autor="radar"
+                                    )
                                 )
 
     # =====================================================================
@@ -1254,15 +1452,35 @@ class Memoria:
         """
         Actualiza el estado operativo comercial de un lote específico por el usuario.
         Aplica normalización higiénica en minúsculas y sin espacios.
+
+        Deja rastro del cambio en `expedientes.log_cambios` (H-31). No es cosmético: es la
+        única evidencia de que alguien invirtió criterio en este lote, y de ella depende la
+        invariante que impide eliminar memoria comercial.
         """
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        estado_clean = estado.strip().lower()
+        estado_clean = normalizar_estado_operativo(estado)
         with self.conectar() as conn:
             with conn:
-                conn.execute(
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT estado_operativo FROM lotes WHERE expediente_id = ? AND lote_numero = ?;",
+                    (expediente_id, lote_numero)
+                )
+                fila = cursor.fetchone()
+                estado_anterior = fila[0] if fila else None
+
+                cursor.execute(
                     "UPDATE lotes SET estado_operativo = ?, updated_by = 'user', updated_at = ? WHERE expediente_id = ? AND lote_numero = ?;",
                     (estado_clean, now_str, expediente_id, lote_numero)
                 )
+
+                # Sólo se anota si hubo cambio real: reafirmar el estado actual no es
+                # información, y llenaría el histórico de ruido.
+                if fila and normalizar_estado_operativo(estado_anterior) != estado_clean:
+                    anexar_log_cambios(
+                        cursor, expediente_id,
+                        entrada_log_cambio_estado(lote_numero, estado_anterior, estado_clean, autor="user")
+                    )
 
     def registrar_costes_CAC(self, expediente_id: str, lote_numero: int, horas: int, costes_externos: float) -> None:
         """
@@ -1361,7 +1579,11 @@ class Memoria:
         evitando abrir y cerrar conexiones SQLite por cada elemento.
         Devuelve métricas de hits, misses y errores.
         """
-        estadisticas = {"hits": 0, "misses": 0, "errores": 0}
+        # `nuevos` y `actualizados` desglosan los misses: un miss es una escritura, pero no
+        # es lo mismo descubrir un expediente que ver cambiar uno que ya se conocía. Los
+        # hits no son ninguna de las dos cosas —el hash coincide, no ha cambiado nada—, así
+        # que no se suman a ningún lado. Alimentan las métricas de `ejecuciones` (v6).
+        estadisticas = {"hits": 0, "misses": 0, "errores": 0, "nuevos": 0, "actualizados": 0}
         if not oportunidades:
             return estadisticas
 
@@ -1555,6 +1777,7 @@ class Memoria:
                             
                             duration_ms = int((time.perf_counter() - start_time_perf) * 1000)
                             estadisticas["misses"] += 1
+                            estadisticas["actualizados" if existe_previo else "nuevos"] += 1
                             self.registrar_log_json(
                                 run_id=run_id, action="upsert_miss", expediente_id=expediente_id,
                                 reason="hash_changed" if existe_previo else "new_expediente",
@@ -2579,10 +2802,17 @@ class Memoria:
         pmp_max: Optional[int] = None,
         subrogacion_critica: Optional[bool] = None,
         estado: Optional[str] = None,
+        incluir_archivadas: bool = False,
         conn: Optional[sqlite3.Connection] = None
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
         Devuelve una lista paginada de expedientes con sus lotes asociados y el recuento total coincidentes.
+
+        `incluir_archivadas` es la única vía para llegar desde la interfaz a lo que el
+        Depurador sacó del canal principal (H-32). Por defecto es `False`: el Funnel es la
+        tabla con la que se decide a qué concurso presentarse y no debe arrastrar histórico.
+        Mismo criterio y mismo patrón que el filtro de auditoría que el Paso D5/D9 añadió al
+        Centinela para las alertas descartadas por reglas.
         """
         def _ejecutar_listar(c: sqlite3.Connection):
             c.row_factory = sqlite3.Row
@@ -2615,15 +2845,21 @@ class Memoria:
 
             where_str = " AND ".join(where_clauses)
 
-            sub_lotes = """
-                SELECT 
+            # El filtro de vivos se aplica salvo que se pidan expresamente las archivadas.
+            # `archivada` viaja hasta la fila para que la pantalla pueda marcarla: una fila
+            # archivada mezclada sin distintivo con las vivas induciría a decidir sobre algo
+            # que ya está fuera del canal (Convención C3).
+            filtro_vivos = "" if incluir_archivadas else "WHERE deleted_at IS NULL"
+            sub_lotes = f"""
+                SELECT
                     expediente_id,
                     MAX(score_total) AS max_score,
                     MAX(pmp_dias) AS max_pmp,
                     MAX(CASE WHEN subrogacion = 1 THEN 1 ELSE 0 END) AS has_subrogacion,
-                    MIN(estado_operativo) AS estado_operativo
+                    MIN(estado_operativo) AS estado_operativo,
+                    MIN(CASE WHEN deleted_at IS NULL THEN 0 ELSE 1 END) AS archivada
                 FROM lotes
-                WHERE deleted_at IS NULL
+                {filtro_vivos}
                 GROUP BY expediente_id
             """
 
@@ -2652,7 +2888,9 @@ class Memoria:
                     e.id, e.titulo, e.organo, e.localidad, e.nuts, e.procedimiento,
                     e.urgente, e.fuente, e.link, e.fecha_publicacion, e.fecha_limite,
                     e.fecha_ingesta, e.alerta_modificacion, e.log_cambios,
-                    COALESCE(sub.max_score, 0) AS score_maximo
+                    e.deleted_at, e.deleted_reason,
+                    COALESCE(sub.max_score, 0) AS score_maximo,
+                    COALESCE(sub.archivada, 0) AS archivada
                 FROM expedientes e
                 JOIN ({sub_lotes}) sub ON e.id = sub.expediente_id
                 WHERE {where_str}
@@ -2675,10 +2913,13 @@ class Memoria:
                 exp_ids = list(exp_map.keys())
                 placeholders = ",".join("?" * len(exp_ids))
 
-                # Batch Query 1: Lotes en una única llamada SQL
+                # Batch Query 1: Lotes en una única llamada SQL. Respeta el mismo criterio
+                # que la subconsulta de arriba; si no, un expediente traído por
+                # `incluir_archivadas` llegaría a la pantalla sin ningún lote dentro.
+                filtro_lotes = "" if incluir_archivadas else "AND deleted_at IS NULL"
                 lotes_sql = f"""
-                    SELECT * FROM lotes 
-                    WHERE expediente_id IN ({placeholders}) AND deleted_at IS NULL
+                    SELECT * FROM lotes
+                    WHERE expediente_id IN ({placeholders}) {filtro_lotes}
                     ORDER BY expediente_id, lote_numero ASC;
                 """
                 cur.execute(lotes_sql, exp_ids)
@@ -2733,7 +2974,8 @@ class Memoria:
                     e.id, e.titulo, e.organo, e.localidad, e.nuts, e.procedimiento,
                     e.urgente, e.fuente, e.link, e.fecha_publicacion, e.fecha_limite,
                     e.fecha_ingesta, e.alerta_modificacion, e.log_cambios,
-                    (SELECT COALESCE(MAX(score_total), 0) FROM lotes WHERE expediente_id = e.id AND deleted_at IS NULL) AS score_maximo
+                    e.deleted_at, e.deleted_reason,
+                    (SELECT COALESCE(MAX(score_total), 0) FROM lotes WHERE expediente_id = e.id) AS score_maximo
                 FROM expedientes e
                 WHERE e.id = ?;
             """, (expediente_id,))
@@ -2743,9 +2985,19 @@ class Memoria:
 
             exp_dict = dict(row_exp)
 
+            # La ficha muestra TODOS los lotes, archivados incluidos (H-32). Antes filtraba
+            # por `deleted_at`, de modo que la ficha de un expediente archivado se abría con
+            # la lista de lotes vacía: no había nada que mirar ni sobre lo que decidir.
+            # Cada lote viaja con su `deleted_at` y su `deleted_reason` para que el Cockpit
+            # pueda distinguirlo — mostrarlo sin distintivo sería peor que no mostrarlo
+            # (Convención C3).
+            #
+            # `score_maximo` pasa a calcularse sobre todos los lotes por la misma razón: si
+            # sólo contara los vivos, la ficha de un expediente archivado anunciaría "0 pts"
+            # sobre lotes que se puntuaron en su día.
             cur.execute("""
-                SELECT * FROM lotes 
-                WHERE expediente_id = ? AND deleted_at IS NULL
+                SELECT * FROM lotes
+                WHERE expediente_id = ?
                 ORDER BY lote_numero ASC;
             """, (expediente_id,))
             rows_lotes = cur.fetchall()
@@ -2920,9 +3172,21 @@ class Memoria:
             c.row_factory = sqlite3.Row
             cur = c.cursor()
 
+            # Se alcanza también lo archivado (H-32). Archivar gobierna **qué se ve en el
+            # canal principal, no qué se puede tocar**: filtrar aquí por `deleted_at`
+            # convertía el archivado en sólo-lectura y dejaba congelado el registro de un
+            # contrato ganado —su importe, sus garantías, sus costes— justo cuando toca
+            # anotarlos, porque una adjudicación se resuelve mucho después de la fecha
+            # límite que provocó el archivado.
+            #
+            # Esto NO desarchiva: el lote sigue con su `deleted_at` y fuera del Funnel. El
+            # rescate `ARCHIVADO -> VIVO` es una acción explícita del contrato y vive en el
+            # Paso 8. Si esta mutación lo desarchivara, la corrida siguiente volvería a
+            # archivarlo —la fecha límite sigue vencida— y el lote entraría y saldría de la
+            # pantalla solo: exactamente la oscilación que prohíbe la transición nº 7.
             cur.execute("""
                 SELECT estado_operativo FROM lotes
-                WHERE expediente_id = ? AND lote_numero = ? AND deleted_at IS NULL;
+                WHERE expediente_id = ? AND lote_numero = ?;
             """, (expediente_id, lote_numero))
             row = cur.fetchone()
             if not row:
@@ -2933,25 +3197,36 @@ class Memoria:
 
             if notas is not None:
                 sql = """
-                    UPDATE lotes 
+                    UPDATE lotes
                     SET estado_operativo = ?,
                         notas_usuario = ?,
                         updated_at = ?,
                         updated_by = 'user'
-                    WHERE expediente_id = ? AND lote_numero = ? AND deleted_at IS NULL;
+                    WHERE expediente_id = ? AND lote_numero = ?;
                 """
                 params = (nuevo_estado, notas, now_str, expediente_id, lote_numero)
             else:
                 sql = """
-                    UPDATE lotes 
+                    UPDATE lotes
                     SET estado_operativo = ?,
                         updated_at = ?,
                         updated_by = 'user'
-                    WHERE expediente_id = ? AND lote_numero = ? AND deleted_at IS NULL;
+                    WHERE expediente_id = ? AND lote_numero = ?;
                 """
                 params = (nuevo_estado, now_str, expediente_id, lote_numero)
 
             cur.execute(sql, params)
+
+            # Rastro del cambio de estado (H-31). Esta es la vía por la que el Cockpit
+            # mueve una licitación por el embudo: sin esta línea, que alguien la llevara a
+            # `Presentada` no dejaría constancia en ninguna parte, y el Paso 6 no podría
+            # distinguirla de una oportunidad que nadie miró.
+            if normalizar_estado_operativo(estado_anterior) != normalizar_estado_operativo(nuevo_estado):
+                anexar_log_cambios(
+                    cur, expediente_id,
+                    entrada_log_cambio_estado(lote_numero, estado_anterior, nuevo_estado, autor="user")
+                )
+
             exp_dict = self.obtener_expediente_completo(expediente_id, conn=c)
             c.commit()
             return True, estado_anterior, exp_dict

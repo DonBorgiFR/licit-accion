@@ -32,6 +32,22 @@ sigue adjudicado después de purgarse; lo que pierde son sus PDFs, no su condici
 > ciertas a la vez cuando una licitación desaparece del feed—, pero el contrato las separa
 > conceptualmente para que el Depurador no herede esa confusión.
 
+### Corolario incorporado en el Paso 4: `deleted_at` no es un candado
+
+Archivar gobierna **la visibilidad en el canal principal, no la editabilidad**. Un lote archivado
+se sigue pudiendo consultar y editar: registrar el importe de una adjudicación, sus garantías o sus
+costes. Simplemente no aparece en el Funnel salvo que se pidan expresamente las archivadas.
+
+**Filtrar por `deleted_at` en una consulta de escritura es un defecto** (H-32). Lo era en la
+mutación de estado, y hacía impracticable archivar cualquier estado que una persona necesite tocar:
+como una adjudicación se resuelve mucho después de la fecha límite que provocó el archivado, el
+registro de un contrato ganado quedaba congelado justo cuando toca completarlo.
+
+**Editar no desarchiva.** Si lo hiciera, la corrida siguiente volvería a archivar —la fecha límite
+sigue vencida— y el expediente entraría y saldría de la pantalla solo. Es la transición prohibida
+nº 7 vista desde el otro lado. El rescate `ARCHIVADO → VIVO` sigue siendo explícito y vive en el
+Paso 8.
+
 ---
 
 ## Máquina de estados (Regla 2)
@@ -204,7 +220,7 @@ que en las capas de lectura, donde lo correcto era seguir con datos parciales.
 
 ## Defecto detectado al redactar este contrato
 
-### H-27 · El estado archivado se escribe con dos grafías distintas 🔴 ABIERTO
+### H-27 · El estado archivado se escribe con dos grafías distintas 🟢 CERRADO (Paso 3)
 
 `EstadoLicitacionEnum` declara `"Inactiva"` y `"Anulada_Administracion"` (`schemas.py:75-76`),
 mientras el Radar escribe `'inactiva'` y `'anulada_administracion'` en minúsculas
@@ -217,9 +233,11 @@ compara en minúsculas (`estado_op.lower()`). El sistema es coherente por accide
 `WHERE estado_operativo = 'Inactiva'` no devolvería **ninguna fila**. La invariante de memoria
 comercial depende de comparar estados con exactitud.
 
-**Cierre previsto**: Paso 3, junto a la migración a v6 — normalizar los valores existentes y
-unificar la escritura contra el enum. Hasta entonces, **toda comparación de estado en la Capa 9
-se hace normalizada**, nunca contra el literal.
+**Cerrado en el Paso 3**, junto a la migración a v6: se normalizaron los valores existentes y se
+unificó la escritura contra el enum. La regla que dejó tras de sí sigue vigente y es obligatoria:
+**toda comparación de estado en la Capa 9 se hace normalizada** (`normalizar_estado_operativo()`),
+nunca contra el literal. El motor de archivado del Paso 4 la aplica en su filtro de estados, y hay
+una regresión que lo fija con las tres grafías a la vez.
 
 ---
 
@@ -233,4 +251,6 @@ se hace normalizada**, nunca contra el literal.
 3. 🟢 Que el rescate `ARCHIVADO → VIVO` exista pero sea siempre manual.
 4. 🟢 Que en caso de duda el Depurador no haga nada, en lugar de purgar parcialmente.
 
-**Paso 1 cerrado.** Procede el Paso 2: política de retención versionada.
+**Paso 1 cerrado.** Los Pasos 2, 3 y 4 también lo están: política versionada, esquema v6 y motor de
+archivado. El estado vigente de la capa vive en [`AGENTS.md`](AGENTS.md), no aquí — este documento
+es el contrato, y sólo cambia cuando cambian sus reglas.

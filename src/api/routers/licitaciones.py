@@ -36,10 +36,18 @@ def list_licitaciones(
     pmp_max: Optional[int] = Query(None, description="PMP máximo del municipio (días)"),
     subrogacion_critica: Optional[bool] = Query(None, description="Filtrar por presencia de subrogación de personal"),
     estado: Optional[str] = Query(None, description="Filtrar por estado operativo del lote"),
+    incluir_archivadas: bool = Query(
+        False,
+        description="Incluir los expedientes que el Depurador sacó del canal principal (auditoría y rescate)"
+    ),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
     Consulta paginada de expedientes con filtrado multinivel para el Cockpit Visual (Capa 8).
+
+    `incluir_archivadas` es la única vía desde la interfaz para llegar a lo archivado. Por
+    defecto no se incluyen: el Funnel decide a qué concurso presentarse y no debe arrastrar
+    histórico. Las filas devueltas viajan marcadas con `archivada` (Capa 9, H-32).
     """
     try:
         memoria = Memoria()
@@ -51,6 +59,7 @@ def list_licitaciones(
             pmp_max=pmp_max,
             subrogacion_critica=subrogacion_critica,
             estado=estado,
+            incluir_archivadas=incluir_archivadas,
             conn=db
         )
         
@@ -78,7 +87,8 @@ def list_licitaciones(
         trazabilidad_api.registrar_evento(
             "API_LICITACIONES_LISTED",
             {"page": page, "limit": limit, "search": search, "returned_items": len(items_schema),
-             "total_count": total_count, "filas_descartadas": len(descartados)},
+             "total_count": total_count, "filas_descartadas": len(descartados),
+             "incluir_archivadas": incluir_archivadas},
             estado="INFO"
         )
         

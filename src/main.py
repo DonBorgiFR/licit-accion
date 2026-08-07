@@ -6,6 +6,7 @@ from src.radar import Radar
 from src.filtro import Filtro
 from src.memoria import Memoria
 from src.lector import Lector
+from src.depurador import Depurador
 from src.retencion import PoliticaRetencionInvalida, cargar_politica
 
 def print_header(title: str):
@@ -72,6 +73,23 @@ def main():
     ejecucion_con_exito = False
     start_run_perf = time.perf_counter()
 
+    # Métricas de la corrida (esquema v6, Capa 9 Paso 4). Hasta ahora estas cifras se
+    # imprimían por terminal y se perdían: la tabla `ejecuciones` sólo sabía cuándo empezó y
+    # acabó cada pasada, de modo que no podía responder a "¿qué encontró la prospección del
+    # martes?". Se acumulan aquí y se persisten en el `finally`, de modo que una ejecución
+    # que falle a mitad también deje constancia de lo que llegó a hacer.
+    metricas = {
+        "expedientes_nuevos": 0,
+        "expedientes_actualizados": 0,
+        "lotes_evaluados": 0,
+        "documentos_descargados": 0,
+        "analisis_realizados": 0,
+        "alertas_generadas": 0,
+        "errores": 0,
+        "version_scoring": None,
+        "version_politica_retencion": politica.version if politica else None,
+    }
+
     try:
         # 3. Ingesta desde feeds públicos (El Radar)
         radar = Radar()
@@ -86,6 +104,7 @@ def main():
         
         # 4. Evaluación de solvencia y scoring (El Filtro)
         filtro = Filtro()
+        metricas["version_scoring"] = filtro.version_scoring
         apta_alta = []
         apta_media = []
         oportunidades_ingesta = []
@@ -121,6 +140,10 @@ def main():
             print(f"[~] Ingestando {len(oportunidades_ingesta)} oportunidades en lotes (batch_size={args.batch_size})...")
             stats = db.upsert_oportunidades_batch(oportunidades_ingesta, run_id=ejecucion_id, batch_size=args.batch_size)
             print(f"[+] Ingesta completada: Hits (Bypass): {stats['hits']} | Misses (Escritos): {stats['misses']} | Errores: {stats['errores']}.")
+            metricas["expedientes_nuevos"] = stats["nuevos"]
+            metricas["expedientes_actualizados"] = stats["actualizados"]
+            metricas["lotes_evaluados"] = len(oportunidades_ingesta)
+            metricas["errores"] += stats["errores"]
             
             # Ingestar documentos asociados detectados
             doc_detectados_conteo = 0
@@ -170,10 +193,18 @@ def main():
                     
                     res_lote = analista.procesar_lote_pendientes(memoria=db, run_id=ejecucion_id)
                     print(f"[+] Lote Analista IA completado: Total pendientes: {res_lote['total_pendientes']} | Éxito: {res_lote['procesados_exito']} | Diferidos/Degradados: {res_lote['procesados_degradados']} | CSV: {res_lote['reporte_csv_path']}.")
+                    # Sólo los completados de verdad. Un análisis degradado no es un
+                    # análisis realizado: contarlo aquí sería la misma mentira que la
+                    # Convención C6 persigue en el scoring.
+                    metricas["analisis_realizados"] = res_lote["procesados_exito"]
                 except Exception as e_an:
                     print(f"[!] Advertencia al procesar lote de Analista IA: {e_an}")
+                    metricas["errores"] += 1
+
+                metricas["documentos_descargados"] = db.contar_documentos_descargados_desde(ejecucion_start_utc)
             else:
                 print("[-] No se pudo inicializar el entorno documental para las descargas.")
+                metricas["errores"] += 1
         
         # 5.5 Ejecución de Capa 6: El Centinela de Boletines (DOGC/BOPB)
         if not args.skip_centinela and not args.dry_run:
@@ -203,8 +234,12 @@ def main():
 
                 csv_cent_path = exportar_reporte_centinela_csv(db_path=db.db_path, output_csv=args.csv_centinela)
                 print(f"[+] Centinela completado: Ingresadas: {met_cent['ingresadas']} | Aceptadas: {met_cent['aceptadas_filtro']} | Alta Prio: {met_cent['alta_prioridad']} | CSV: {csv_cent_path}\n")
+                # Las aceptadas, no las ingresadas: una alerta descartada por reglas se
+                # persiste para poder auditarla (Paso D5), pero no es una alerta generada.
+                metricas["alertas_generadas"] = met_cent["aceptadas_filtro"]
             except Exception as e_cent:
                 print(f"[!] Advertencia al ejecutar Capa 6 (Centinela): {e_cent}")
+                metricas["errores"] += 1
 
         # 6. Soft Delete de expedientes obsoletos (omitido en Dry Run)
 
@@ -212,6 +247,28 @@ def main():
             print("[~] Ejecutando Soft Delete de expedientes ausentes en el feed...")
             db.soft_delete_obsoletos(ejecucion_start_utc)
             print("[+] Proceso de Soft Delete finalizado.")
+
+        # 6.bis Archivado por caducidad de plazo (Capa 9, Paso 4).
+        #
+        # Va después del Soft Delete y no antes: primero el Radar marca lo que ha
+        # desaparecido del feed, y sólo entonces el Depurador archiva por plazo lo que
+        # sigue publicado pero ya venció. Al revés, el archivado trabajaría sobre una foto
+        # de la base anterior a la corrida.
+        #
+        # Archivar no borra nada y es reversible, por eso puede correr sin que nadie lo pida.
+        if not args.dry_run:
+            depurador = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
+            res_arch = depurador.archivar(solicitado_por="pipeline")
+            if not res_arch.ejecutado:
+                print(f"[~] Archivado omitido — {res_arch.motivo_degradacion}")
+            elif res_arch.hubo_cambios:
+                print(f"[+] Archivado: {res_arch.lotes_archivados} lotes y "
+                      f"{res_arch.expedientes_archivados} expedientes salen del canal "
+                      f"principal (corte: {res_arch.corte_utc}, política "
+                      f"v{res_arch.version_politica}). Siguen en la base y siguen contando "
+                      f"en los KPIs históricos.")
+            else:
+                print("[+] Archivado: nada que archivar en esta ejecución.")
 
         # 7. Backup transaccional en caliente y rotación (omitido en Dry Run)
         if not args.dry_run:
@@ -294,12 +351,20 @@ def main():
     except Exception as e:
         print(f"[-] Ocurrió un error inesperado durante el pipeline: {e}")
         ejecucion_con_exito = False
+        metricas["errores"] += 1
 
     finally:
         total_duration_ms = int((time.perf_counter() - start_run_perf) * 1000)
-        
+
         # Liberar Lock y registrar fin (omitido en Dry Run)
         if not args.dry_run:
+            # Las métricas se persisten aquí, y no en el camino feliz, para que una
+            # ejecución interrumpida también deje constancia de hasta dónde llegó.
+            try:
+                db.registrar_metricas_ejecucion(ejecucion_id, **metricas)
+            except Exception as e_met:
+                print(f"[!] Advertencia: no se pudieron registrar las métricas de la ejecución: {e_met}")
+
             db.registrar_log_json(
                 run_id=ejecucion_id, action="run_end", 
                 reason="success" if ejecucion_con_exito else "failed",
