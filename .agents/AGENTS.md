@@ -26,11 +26,14 @@ python -m pytest tests/ -q          # debe dar 175/175
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: validar el contrato de la Capa 9, y después el Paso 2
+### ⏭️ Siguiente tarea concreta: Capa 9, Paso 3
 
-**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa —objetivo, consideraciones de negocio, modelo de datos v6, contrato REST de administración y los 10 pasos— está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Ningún paso está implementado.**
+**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 y 2 cerrados; del 3 al 10, pendientes.**
 
-El **Paso 1 está redactado** en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md): contrato de servicio de las tres operaciones, máquina de estados con sus transiciones prohibidas, errores tipados, modo degradado, eventos JSONL y versionado. **Espera la validación de dirección** (Regla 9); sus cuatro criterios de aceptación están al final del documento. Nada del Paso 2 en adelante se implementa hasta entonces.
+* **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
+* **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`.
+
+La tarea siguiente es el **Paso 3: migración a esquema v6**. Debe llevar `deleted_at`/`deleted_reason` a `expedientes`, `version_scoring` a `lotes`, métricas a `ejecuciones` y crear la tabla `purgas`. **Y cierra H-27** normalizando las dos grafías del estado archivado, incluida la consulta `obtener_documentos_para_purga()` (`memoria.py:1782`), que hoy depende de la grafía en minúsculas.
 
 **Dos decisiones de dirección ya tomadas** que el contrato respeta, y que no hay que volver a plantear:
 * **La memoria comercial no se purga jamás.** Todo lote que llegó a `Presentada`, `Adjudicada` o `Perdida` es intocable. Se purga el peso documental, nunca el registro de negocio.
@@ -322,7 +325,7 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 10 — Suite de Pruebas Frontend, Build de Producción y Cierre Oficial de Capa 8: 🟢 Completado y Validado.
 * **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Estrategia redactada en el README; ningún paso implementado.
   * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟢 **Completado y validado el 2026-08-07.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
-  * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 💤
+  * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 🟢 **Completado el 2026-08-07.** Los plazos dejan de estar codificados a fuego en `main.py`. Nuevo `src/retencion.py` como único punto de lectura, que **no aplica valores por defecto**: si la política falta o es incoherente lanza `PoliticaRetencionInvalida` y no se purga nada. 19 regresiones en `tests/test_retencion_politica.py`. Verificadas en vivo las dos ramas del cableado real de `main.py`.
   * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 💤
   * Paso 4 — Motor de Archivado (`src/depurador.py`): 💤
   * Paso 5 — Motor de Purga Documental: 💤

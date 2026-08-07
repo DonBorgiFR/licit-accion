@@ -1068,10 +1068,10 @@ graph TD
 ### 🛣️ Plan de Ejecución Detallado (10 Pasos Atómicos de la Capa 9)
 
 #### **Fase 1: Contrato, Política y Cimientos de Datos**
-1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida** *(Reglas 1 y 2)*: 💤
-   - Formalización de los estados `Vivo → Archivado → Purgado` y `Vivo → Eliminado`, con transiciones permitidas, prohibidas y estado final. Definición de qué es intocable, por escrito, antes de codificar nada.
-2. **Paso 2 — Política de Retención Versionada (`config/retencion.yaml`)**: 💤
-   - Traslado de los plazos codificados a fuego (90 y 7 días) a configuración versionada. Retención documental a **180 días**. Lectura centralizada, con valores por defecto explícitos si el fichero falta.
+1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida** *(Reglas 1 y 2)*: 🟢 Completado y Validado.
+   - Formalización de los estados `Vivo → Archivado → Eliminado` y del ciclo documental hasta `Purgado`, con transiciones permitidas, prohibidas y estado final. El contrato vive en [`.agents/CONTRATO_CAPA_9.md`](.agents/CONTRATO_CAPA_9.md).
+2. **Paso 2 — Política de Retención Versionada (`config/retencion.yaml`)**: 🟢 Completado y Validado.
+   - Traslado de los plazos codificados a fuego (90 y 7 días) a configuración versionada. Retención documental a **180 días**. Lectura centralizada en `src/retencion.py`, que **no aplica valores por defecto**: una política ausente o incoherente impide la purga en lugar de sustituirse por plazos inventados *(lección de H-18)*.
 3. **Paso 3 — Migración a Esquema v6 (`src/memoria.py`)**: 💤
    - `deleted_at`/`deleted_reason` en `expedientes`, `version_scoring` en `lotes`, métricas en `ejecuciones` y nueva tabla `purgas`. Con copia previa y reversión, como las migraciones anteriores.
 

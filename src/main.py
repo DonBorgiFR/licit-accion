@@ -6,6 +6,7 @@ from src.radar import Radar
 from src.filtro import Filtro
 from src.memoria import Memoria
 from src.lector import Lector
+from src.retencion import PoliticaRetencionInvalida, cargar_politica
 
 def print_header(title: str):
     print("=" * 115)
@@ -46,6 +47,27 @@ def main():
         except RuntimeError as e:
             print(f"[-] {e}")
             sys.exit(1)
+
+    # 2.bis Política de retención (Capa 9, Paso 2). Se lee una sola vez por ejecución.
+    #
+    # Si falta o es incoherente, `politica` queda a None y **no se purga nada**: ni
+    # documentos ni copias. Es la degradación segura para una operación irreversible, y
+    # el contrario de la que aplican las capas de lectura. Nunca se recurre a un plazo
+    # por defecto: fue así como H-18 cambió decisiones comerciales en silencio.
+    politica = None
+    try:
+        politica = cargar_politica()
+        print(f"[+] Política de retención v{politica.version}: "
+              f"documentos {politica.documentos_dias} días, copias {politica.backups_dias} días.")
+    except PoliticaRetencionInvalida as e_pol:
+        print(f"[!] MODO DEGRADADO — no se purgará nada en esta ejecución: {e_pol}")
+        if not args.dry_run:
+            db.registrar_log_json(
+                run_id=ejecucion_id,
+                action="DEPURADOR_MODO_DEGRADADO",
+                reason=f"politica_retencion_invalida: {e_pol}",
+                updated_by="depurador",
+            )
 
     ejecucion_con_exito = False
     start_run_perf = time.perf_counter()
@@ -129,9 +151,14 @@ def main():
                 # Motor de OCR diferido para PDFs escaneados (Paso 5)
                 print("[~] Iniciando motor de OCR diferido (Tesseract OCR)...")
                 lector.procesar_ocr_diferido_lote()
-                # Ejecutar purga automática por política de retención (90 días o soft-deleted)
-                print("[~] Ejecutando purga de archivos obsoletos por retención...")
-                lector.ejecutar_purga_obsoletos(dias_retencion=90)
+                # Purga automática del peso documental según la política versionada.
+                # Sin política legible no se purga: ver la carga en el paso 2.bis.
+                if politica:
+                    print(f"[~] Purga de peso documental (retención de {politica.documentos_dias} "
+                          f"días, política v{politica.version})...")
+                    lector.ejecutar_purga_obsoletos(dias_retencion=politica.documentos_dias)
+                else:
+                    print("[~] Purga documental omitida: sin política de retención válida.")
 
                 # Analista IA - Extracción Semántica y Recalibración (Capa 5 Paso 8)
                 print("[~] Iniciando Analista IA (Extracción Semántica con LLM / Fallback)...")
@@ -193,9 +220,13 @@ def main():
                 backup_file = db.realizar_backup(run_id=ejecucion_id)
                 print(f"[+] Backup en caliente generado con éxito: {backup_file}")
                 
-                purgados = db.rotar_backups(dias_retencion=7)
-                if purgados > 0:
-                    print(f"[+] Rotación de backups: Se han eliminado {purgados} copias obsoletas (retención de 7 días).")
+                if politica:
+                    purgados = db.rotar_backups(dias_retencion=politica.backups_dias)
+                    if purgados > 0:
+                        print(f"[+] Rotación de backups: Se han eliminado {purgados} copias obsoletas "
+                              f"(retención de {politica.backups_dias} días, política v{politica.version}).")
+                else:
+                    print("[~] Rotación de copias omitida: sin política de retención válida.")
             except Exception as e_bak:
                 print(f"[!] Advertencia: No se pudo completar el backup de seguridad: {e_bak}")
 

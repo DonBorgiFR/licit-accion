@@ -1,0 +1,37 @@
+# Política de Retención de Datos — Capa 9 (El Histórico y Depurador)
+#
+# Define cuánto tiempo se conserva el PESO DOCUMENTAL antes de purgarlo.
+#
+# NO define nada sobre la memoria comercial: los lotes que alcanzaron Presentada,
+# Adjudicada, Perdida, Estudiando o Descartada son intocables y ningún plazo de este
+# fichero les afecta. Ver `.agents/CONTRATO_CAPA_9.md`.
+#
+# Por qué existe este fichero (Regla 4 — Versionado Obligatorio): hasta el 2026-08-07
+# estos dos plazos vivían como literales dentro de las llamadas de `src/main.py`
+# (`dias_retencion=90` y `dias_retencion=7`). Un criterio operativo que decidía qué se
+# borraba del disco, invisible para cualquiera que no leyera el código y sin forma de
+# saber bajo qué versión se había ejecutado una purga pasada.
+
+retencion:
+  # Versión de la política. Cada purga registra bajo qué versión se ejecutó, para que
+  # un cambio de criterio no reescriba la historia de lo ya purgado.
+  version: "1.0.0"
+
+  # Días que se conservan los pliegos descargados y su texto extraído.
+  #
+  # 180 días por decisión de dirección del 2026-08-07. Los 90 anteriores se quedaban
+  # cortos: el ciclo completo de una licitación —publicación, presentación, evaluación
+  # y adjudicación— los supera con frecuencia, de modo que la purga podía borrar el
+  # pliego de un concurso todavía sin resolver.
+  #
+  # Purgar un pliego NO pierde sus conclusiones: el análisis semántico vive en su
+  # propia tabla y sobrevive a la purga. Lo que se recupera es espacio en disco.
+  documentos_dias: 180
+
+  # Días que se conservan las copias de seguridad en caliente antes de rotarlas.
+  # Se generan en cada ejecución del pipeline, así que crecen deprisa.
+  backups_dias: 7
+
+# Los parámetros de archivado (cuándo un expediente vivo y caducado pasa a archivado)
+# se incorporarán en el Paso 4, junto al motor que los usa. Añadirlos ahora obligaría a
+# fijar un criterio de negocio sin el contexto en el que se va a aplicar.
