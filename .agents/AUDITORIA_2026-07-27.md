@@ -52,14 +52,15 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-23 · La tabla afirmaba cláusulas que nadie había leído | 🟢 Cerrado | Paso D8 |
 | H-24 · Un clon limpio del repositorio no podía arrancar | 🟢 Cerrado | Paso D10 |
 | H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
-| H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🔴 **Abierto** | — |
+| H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🟢 Cerrado | Paso D11 |
 
-**Un hallazgo abierto (H-26)**, detectado el 2026-08-07. Los 25 anteriores están cerrados con
-prueba de regresión o verificación reproducible. Suite: 175/175.
+**No queda ningún hallazgo abierto**: los 26 catalogados están cerrados con prueba de regresión
+o verificación reproducible. Suite: **196/196**.
 
-> ⚠️ **H-26 conviene resolverlo antes de la primera ejecución real.** No afecta al score ni al
-> orden de prioridad, pero `sector_detectado` **se persiste** en la base (`memoria.py:999`). Con la
-> base vacía cuesta una línea; con datos dentro obliga a recalcular el sector de lo ya capturado.
+> **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
+> score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
+> (`memoria.py:999`). Con la base vacía costó una tarde; con datos dentro habría obligado a
+> recalcular el sector de todo lo capturado.
 
 > ⚠️ **Aviso sobre la verificación de hermeticidad**: durante un tiempo se dio por buena una suite
 > "hermética" comprobada bloqueando la red con excepciones. Era un falso verde — ver H-25. El
@@ -770,7 +771,7 @@ ningún fixture—; y `autoinicializar_proveedor=False` en las dos instancias qu
 > por el camino apareció este defecto, que no tiene que ver con la cobertura sino con el reparto por
 > sectores.
 
-### H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` 🔴 ABIERTO
+### H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` 🟢 CERRADO (Paso D11)
 
 **Toda la familia `853*` —asistencia social, el núcleo del negocio de Incoop— se etiqueta como
 `Educativo`.** El sector `social` no se asigna nunca, por ninguna vía.
@@ -859,9 +860,47 @@ dejaría de reclamar `853`— pero al precio de etiquetar como social justo el C
 apoyándose en que `social` precede a `consultoria` en el fichero. La corrección tiene que estar en
 el algoritmo, no en el dato.
 
-**Defecto menor asociado**: `85312300` está **duplicado** en el perfil, en `social` y en
-`consultoria`. Hoy es inocuo porque `social` va primero, pero deja la asignación dependiendo del
-orden. Procede quitarlo de uno de los dos sectores.
+**Defecto menor asociado**: `85312300` estaba **duplicado** en el perfil, en `social` y en
+`consultoria`. Era inocuo porque `social` va primero, pero dejaba la asignación dependiendo del
+orden. Retirado de `consultoria`.
+
+**Cerrado con** (Paso D11):
+
+* `config/perfil_incoop.yaml`: nueva clave `prelacion_sectores`, que declara el desempate que
+  antes decidía el orden de las claves. `85312300` deja de estar duplicado.
+* `src/filtro.py`: el conjunto único de prefijos se sustituye por tres índices —código completo,
+  prefijo de 5 y prefijo de 3— y un método `_resolver_sector_cpv()` que los consulta de más
+  específico a menos. La rama muerta `853* → Social` de la red por división queda retirada.
+* El motivo registrado dice **por qué vía** se resolvió: `CPV Core Sector Social +40 (por código
+  completo)` frente a `(por prefijo de 3 + prelación)`. Un sector asignado debe poder justificarse
+  sin releer el código.
+
+**Regresión**: `tests/test_sectorizacion_cpv.py`, 21 casos. Dos de ellos no afirman sobre ejemplos
+elegidos a mano sino sobre el perfil entero —`test_ningun_cpv_del_perfil_queda_huerfano` exige que
+todo CPV declarado resuelva al sector que lo declara, y `test_ningun_cpv_esta_declarado_en_dos_sectores`
+impide reintroducir el duplicado—. La primera habría destapado H-26 el primer día.
+`test_la_correccion_no_altera_el_score` fija el contrato del cambio: sólo se mueve el sector.
+
+**Verificado en vivo** (Convención C7) sobre una base sembrada con seis expedientes de tres
+sectores, recorriendo el camino real Filtro → `upsert_oportunidad` → SQLite → API:
+
+```
+SOC-001  85312000  Social      (por código completo)        79 pts
+SOC-002  85312100  Social      (por código completo)        65 pts
+SOC-003  85322000  Social      (por prefijo de 3 + prelación) 65 pts
+EDU-001  85312110  Educativo   (por código completo)        79 pts
+EDU-002  80110000  Educativo   (por código completo)        65 pts
+CUL-001  92510000  Cultural    (por código completo)        71 pts
+```
+
+El Funnel del Cockpit muestra los seis expedientes sin filas fantasma y la consola queda limpia.
+La base sembrada se eliminó al terminar: el proyecto vuelve al estado de instalación nueva.
+
+> **Observación, no defecto**: el Cockpit **no muestra el sector en ninguna pantalla**. `sector`
+> sólo aparece en `frontend/src/types/api.ts`, sin ningún componente que lo pinte. Por eso la
+> Convención C7 no podía destapar H-26 aunque se hubiera arrancado la aplicación: el dato viaja
+> desde el Filtro hasta la respuesta de la API y ahí se detiene. Conviene decidir si la
+> sectorización debe verse en pantalla o si su destino es el reporting de capas posteriores.
 
 ---
 

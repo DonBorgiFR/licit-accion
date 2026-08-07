@@ -54,16 +54,35 @@ class Filtro:
             self._normalizar_texto(loc) for loc in (self.municipios_historicos + self.barrios_barcelona) if loc
         ]
         
-        # Mapas jerárquicos de CPVs por sector
-        self.cpvs_por_sector = {}
+        # Mapas de sectorización por CPV, en tres niveles de especificidad decreciente.
+        #
+        # Antes existía un único conjunto por sector que mezclaba prefijos de 3 y 5 dígitos,
+        # y la asignación se quedaba con el primer sector del YAML que casara cualquiera de
+        # los dos. Consecuencia (H-26): "educativo" contiene "85312110" —guarderías escolares
+        # sociales—, cuyo prefijo 853 es la rama de asistencia social del CPV, así que se
+        # llevaba los siete CPVs del sector "social" y ese sector no se asignaba jamás.
+        # No alteraba el score, pero sí el sector que se persiste en la base de datos.
         sectores_cpv = self.perfil.get("sectores_cpv", {})
+        self.cpv_exacto: Dict[str, List[str]] = {}
+        self.cpv_prefijo5: Dict[str, List[str]] = {}
+        self.cpv_prefijo3: Dict[str, List[str]] = {}
         for sector, cpv_list in sectores_cpv.items():
-            prefixes = set()
             for cpv in cpv_list:
                 s = str(cpv).strip()
-                prefixes.add(s[:5])
-                prefixes.add(s[:3])
-            self.cpvs_por_sector[sector] = prefixes
+                for indice, clave in ((self.cpv_exacto, s),
+                                      (self.cpv_prefijo5, s[:5]),
+                                      (self.cpv_prefijo3, s[:3])):
+                    reclamantes = indice.setdefault(clave, [])
+                    if sector not in reclamantes:
+                        reclamantes.append(sector)
+
+        # Prelación explícita entre sectores para los empates dentro de un mismo nivel.
+        # Sin ella el desempate lo decidía el orden en que estuvieran escritas las claves de
+        # sectores_cpv: un criterio que nadie eligió y que no se ve al leer el fichero.
+        # Un sector no declarado en la prelación se ordena detrás, en el orden del YAML.
+        prelacion = self.perfil.get("prelacion_sectores", [])
+        self.prelacion_sectores = [s for s in prelacion if s in sectores_cpv]
+        self.prelacion_sectores += [s for s in sectores_cpv if s not in self.prelacion_sectores]
 
         # Códigos de procedimientos admisibles (CODICE)
         self.procedimientos_preferentes = {'1', '9', '100'}
@@ -108,6 +127,33 @@ class Filtro:
             if unicodedata.category(c) != "Mn"
         )
         return texto
+
+    def _resolver_sector_cpv(self, cpv: str):
+        """Determina a qué sector del perfil pertenece un CPV.
+
+        Devuelve la tupla ``(sector, via)``, o ``(None, None)`` si el CPV no pertenece al
+        perfil —en cuyo caso el scoring cae a la red de seguridad por división—. ``via``
+        explica cómo se resolvió y viaja hasta la lista de motivos: un sector asignado debe
+        poder justificarse sin releer el código.
+
+        Se consulta de más específico a menos —código completo, prefijo de 5 y prefijo de
+        3— y **un código completo gana siempre a un prefijo**, aunque ese prefijo pertenezca
+        a un sector más prioritario. La prelación sólo desempata entre sectores que casan en
+        el mismo nivel; jamás asciende un sector de un nivel menos específico.
+        """
+        if not cpv:
+            return None, None
+        for indice, clave, via in ((self.cpv_exacto, cpv, "código completo"),
+                                   (self.cpv_prefijo5, cpv[:5], "prefijo de 5"),
+                                   (self.cpv_prefijo3, cpv[:3], "prefijo de 3")):
+            reclamantes = indice.get(clave)
+            if not reclamantes:
+                continue
+            if len(reclamantes) == 1:
+                return reclamantes[0], via
+            ganador = min(reclamantes, key=self.prelacion_sectores.index)
+            return ganador, f"{via} + prelación"
+        return None, None
 
     def filtrar(self, licitacion: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -263,28 +309,22 @@ class Filtro:
         # C. Criterio de CPVs (Jerarquía y Sectorización)
         cpv_detectado = False
         for cpv in cpvs:
-            cpv_str = str(cpv).strip()
-            prefix5 = cpv_str[:5]
-            prefix3 = cpv_str[:3]
-            for sector, cpv_set in self.cpvs_por_sector.items():
-                if prefix5 in cpv_set or prefix3 in cpv_set:
-                    score += 40
-                    motivos.append(f"CPV Core Sector {sector.capitalize()} +40")
-                    sector_detectado = sector.capitalize()
-                    cpv_detectado = True
-                    break
-            if cpv_detectado:
+            sector, via = self._resolver_sector_cpv(str(cpv).strip())
+            if sector:
+                score += 40
+                motivos.append(f"CPV Core Sector {sector.capitalize()} +40 (por {via})")
+                sector_detectado = sector.capitalize()
+                cpv_detectado = True
                 break
-        
+
         if not cpv_detectado:
+            # Red de seguridad por división para los CPVs que no figuran en el perfil.
+            # No hay rama para 853*: toda esa familia casa siempre por el índice de arriba
+            # —"social" declara 85300000..85320000 y "educativo" el 85312110—, así que la
+            # regla que existió aquí era código inalcanzable. Ver H-26.
             for cpv in cpvs:
                 cpv_str = str(cpv).strip()
-                if cpv_str.startswith("853"):
-                    score += 30
-                    motivos.append("División Social (853) +30")
-                    sector_detectado = "Social"
-                    break
-                elif cpv_str.startswith("98"):
+                if cpv_str.startswith("98"):
                     score += 30
                     motivos.append("División Comunitario/Asociativo (98) +30")
                     sector_detectado = "Comunitario_asociativo"

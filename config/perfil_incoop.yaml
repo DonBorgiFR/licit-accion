@@ -263,6 +263,31 @@ perfil:
     - "auditoria"
     - "cooperativa"
 
+  # Orden de prelación entre sectores cuando un mismo CPV encaja en más de uno.
+  #
+  # Sólo interviene en EMPATES. La sectorización resuelve primero por código CPV completo,
+  # luego por prefijo de 5 dígitos y por último por prefijo de 3; la prelación desempata
+  # dentro de cada uno de esos niveles, nunca entre ellos: un código completo siempre gana
+  # a un prefijo, aunque el prefijo pertenezca a un sector más prioritario.
+  #
+  # Por qué existe (H-26): la rama 853* del CPV es asistencia social, pero el sector
+  # educativo la toca a través de "85312110" (guarderías escolares sociales). Sin una
+  # prelación declarada, el empate lo resolvía el orden en que estuvieran escritas las
+  # claves de sectores_cpv — un criterio que nadie eligió y que no se ve al leer el
+  # fichero. "social" va primero para que los CPVs hermanos no listados (p. ej. 85322000,
+  # acción comunitaria) caigan del lado correcto.
+  #
+  # Un sector que no figure aquí se ordena después de los listados, en el orden de
+  # sectores_cpv. Añadir un sector nuevo obliga a decidir su sitio en esta lista.
+  prelacion_sectores:
+    - social
+    - educativo
+    - restauracion
+    - cultural
+    - mantenimiento
+    - comunitario_asociativo
+    - consultoria
+
   # CPVs de Interés por Sector
   sectores_cpv:
     educativo:
@@ -298,7 +323,10 @@ perfil:
       - "79400000"  # Servicios de consultoría de gestión comercial y proyectos
       - "75120000"  # Servicios administrativos de educación, cultura y salud
       - "75130000"  # Servicios de apoyo a la administración pública
-      - "85312300"  # Asesoramiento sobre bienestar social
+      # "85312300" (asesoramiento sobre bienestar social) estuvo aquí y en "social" a la vez.
+      # Un CPV en dos sectores deja su clasificación en manos de una regla de desempate en
+      # lugar de una decisión. Se resolvió el 2026-08-07 a favor de "social": es un servicio
+      # de bienestar social, no un encargo de consultoría.
     comunitario_asociativo:
       - "98000000"  # Servicios comunitarios, sociales y personales
       - "98100000"  # Servicios prestados por organizaciones asociativas

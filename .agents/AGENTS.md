@@ -14,7 +14,7 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; remediación pre-Capa 9 cerrada (H-01 a H-25), suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse**, pero queda **un hallazgo abierto, H-26**, detectado el 2026-08-07 al revisar la cobertura de CPVs: conviene resolverlo **antes de la primera ejecución real**, porque escribe un dato erróneo en la base.
+**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 26 hallazgos catalogados, sin ninguno abierto—, suite en **196/196** y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -38,12 +38,12 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-**Nada que decidir; queda ejecutar la corrección de H-26** (el sector `social` es inalcanzable). La
-cuestión de negocio se resolvió el 2026-08-07: `85312110` **se queda en `educativo`**, porque en su
-base es una guardería. Eso descarta la vía barata de reclasificar el CPV y obliga a corregir el
-algoritmo: **código completo primero, prefijo después, con un orden de prelación explícito entre
-sectores** para los empates. Medido, ese criterio acierta 8 de 9 casos frente a 1 de 9 hoy; las dos
-alternativas que parecían obvias se quedan en 5 de 9. Detalle y medición en el dosier.
+Nada pendiente. H-26 quedó cerrado el 2026-08-07 en el Paso D11.
+
+Queda **una cuestión de diseño abierta, sin urgencia**: el Cockpit no muestra el sector en ninguna
+pantalla —`sector` sólo existe en `frontend/src/types/api.ts`, sin componente que lo pinte—. El
+dato se calcula, se persiste y se sirve, pero nadie lo ve. Procede decidir si debe verse o si su
+destino es el reporting de capas posteriores.
 
 Las decisiones de negocio anteriores se resolvieron el 2026-08-06 y constan en la tabla de
 decisiones del dosier: matriz de subrogación, bonificación de la subrogación acotada, rastro de las
@@ -371,11 +371,11 @@ cd frontend && npm run dev          # http://localhost:5173
 
 * **Paso D10 — Borrado de la beta y lo que destapó** (2026-08-06): 🟢 Vaciados los datos de prueba a petición de la dirección. Arrancar desde cero absoluto reveló que **un clon limpio del repositorio no podía iniciar el sistema** (H-24): `data/` está excluida de Git y `setup_db()` creaba el cerrojo antes de que existiera el directorio. Y al comprobar que el estado limpio se mantenía, apareció que **la suite escribía en el `data/` real** —con datos dentro, habría tocado la base de producción— y que **seguía llamando a Gemini** pese a haberse declarado hermética en el Paso D2 (H-25). Nueva función `ruta_datos()` con reubicación por `DATA_DIR_INCOOP`, y `tests/conftest.py` que la redirige al importarse. Suite: **175/175**, sin contactar ningún dominio externo y sin crear `data/`.
 
+* **Paso D11 — El sector que nunca se asignaba** (2026-08-07): 🟢 Apareció al retomar la pregunta aplazada sobre la cobertura de CPVs (H-26). Toda la familia `853*` —asistencia social, el núcleo del negocio— se etiquetaba como `Educativo`: el sector `educativo` declara `85312110` ("Guarderías escolares sociales"), cuyo prefijo de 3 dígitos es la rama social entera del CPV, y la asignación se quedaba con el primer sector del YAML que casara cualquier prefijo. **El sector `social` no se asignaba jamás.** No alteraba el score —+40 por cualquiera de los dos— y por eso ni la suite ni el arranque en vivo del Paso D8 lo vieron; alteraba `sector_detectado`, que se persiste. Las dos correcciones aparentemente obvias resultaron inservibles al medirlas: el prefijo de **5** dígitos también está compartido (`85312`), así que "sólo 5 dígitos" y "gana el prefijo más largo" se quedaban en 5 aciertos de 9 y seguían fallando los centros de día. La solución es resolver por **código completo primero**, cayendo al prefijo sólo si no hay coincidencia exacta, con una **prelación entre sectores declarada** en `perfil_incoop.yaml` para los empates. Verificado en vivo contra una base sembrada, recorriendo Filtro → SQLite → API. Suite: **196/196**.
+
 ### Pasos pendientes
 
-La remediación previa a la Capa 9 está cerrada: 25 hallazgos catalogados (H-01 a H-25), 25 cerrados con prueba de regresión o verificación reproducible.
-
-**Queda H-26**, posterior y ajeno a esa remediación: apareció el 2026-08-07 al retomar la pregunta aplazada sobre la cobertura de CPVs. El sector `social` es inalcanzable —lo eclipsa `educativo` por una colisión de prefijos de 3 dígitos— y `sector_detectado` se persiste en la base. **No bloquea la Capa 9**, pero sí conviene cerrarlo antes de la primera ejecución real. Pendiente de decidir la vía de corrección con el usuario.
+Ninguno. La remediación está cerrada: 26 hallazgos catalogados, 26 cerrados con prueba de regresión o verificación reproducible.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 

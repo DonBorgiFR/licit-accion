@@ -6,16 +6,11 @@
 > tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **175/175** y los 25 hallazgos de la remediación
-> cerrados. La base de datos está **vacía a propósito**: los datos de la beta se borraron el
-> 2026-08-06 y la primera ejecución real producirá un conjunto coherente, puntuado íntegramente con
-> los criterios vigentes. **Bloqueantes para abrir la Capa 9: ninguno.** El Cockpit compila limpio
-> con `tsc -b` en modo estricto y su bundle está al día.
->
-> ⚠️ **Un hallazgo abierto (H-26, 2026-08-07)**: el sector `social` nunca se asigna, por una colisión
-> de prefijos CPV con `educativo`. No altera el score ni el orden de prioridad, pero sí el sector
-> que se persiste. Conviene cerrarlo **antes de la primera ejecución real**. Ver
-> [`.agents/AUDITORIA_2026-07-27.md`](.agents/AUDITORIA_2026-07-27.md).
+> negocio LCSP) están cerrados, con la suite en **196/196** y los **26 hallazgos** de la
+> remediación cerrados, sin ninguno abierto. La base de datos está **vacía a propósito**: los datos
+> de la beta se borraron el 2026-08-06 y la primera ejecución real producirá un conjunto coherente,
+> puntuado íntegramente con los criterios vigentes. **Bloqueantes para abrir la Capa 9: ninguno.**
+> El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
 > hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
