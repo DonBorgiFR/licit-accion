@@ -821,20 +821,47 @@ cero sociales y contará como educativas licitaciones de centros de día y atenc
 **Por qué importa el momento.** La base está vacía. Corregirlo ahora no cuesta nada; corregirlo
 después de la primera ejecución real obliga a recalcular el sector de todo lo capturado.
 
-**Vías de corrección** (a decidir con el usuario, ninguna implementada):
+**La colisión no es sólo de 3 dígitos.** El prefijo de **5** también está compartido, y esto
+descarta las correcciones aparentemente obvias:
 
-1. **Ordenar los sectores del más específico al más general** en `perfil_incoop.yaml`. Barato, pero
-   deja la asignación dependiendo del orden de un fichero de configuración: frágil y no evidente.
-2. **Indexar sólo por el prefijo de 5 dígitos** y dejar los de 3 para la red por división. Elimina
-   la colisión de raíz, pero estrecha la captura de CPVs hermanos, que es justo lo que el prefijo
-   de 3 dígitos aporta hoy.
-3. **Resolver por el prefijo más largo que case**, en vez de por el primer sector del diccionario.
-   `85300000` casaría `853` en `social` y `educativo` con la misma longitud, así que aún haría falta
-   un criterio de desempate — pero deja de depender del orden y arregla el caso general.
+```
+853   -> ['consultoria', 'educativo', 'social']
+85312 -> ['consultoria', 'educativo', 'social']     <- 85312110 (educativo) vs 85312000/100/300 (social)
+```
 
-**Recomendación**: la 3 con desempate explícito, y `85312110` reclasificado. Ese CPV es
-"Guarderías escolares sociales": está en `educativo` por su literal, pero es quien arrastra el
-`853` entero. Conviene decidir si su sitio es `educativo` o `social` antes de tocar el algoritmo.
+**Vías de corrección, medidas** (ninguna implementada). Contrastadas sobre los 7 CPVs del sector
+`social`, el CPV fronterizo `85312110` y `85322000` —hermano detectado en la beta que no figura en
+el perfil—, tomando como esperado la clasificación del propio `perfil_incoop.yaml`:
+
+| Criterio | Aciertos | Por qué falla |
+|---|---|---|
+| Como está hoy | 1/9 | El orden del YAML decide; `educativo` se lleva todo `853*` |
+| Indexar sólo por 5 dígitos | 5/9 | `85312` está compartido: sigue fallando toda la familia `85312*` |
+| Gana el prefijo más largo | 5/9 | Empata en 5 dígitos para `85312*`; mismo fallo |
+| **Código exacto primero, luego 5, luego 3** | **8/9** | Sólo falla el hermano no listado (`85322000`) |
+
+Reproducible con el prototipo de análisis usado el 2026-08-07, que no toca `src/`: compara los
+cuatro criterios sobre esos nueve CPVs leyendo el perfil real.
+
+**Recomendación**: resolver por **código completo primero** y caer al prefijo sólo si no hay
+coincidencia exacta, **más un orden de prelación explícito entre sectores** para los empates. Con
+ese criterio los siete CPVs sociales van a `social` y `85312110` se queda en `educativo`.
+
+El caso que sigue fallando es el que fija el requisito del desempate: `85322000` no está en el
+perfil, así que no hay código exacto y `853` empata entre `educativo`, `social` y `consultoria`.
+Hoy ese empate lo resuelve el orden en que están escritas las claves del YAML, que no es un
+criterio: debe ser una decisión declarada.
+
+**Decisión de negocio ya tomada (2026-08-07)**: `85312110` ("Guarderías escolares sociales") **se
+queda en `educativo`**. En su base es una guardería, próxima a las escoles bressol. Esto **descarta
+la vía barata** de reclasificarlo: mover ese CPV a `social` haría desaparecer el síntoma —`educativo`
+dejaría de reclamar `853`— pero al precio de etiquetar como social justo el CPV que no lo es, y
+apoyándose en que `social` precede a `consultoria` en el fichero. La corrección tiene que estar en
+el algoritmo, no en el dato.
+
+**Defecto menor asociado**: `85312300` está **duplicado** en el perfil, en `social` y en
+`consultoria`. Hoy es inocuo porque `social` va primero, pero deja la asignación dependiendo del
+orden. Procede quitarlo de uno de los dos sectores.
 
 ---
 
@@ -856,3 +883,5 @@ después de la primera ejecución real obliga a recalcular el sector de todo lo 
 | 2026-08-06 | **La subrogación acotada y documentada recibe una bonificación intermedia (+2)** | De 1 a 5 personas con el desglose aportado es un riesgo real pero acotado y presupuestable. Antes sumaba 0, igual que el tramo MEDIO de 20 personas, porque la bonificación de +5 exigía que no hubiera subrogación ninguna. |
 | 2026-08-06 | **Las alertas descartadas por reglas se guardan, fuera del canal principal** | Sin registro no hay auditoría ni reevaluación: al ajustar un umbral o cambiar los PMP no quedaba nada que revisar, y cada ejecución las reprocesaba desde cero. Se guardan para auditar, no para ocupar la pantalla. |
 | 2026-08-06 | **El descarte automático y el manual son estados distintos** | `DESCARTADA_POR_REGLAS` y `DESCARTADA_TEMPRANA` no se fusionan. Si mañana se baja un umbral procede reevaluar lo que descartó la máquina; lo que rechazó una persona debe quedarse como está. |
+| 2026-08-07 | **`85312110` se queda en el sector `educativo`** | "Guarderías escolares sociales" es en su base una guardería, próxima a las escoles bressol, aunque su código cuelgue de la rama de asistencia social. La clasificación del perfil ya era correcta. La consecuencia es que H-26 **no** puede corregirse moviendo el CPV: hacerlo eliminaría el síntoma etiquetando como social justo el único CPV de la familia que no lo es. |
+| 2026-08-07 | **La sectorización por CPV se resuelve por código completo, no por orden del YAML** | Hoy gana el primer sector del diccionario que case un prefijo, así que la clasificación depende del orden en que estén escritas las claves — un criterio que nadie declaró y que nadie ve. Los prefijos de 3 **y de 5** dígitos están compartidos entre `educativo`, `social` y `consultoria`, de modo que ni "sólo 5 dígitos" ni "prefijo más largo" bastan (5/9 aciertos ambas). El código completo primero acierta 8/9; el empate restante exige una prelación entre sectores declarada explícitamente. |

@@ -38,9 +38,12 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-**Una decisión abierta: cómo corregir H-26** (el sector `social` es inalcanzable). Hay tres vías
-posibles y una cuestión de negocio previa —dónde encaja el CPV `85312110`, "Guarderías escolares
-sociales", si en `educativo` o en `social`—. Detalle y recomendación en el dosier de auditoría.
+**Nada que decidir; queda ejecutar la corrección de H-26** (el sector `social` es inalcanzable). La
+cuestión de negocio se resolvió el 2026-08-07: `85312110` **se queda en `educativo`**, porque en su
+base es una guardería. Eso descarta la vía barata de reclasificar el CPV y obliga a corregir el
+algoritmo: **código completo primero, prefijo después, con un orden de prelación explícito entre
+sectores** para los empates. Medido, ese criterio acierta 8 de 9 casos frente a 1 de 9 hoy; las dos
+alternativas que parecían obvias se quedan en 5 de 9. Detalle y medición en el dosier.
 
 Las decisiones de negocio anteriores se resolvieron el 2026-08-06 y constan en la tabla de
 decisiones del dosier: matriz de subrogación, bonificación de la subrogación acotada, rastro de las
