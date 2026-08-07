@@ -53,9 +53,15 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-24 · Un clon limpio del repositorio no podía arrancar | 🟢 Cerrado | Paso D10 |
 | H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
 | H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🟢 Cerrado | Paso D11 |
+| H-27 · El estado archivado se escribe con dos grafías distintas | 🟡 **Abierto, latente** | Previsto: Capa 9, Paso 3 |
 
-**No queda ningún hallazgo abierto**: los 26 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: **196/196**.
+**Un hallazgo abierto y latente (H-27)**, detectado el 2026-08-07 al redactar el contrato de la
+Capa 9. Los 26 anteriores están cerrados con prueba de regresión o verificación reproducible.
+Suite: **196/196**.
+
+> **H-27 no causa daño hoy** y por eso no bloquea nada: el sistema es coherente por accidente,
+> porque compara los estados en minúsculas. Se cierra en el Paso 3 de la Capa 9, junto a la
+> migración de esquema, porque es entonces cuando empieza a importar.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -901,6 +907,36 @@ La base sembrada se eliminó al terminar: el proyecto vuelve al estado de instal
 > Convención C7 no podía destapar H-26 aunque se hubiera arrancado la aplicación: el dato viaja
 > desde el Filtro hasta la respuesta de la API y ahí se detiene. Conviene decidir si la
 > sectorización debe verse en pantalla o si su destino es el reporting de capas posteriores.
+
+---
+
+## Hallazgo de la apertura de la Capa 9 — 2026-08-07
+
+### H-27 · El estado archivado se escribe con dos grafías distintas 🟡 ABIERTO (latente)
+
+`EstadoLicitacionEnum` declara `"Inactiva"` y `"Anulada_Administracion"` capitalizados
+(`src/api/schemas.py:75-76`), mientras el Radar escribe `'inactiva'` y `'anulada_administracion'`
+en minúsculas (`src/memoria.py:1102` y `1112`). **Dos grafías del mismo estado en la misma
+columna.**
+
+```
+Declara el enum:   "Inactiva"   "Anulada_Administracion"
+Escribe el Radar:  'inactiva'   'anulada_administracion'
+```
+
+**Por qué no ha roto nada.** `LoteSchema.estado_operativo` está tipado como `str` y no contra el
+enum, así que la API no valida el valor; y el Radar compara siempre en minúsculas
+(`estado_op.lower()`). Además el Cockpit no ofrece esos dos estados en su filtro de Funnel, de modo
+que nadie ha consultado nunca por ellos. El sistema es **coherente por accidente**.
+
+**Por qué importa a partir de ahora.** El Depurador de la Capa 9 tiene que seleccionar lo archivado
+y comprobar por qué estados pasó cada lote. Un `WHERE estado_operativo = 'Inactiva'` no devolvería
+**ninguna fila**, y la invariante que protege la memoria comercial depende de comparar estados con
+exactitud: un falso negativo ahí significa borrar algo que no debía borrarse.
+
+**Cierre previsto**: Capa 9, Paso 3, junto a la migración a esquema v6 — normalizar los valores ya
+almacenados y unificar la escritura contra el enum. Mientras tanto, el contrato obliga a que toda
+comparación de estado en la Capa 9 se haga **normalizada**, nunca contra el literal.
 
 ---
 
