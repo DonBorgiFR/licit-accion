@@ -1,16 +1,16 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
-> **Estado del producto: Beta 0.2 (2026-08-06).** Las Capas 1–8 están implementadas y se
-> encuentran en estabilización antes de abrir las Capas 9 y 10. El sistema no contiene datos
-> operativos reales versionados: los datos locales se usan exclusivamente para pruebas. No debe
-> tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
+> **Estado del producto: Beta 0.2 (2026-08-07).** Las Capas 1–8 están implementadas y la **Capa 9
+> está en curso** (Pasos 1 a 3 cerrados). El sistema no contiene datos operativos reales
+> versionados: los datos locales se usan exclusivamente para pruebas. No debe tomarse una decisión
+> de licitación sin verificar el pliego y las fuentes oficiales.
 >
-> **Remediación pre-Capa 9**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de
-> negocio LCSP) están cerrados, con la suite en **196/196** y los **26 hallazgos** de la
-> remediación cerrados, sin ninguno abierto. La base de datos está **vacía a propósito**: los datos
-> de la beta se borraron el 2026-08-06 y la primera ejecución real producirá un conjunto coherente,
-> puntuado íntegramente con los criterios vigentes. **Bloqueantes para abrir la Capa 9: ninguno.**
-> El Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
+> **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
+> están cerrados, con la suite en **225/225** y los **29 hallazgos** catalogados cerrados, sin
+> ninguno abierto. La base de datos está **vacía a propósito**: los datos de la beta se borraron el
+> 2026-08-06 y la primera ejecución real producirá un conjunto coherente, puntuado íntegramente con
+> los criterios vigentes. El esquema vigente es **v6**. El Cockpit compila limpio con `tsc -b` en
+> modo estricto y su bundle está al día.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
 > hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ En planificación. Abierta el 2026-08-07 con la remediación cerrada (26 hallazgos) y la suite en 196/196.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1, 2 y 3 cerrados**, del 4 al 10 pendientes. Esquema de base de datos en **v6**.
 
 ### 🎯 Objetivo
 
