@@ -14,7 +14,7 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas; **remediación cerrada al completo** —los 25 hallazgos catalogados, sin ninguno abierto—, suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse.**
+**Estado en una línea**: Capas 1-8 construidas; remediación pre-Capa 9 cerrada (H-01 a H-25), suite en verde y Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está lista para abrirse**, pero queda **un hallazgo abierto, H-26**, detectado el 2026-08-07 al revisar la cobertura de CPVs: conviene resolverlo **antes de la primera ejecución real**, porque escribe un dato erróneo en la base.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -38,7 +38,62 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-Nada pendiente. Las decisiones de negocio abiertas se resolvieron el 2026-08-06 y constan en la tabla de decisiones del dosier de auditoría: matriz de subrogación, bonificación de la subrogación acotada, rastro de las alertas descartadas y validación del proveedor LLM.
+**Una decisión abierta: cómo corregir H-26** (el sector `social` es inalcanzable). Hay tres vías
+posibles y una cuestión de negocio previa —dónde encaja el CPV `85312110`, "Guarderías escolares
+sociales", si en `educativo` o en `social`—. Detalle y recomendación en el dosier de auditoría.
+
+Las decisiones de negocio anteriores se resolvieron el 2026-08-06 y constan en la tabla de
+decisiones del dosier: matriz de subrogación, bonificación de la subrogación acotada, rastro de las
+alertas descartadas y validación del proveedor LLM.
+
+### 📊 Cobertura de CPVs: pregunta resuelta el 2026-08-07
+
+Quedó aplazada el 31-07-2026 con este enunciado: de los CPVs capturados en la base, muy pocos
+coincidían con el perfil de Incoop. Dos hipótesis opuestas, y hasta ahora sin separar: **o el
+perfil se ha quedado corto, o las fuentes traen licitaciones fuera de ámbito.**
+
+**Resuelta a favor de la segunda, con matices.** El cruce se rehízo sobre `CPVs_Incoop.xlsx`, que
+es la única evidencia superviviente al borrado de la beta (101 CPVs distintos, 174 apariciones en
+51 expedientes de julio).
+
+*Primero, el enunciado estaba mal planteado.* Contaba **coincidencias exactas** (5 de 101), pero el
+Filtro **no compara el CPV completo**: indexa por los 3 y 5 primeros dígitos para capturar CPVs
+hermanos. Medido como puntúa de verdad:
+
+| Cómo puntúa | CPVs distintos | Apariciones |
+|---|---|---|
+| Core (+40) | 23 | 30 |
+| División (+25) | 6 | 9 |
+| División (+10) | 19 | 38 |
+| **Sin puntuación** | **53** | **97** |
+
+*Segundo, lo que no puntúa mayoritariamente no debe puntuar.* De las 97 apariciones sin puntuar,
+**70 (el 72 %) pertenecen a divisiones que el propio perfil ya excluye por texto**:
+
+| División | Apariciones | ¿Debe puntuar? |
+|---|---|---|
+| 72 · Servicios TI | 27 | No — `exclusiones` ya contiene "software puro" |
+| 71 · Arquitectura e ingeniería | 15 | No — `exclusiones` contiene "ingeniería" y "arquitectura" |
+| 15 · Alimentación y bebidas | 14 | No — es suministro, no servicio |
+| 22 · Imprenta | 14 | No — es suministro |
+| 24, 44, 51, 60, 73 | 12 | No — químicos, construcción, instalación, transporte, I+D |
+
+El sistema no tiene un agujero de cobertura: está ignorando correctamente lo que no es su negocio.
+El ruido viene de las fuentes, no del perfil.
+
+**Candidatos reales a incorporar** (16 apariciones, a validar comercialmente):
+
+| CPV | Qué es | Apariciones |
+|---|---|---|
+| `77310000` | Jardinería y mantenimiento de zonas verdes | 5 |
+| `55320000`, `55321000`, `55300000` | Servir comidas y restauración (hoy sólo puntúa `555*`) | 5 |
+| `85143000`, `85144000` | Ambulancia y servicios de hospital — **probablemente fuera de ámbito** | 3 |
+| `90513000`, `90700000`, `90714600` | Residuos y medio ambiente (hoy sólo puntúa `909*`) | 3 |
+
+**No se ha tocado `config/perfil_incoop.yaml`.** La muestra es pequeña (dos semanas de julio) y los
+datos que la produjeron ya no existen. Procede **rehacer este cruce tras la primera ejecución
+real**, sobre datos vivos, y decidir entonces. `77310000` es el primer candidato: la jardinería sí
+parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí puntúan.
 
 ### 🔧 Herramientas de verificación manual
 
@@ -315,7 +370,9 @@ cd frontend && npm run dev          # http://localhost:5173
 
 ### Pasos pendientes
 
-Ninguno. La remediación previa a la Capa 9 está cerrada: 25 hallazgos catalogados, 25 cerrados con prueba de regresión o verificación reproducible.
+La remediación previa a la Capa 9 está cerrada: 25 hallazgos catalogados (H-01 a H-25), 25 cerrados con prueba de regresión o verificación reproducible.
+
+**Queda H-26**, posterior y ajeno a esa remediación: apareció el 2026-08-07 al retomar la pregunta aplazada sobre la cobertura de CPVs. El sector `social` es inalcanzable —lo eclipsa `educativo` por una colisión de prefijos de 3 dígitos— y `sector_detectado` se persiste en la base. **No bloquea la Capa 9**, pero sí conviene cerrarlo antes de la primera ejecución real. Pendiente de decidir la vía de corrección con el usuario.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 

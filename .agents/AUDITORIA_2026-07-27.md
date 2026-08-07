@@ -52,9 +52,14 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-23 · La tabla afirmaba cláusulas que nadie había leído | 🟢 Cerrado | Paso D8 |
 | H-24 · Un clon limpio del repositorio no podía arrancar | 🟢 Cerrado | Paso D10 |
 | H-25 · La suite escribía en el `data/` real y seguía llamando a Gemini | 🟢 Cerrado | Paso D10 |
+| H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` | 🔴 **Abierto** | — |
 
-**No queda ningún hallazgo abierto**: los 25 catalogados están cerrados con prueba de regresión
-o verificación reproducible. Suite: 175/175.
+**Un hallazgo abierto (H-26)**, detectado el 2026-08-07. Los 25 anteriores están cerrados con
+prueba de regresión o verificación reproducible. Suite: 175/175.
+
+> ⚠️ **H-26 conviene resolverlo antes de la primera ejecución real.** No afecta al score ni al
+> orden de prioridad, pero `sector_detectado` **se persiste** en la base (`memoria.py:999`). Con la
+> base vacía cuesta una línea; con datos dentro obliga a recalcular el sector de lo ya capturado.
 
 > ⚠️ **Aviso sobre la verificación de hermeticidad**: durante un tiempo se dio por buena una suite
 > "hermética" comprobada bloqueando la red con excepciones. Era un falso verde — ver H-25. El
@@ -755,6 +760,81 @@ ningún fixture—; y `autoinicializar_proveedor=False` en las dos instancias qu
 
 **Verificado**: borrando `data/`, la suite da 175/175, no contacta ningún dominio externo y
 **`data/` no llega a crearse**. Ver Convención C5 para el método de comprobación.
+
+---
+
+## Hallazgo de la revisión de cobertura CPV — 2026-08-07
+
+> Salió de retomar la pregunta aplazada el 31-07-2026 sobre el solapamiento entre el perfil de CPVs
+> de Incoop y los CPVs realmente capturados. La pregunta de cobertura se resolvió (ver `AGENTS.md`);
+> por el camino apareció este defecto, que no tiene que ver con la cobertura sino con el reparto por
+> sectores.
+
+### H-26 · El sector `social` es inalcanzable: lo eclipsa `educativo` 🔴 ABIERTO
+
+**Toda la familia `853*` —asistencia social, el núcleo del negocio de Incoop— se etiqueta como
+`Educativo`.** El sector `social` no se asigna nunca, por ninguna vía.
+
+**Causa.** `Filtro.__init__` (`src/filtro.py:57-66`) indexa cada CPV del perfil por sus **3 y 5
+primeros dígitos**. El sector `educativo` contiene `85312110` ("Guarderías escolares sociales"),
+cuyo prefijo de 3 dígitos es `853`. Ese `853` entra en el conjunto de `educativo`. Después, el
+bucle de asignación (`src/filtro.py:265-277`) recorre los sectores **en el orden del YAML** y corta
+en la primera coincidencia. Como `educativo` es la primera clave de `sectores_cpv`, se lleva todos
+los `853*` antes de que `social` llegue a consultarse.
+
+Los prefijos de 3 dígitos resultantes muestran la colisión:
+
+```
+educativo                ['800', '801', '802', '803', '804', '853']   <- se lleva 853
+social                   ['853']                                      <- nunca se alcanza
+consultoria              ['751', '794', '853']                         <- nunca se alcanza por 853
+```
+
+**Reproducción**:
+
+```python
+from src.filtro import Filtro
+f = Filtro()
+f.filtrar({'titulo':'Servicio generico','organo':'Ajuntament de Terrassa','importe':100000,
+           'vec':100000,'cpvs':['85300000'],'estado':'PUB','procedimiento_codigo':'1',
+           'tipo_contrato_codigo':'2','fecha_limite':'2026-12-31',
+           'country_subentity_code':'ES511'})['sector_detectado']
+# -> 'Educativo'   (85300000 = Servicios de asistencia social general)
+```
+
+Verificado sobre los cinco CPVs sociales del perfil: `85300000`, `85312000`, `85312100`,
+`85312300` y `85320000` devuelven todos `Educativo`, con score 65 en los cinco casos.
+
+**Efecto colateral: una regla muerta.** La red de seguridad por división
+`elif cpv_str.startswith("853"): sector_detectado = "Social"` (`src/filtro.py:282-286`) es
+**inalcanzable**: cualquier `853*` ya casó como core en `educativo` y el bucle no llega a esa rama.
+
+**Qué NO rompe.** El score es idéntico (+40 por cualquiera de los dos sectores), así que la
+puntuación, el orden de prioridad y el umbral de recomendación no se ven afectados. Por eso ni la
+suite ni el arranque en vivo del Paso D8 lo detectaron: no hay ninguna cifra incorrecta.
+
+**Qué sí rompe.** `sector_detectado` se propaga a `main.py:82` y se **persiste** como columna
+`sector` en la base (`memoria.py:999` y `memoria.py:1414`), desde donde alimenta a la API y al
+Cockpit. Cualquier lectura por sector —"cuántas licitaciones sociales estamos detectando"— dirá
+cero sociales y contará como educativas licitaciones de centros de día y atención domiciliaria.
+
+**Por qué importa el momento.** La base está vacía. Corregirlo ahora no cuesta nada; corregirlo
+después de la primera ejecución real obliga a recalcular el sector de todo lo capturado.
+
+**Vías de corrección** (a decidir con el usuario, ninguna implementada):
+
+1. **Ordenar los sectores del más específico al más general** en `perfil_incoop.yaml`. Barato, pero
+   deja la asignación dependiendo del orden de un fichero de configuración: frágil y no evidente.
+2. **Indexar sólo por el prefijo de 5 dígitos** y dejar los de 3 para la red por división. Elimina
+   la colisión de raíz, pero estrecha la captura de CPVs hermanos, que es justo lo que el prefijo
+   de 3 dígitos aporta hoy.
+3. **Resolver por el prefijo más largo que case**, en vez de por el primer sector del diccionario.
+   `85300000` casaría `853` en `social` y `educativo` con la misma longitud, así que aún haría falta
+   un criterio de desempate — pero deja de depender del orden y arregla el caso general.
+
+**Recomendación**: la 3 con desempate explícito, y `85312110` reclasificado. Ese CPV es
+"Guarderías escolares sociales": está en `educativo` por su literal, pero es quien arrastra el
+`853` entero. Conviene decidir si su sitio es `educativo` o `social` antes de tocar el algoritmo.
 
 ---
 
