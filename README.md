@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 8 cerrados** —el motor del Depurador está completo y se sirve entero por HTTP—, el 9 y el 10 pendientes. Esquema de base de datos en **v7**; política de retención en **v1.2.0**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 9 cerrados** —motor completo, servido por HTTP y con pantalla—, sólo queda el cierre de capa del Paso 10. Esquema de base de datos en **v7**; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1112,8 +1112,11 @@ graph TD
    - **Rescate `ARCHIVADO → VIVO`** y migración a **esquema v7** (`rescatado_at`). Sin esa marca el rescate no serviría de nada: la corrida siguiente volvería a archivar el lote y quien lo rescató vería su decisión deshecha sola. Es una columna y no una entrada de texto en el histórico por la Convención C3. El rescate **no altera el estado comercial**: recuperar visibilidad no es cambiar de situación.
 
 #### **Fase 4: Cockpit, Verificación y Cierre**
-9. **Paso 9 — Pantalla de Administración en el Cockpit**: 💤
-   - Ocupación de disco, historial de prospecciones y purga en dos tiempos: **previsualizar y luego confirmar**, con lo intocable señalado en pantalla para que se vea que no está en riesgo.
+9. **Paso 9 — Pantalla de Administración en el Cockpit**: 🟢 Completado y Validado.
+   - Ocupación de disco, política vigente, historial de prospecciones y purga en dos tiempos: **previsualizar y luego confirmar**.
+   - **El botón de confirmar nace deshabilitado** y sólo se activa tras previsualizar. Una purga que pueda lanzarse sin haber mirado es una purga a ciegas con pasos de más.
+   - **Lo intocable se pinta con el mismo peso visual que lo eliminable**, con el motivo de cada expediente a la vista. Esconderlo en un desplegable convertiría la garantía en una nota al pie.
+   - La base de datos aparece explícitamente marcada como **no purgable** en el desglose de disco: es lo que evita que alguien busque espacio donde no lo hay.
 10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9**: 💤
     - `tests/test_capa9_depurador.py`, con regresiones que fijen lo esencial: que la memoria comercial sobrevive a una purga total, que la purga es idempotente y que un fallo de copia la aborta. Cierre con arranque real contra base sembrada *(Convención C7)*.
 
@@ -1124,10 +1127,10 @@ graph TD
 - `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟢 **Completo (Pasos 4, 5 y 6)**.
 - `tests/test_capa9_purga_documental.py`: regresiones de la purga documental. 🟢 **Creado (Paso 5)**, 14 pruebas.
 - `tests/test_capa9_eliminacion.py`: regresiones de la invariante de memoria comercial. 🟢 **Creado (Paso 6)**, 24 pruebas.
-- `src/api/routers/admin.py`: endpoints de administración y purga. 🟡 **Lectura completa (Paso 7)**; le falta la mutación del Paso 8.
+- `src/api/routers/admin.py`: endpoints de administración y purga. 🟢 **Completo (Pasos 7 y 8)**: cuatro GET de lectura y tres POST de mutación.
 - `tests/test_capa9_admin_api.py`: regresiones del router administrativo. 🟢 **Creado (Paso 7)**, 11 pruebas.
 - `tests/test_capa9_archivado.py`: regresiones del ciclo de vida. 🟢 **Creado (Paso 4)**, 41 pruebas. La suite E2E del Paso 10 se sumará aquí.
-- `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 💤 Paso 9.
+- `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 🟢 **Creado (Paso 9)**.
 
 ---
 

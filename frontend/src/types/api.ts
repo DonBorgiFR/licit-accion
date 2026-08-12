@@ -284,3 +284,99 @@ export interface APIErrorResponse {
   timestamp?: string;
   details?: Record<string, any> | null;
 }
+
+// ==============================================================================
+// Administración y Depurador (Capa 9, Pasos 7 y 8)
+// ==============================================================================
+
+export interface Almacenamiento {
+  base_datos_bytes: number;
+  documentos_bytes: number;
+  documentos_ficheros: number;
+  copias_bytes: number;
+  copias_ficheros: number;
+  registros_bytes: number;
+  total_bytes: number;
+  /** Documentos y copias. La base NUNCA entra: sus filas son la memoria comercial. */
+  purgable_bytes: number;
+}
+
+export interface PoliticaArchivado {
+  dias_tras_fecha_limite: number;
+  estados_archivables: string[];
+  archivar_expediente_con_todos_sus_lotes: boolean;
+}
+
+export interface PoliticaRetencion {
+  version: string;
+  documentos_dias: number;
+  backups_dias: number;
+  archivado: PoliticaArchivado | null;
+  eliminacion: { dias_archivado_minimo: number } | null;
+}
+
+export interface ExpedienteEvaluado {
+  expediente_id: string;
+  eliminable: boolean;
+  /** 'memoria_comercial' | 'cuarentena_no_cumplida' | 'no_archivado' */
+  motivo: string | null;
+  detalle_motivo: string | null;
+  lotes: number;
+  documentos: number;
+}
+
+export interface PrevisualizacionPurga {
+  version_politica: string | null;
+  documental: {
+    documentos_candidatos: number;
+    ficheros_en_disco: number;
+    bytes_estimados: number;
+    corte_utc: string | null;
+  };
+  eliminables: ExpedienteEvaluado[];
+  /** Lo protegido, con su motivo. Se pinta a propósito: hay que poder ver que no está en riesgo. */
+  bloqueados: ExpedienteEvaluado[];
+  degradado: string | null;
+}
+
+export interface SolicitudPurga {
+  tipo: 'documental' | 'eliminacion';
+  confirmar: boolean;
+  expedientes?: string[];
+  solicitado_por?: string;
+}
+
+export interface ResultadoPurga {
+  ejecutado: boolean;
+  tipo: string;
+  version_politica: string | null;
+  documentos_purgados: number;
+  ficheros_borrados: number;
+  bytes_liberados: number;
+  expedientes_eliminados: number;
+  bloqueados: ExpedienteEvaluado[];
+  backup_asociado: string | null;
+  degradado: string | null;
+}
+
+export interface ResultadoBackup {
+  ruta: string;
+  bytes: number;
+  creado_at: string;
+}
+
+export interface Ejecucion {
+  id: number;
+  start_time: string;
+  end_time: string | null;
+  estado: string;
+  expedientes_nuevos: number | null;
+  expedientes_actualizados: number | null;
+  lotes_evaluados: number | null;
+  documentos_descargados: number | null;
+  analisis_realizados: number | null;
+  alertas_generadas: number | null;
+  errores: number | null;
+  version_scoring: string | null;
+  version_politica_retencion: string | null;
+}

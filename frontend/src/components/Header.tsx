@@ -4,11 +4,11 @@
  */
 
 import React from 'react';
-import { LayoutDashboard, FileText, Radio, Building2 } from 'lucide-react';
+import { LayoutDashboard, FileText, Radio, Building2, Settings2 } from 'lucide-react';
 import { HealthIndicator } from './HealthIndicator';
 import { cn } from '../lib/utils';
 
-export type ActiveTab = 'kpis' | 'licitaciones' | 'centinela';
+export type ActiveTab = 'kpis' | 'licitaciones' | 'centinela' | 'admin';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -79,6 +79,19 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
             >
               <Radio className="w-3.5 h-3.5" />
               <span>Centinela (Boletines)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={cn(
+                'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none',
+                activeTab === 'admin'
+                  ? 'bg-white text-indigo-600 shadow-xs border border-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              )}
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>Administración</span>
             </button>
           </nav>
 

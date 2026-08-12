@@ -9,6 +9,7 @@ import { KPIDashboard } from './components/KPIDashboard';
 import { LicitacionesTable } from './components/LicitacionesTable';
 import { AlertasTable } from './components/AlertasTable';
 import { DetailDrawer } from './components/DetailDrawer';
+import { AdminPanel } from './components/AdminPanel';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('kpis');
@@ -44,6 +45,8 @@ export function App() {
         {activeTab === 'centinela' && (
           <AlertasTable onSelectAlerta={handleSelectAlerta} />
         )}
+
+        {activeTab === 'admin' && <AdminPanel />}
       </main>
 
       {/* Drawer de Detalle Completo (Licitación o Alerta) */}

@@ -35,6 +35,11 @@ export const queryClient = new QueryClient({
 export const QUERY_KEYS = {
   health: ['health'] as const,
   kpis: ['kpis'] as const,
+  // Administración y Depurador (Capa 9, Paso 9)
+  almacenamiento: ['admin', 'almacenamiento'] as const,
+  retencion: ['admin', 'retencion'] as const,
+  previsualizacionPurga: ['admin', 'purga', 'previsualizacion'] as const,
+  ejecuciones: (page: number) => ['admin', 'ejecuciones', page] as const,
   licitaciones: (params: LicitacionesQueryParams = {}) =>
     ['licitaciones', params] as const,
   licitacionDetail: (id: string) => ['licitaciones', 'detail', id] as const,

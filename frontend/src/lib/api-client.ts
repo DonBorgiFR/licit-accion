@@ -18,6 +18,13 @@ import type {
   LicitacionesQueryParams,
   AlertasQueryParams,
   APIErrorResponse,
+  Almacenamiento,
+  PoliticaRetencion,
+  PrevisualizacionPurga,
+  SolicitudPurga,
+  ResultadoPurga,
+  ResultadoBackup,
+  Ejecucion,
 } from '../types/api';
 
 const BASE_URL =
@@ -202,5 +209,54 @@ export async function updateEstadoAlerta(
   return request<AlertaBoletin>(`/alertas-tempranas/${encodedId}/estado`, {
     method: 'PUT',
     body: JSON.stringify(payload),
+  });
+}
+
+// ==============================================================================
+// Administración y Depurador (Capa 9, Pasos 7 y 8)
+// ==============================================================================
+
+export async function getAlmacenamiento(): Promise<Almacenamiento> {
+  return request<Almacenamiento>('/admin/almacenamiento');
+}
+
+export async function getPoliticaRetencion(): Promise<PoliticaRetencion> {
+  return request<PoliticaRetencion>('/admin/retencion');
+}
+
+/** Ensayo sin efectos. Deja constancia en el rastro de quién consultó qué se borraría. */
+export async function getPrevisualizacionPurga(
+  solicitadoPor = 'cockpit'
+): Promise<PrevisualizacionPurga> {
+  return request<PrevisualizacionPurga>(
+    `/admin/purga/previsualizacion?solicitado_por=${encodeURIComponent(solicitadoPor)}`
+  );
+}
+
+export async function getEjecuciones(
+  page = 1,
+  limit = 10
+): Promise<PaginatedResponse<Ejecucion>> {
+  return request<PaginatedResponse<Ejecucion>>(`/admin/ejecuciones?page=${page}&limit=${limit}`);
+}
+
+export async function ejecutarPurga(solicitud: SolicitudPurga): Promise<ResultadoPurga> {
+  return request<ResultadoPurga>('/admin/purga', {
+    method: 'POST',
+    body: JSON.stringify(solicitud),
+  });
+}
+
+export async function crearBackup(): Promise<ResultadoBackup> {
+  return request<ResultadoBackup>('/admin/backup', { method: 'POST' });
+}
+
+export async function rescatarExpedientes(
+  expedientes: string[],
+  solicitadoPor = 'cockpit'
+): Promise<{ rescatados: number; expedientes: string[] }> {
+  return request<{ rescatados: number; expedientes: string[] }>('/admin/expedientes/rescatar', {
+    method: 'POST',
+    body: JSON.stringify({ expedientes, solicitado_por: solicitadoPor }),
   });
 }
