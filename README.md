@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 9 cerrados** —motor completo, servido por HTTP y con pantalla—, sólo queda el cierre de capa del Paso 10. Esquema de base de datos en **v7**; política de retención en **v1.2.0**.
+* **Estado actual**: 🟢 **Completada y Validada** el 2026-08-12, con los diez pasos cerrados y verificada mediante una corrida real del pipeline de extremo a extremo. Esquema de base de datos en **v7**; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1117,8 +1117,11 @@ graph TD
    - **El botón de confirmar nace deshabilitado** y sólo se activa tras previsualizar. Una purga que pueda lanzarse sin haber mirado es una purga a ciegas con pasos de más.
    - **Lo intocable se pinta con el mismo peso visual que lo eliminable**, con el motivo de cada expediente a la vista. Esconderlo en un desplegable convertiría la garantía en una nota al pie.
    - La base de datos aparece explícitamente marcada como **no purgable** en el desglose de disco: es lo que evita que alguien busque espacio donde no lo hay.
-10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9**: 💤
-    - `tests/test_capa9_depurador.py`, con regresiones que fijen lo esencial: que la memoria comercial sobrevive a una purga total, que la purga es idempotente y que un fallo de copia la aborta. Cierre con arranque real contra base sembrada *(Convención C7)*.
+10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9**: 🟢 Completado y Validado.
+    - **Auditoría de contrato primero, pruebas después**: recorrer los 8 eventos JSONL, los 5 errores tipados y las 7 transiciones prohibidas uno a uno, comprobando que cada uno existe en el código y no sólo en el documento. De ahí salieron **H-35** y dos capacidades declaradas que nadie había implementado, retiradas del contrato con su motivo escrito.
+    - `tests/test_capa9_e2e.py`: 11 pruebas organizadas por las **siete propiedades de la Regla 10**. El ciclo completo VIVO → ARCHIVADO → PURGADO → ELIMINADO en una sola narración, la memoria comercial atravesándolo sin un rasguño, el win-rate sobreviviendo a la purga total, y la reconstrucción de lo ocurrido leyendo sólo la tabla `purgas` y el JSONL.
+    - **Verificado con una corrida real del pipeline** *(decisión de dirección, 2026-08-12)*: 12 expedientes ingestados, 88 documentos detectados, 63 descargados y leídos, **10 análisis semánticos completados** y 0 errores. Cada cifra de la pantalla comparada contra la consulta directa a la base *(Convención C7)*.
+    - **Cierra H-36**, descubierto cometiéndolo: purgar sobre una copia de la base borraba los ficheros de producción, porque la copia conserva las rutas absolutas del original.
 
 ---
 

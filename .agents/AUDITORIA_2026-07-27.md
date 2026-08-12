@@ -61,9 +61,11 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-32 · Un lote archivado no puede editarse desde el Cockpit | 🟢 Cerrado | Capa 9, Paso 4 |
 | H-33 · El vocabulario de estados documentales estaba partido en dos | 🟢 Cerrado | Capa 9, Paso 5 |
 | H-34 · La rotación de copias anunciaba un fallo del backup que no existía | 🟢 Cerrado | Capa 9, Paso 5 |
+| H-35 · La purga documental sólo corría los días con ingesta nueva | 🟢 Cerrado | Capa 9, Paso 10 |
+| H-36 · Purgar sobre una copia de la base borraba los ficheros de producción | 🟢 Cerrado | Capa 9, Paso 10 |
 
-**No queda ningún hallazgo abierto**: los 34 catalogados están cerrados con prueba de regresión o
-verificación reproducible. Suite: **280/280**.
+**No queda ningún hallazgo abierto**: los 36 catalogados están cerrados con prueba de regresión o
+verificación reproducible. Suite: **334/334**.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -1223,6 +1225,88 @@ dice.
 
 **Regresiones**: `test_rotar_backups_devuelve_su_recuento` y
 `test_la_rotacion_de_copias_retira_las_caducadas_y_lo_audita`.
+
+---
+
+## Hallazgo del cierre de capa — 2026-08-12 (Capa 9, Paso 10)
+
+Salió de la **auditoría de contrato** con la que arranca el Paso 10: recorrer el contrato con
+una lista en la mano y comprobar, uno a uno, que los 8 eventos JSONL se emiten, que los errores
+tipados son alcanzables y que cada transición prohibida está impedida por código y no sólo por
+el documento. De los 8 eventos, los 8. De las 7 transiciones, las 7. Pero el cableado no.
+
+### H-35 · La purga documental sólo corría los días con ingesta nueva 🟢 CERRADO (Capa 9, Paso 10)
+
+La llamada a `depurador.purgar_documentos()` vivía anidada a dos niveles dentro del bloque de
+ingesta de `src/main.py`:
+
+```
+139 | sangría  8 | if oportunidades_ingesta and not args.dry_run:
+169 | sangría 12 |     if lector.ejecutar_bootstrap():
+183 | sangría 16 |         res_purga = depurador.purgar_documentos(...)
+273 | sangría 12 | depurador.archivar(...)          ← el archivado, bien colocado
+```
+
+**Consecuencia**: la purga sólo se ejecutaba los días en que el feed traía oportunidades nuevas
+**y además** el bootstrap del Lector tenía éxito. Un día tranquilo no purgaba. Un día sin
+Tesseract, tampoco. El mecanismo que existe para que el disco no crezca sin límite quedaba
+condicionado a algo que no tiene ninguna relación con él, y el fallo no habría dado señal
+alguna hasta quedarse sin espacio.
+
+**Origen**: herencia del Paso 5. La purga vivía en `lector.ejecutar_purga_obsoletos()` y esa
+posición tenía sentido para el Lector; al trasladarla al Depurador se conservó la ubicación sin
+revisar si seguía teniéndolo. Es el mismo patrón que este dosier documenta una y otra vez —lo
+que se mueve conserva supuestos del sitio del que viene—, esta vez cometido al repararlo.
+
+**Cerrado con** un cambio de forma, no sólo de sitio: las dos operaciones automáticas del
+Depurador viven ahora en `main.ejecutar_fase_depurador()`, invocada una sola vez desde el
+pipeline. **No es orden cosmético**: elimina la posibilidad de que los dos puntos de llamada
+diverjan, y le da a la fase una superficie que las pruebas pueden ejercitar sin salir a la red
+—que es justo lo que faltaba para que este defecto fuera detectable.
+
+**Regresión**: `tests/test_capa9_e2e.py::test_la_fase_del_depurador_corre_aunque_la_corrida_no_ingiera_nada`.
+
+### Y un error tipado que el contrato declaraba sin que nadie lo lanzase
+
+`PurgaBloqueadaPorMemoriaComercial` (409) existía como clase y **ningún camino lo lanzaba**. No
+se ha añadido el `raise`: se ha retirado el error, porque el propio contrato lo hacía imposible.
+La salida de la Operación 3 exige devolver *"los eliminados y —igual de importante— los
+bloqueados con su motivo"*, y una excepción no puede devolver a la vez lo que se hizo y lo que
+se protegió. Al operar sobre listas, la invariante se manifiesta **como dato y no como error**.
+Un error declarado que nunca se lanza es peor que no declararlo: promete una garantía que no
+existe.
+
+---
+
+### H-36 · Purgar sobre una copia de la base borraba los ficheros de producción 🟢 CERRADO (Capa 9, Paso 10)
+
+**Se descubrió cometiéndolo**, durante la verificación en vivo del cierre de capa. Para probar
+la eliminación sin arriesgar los datos reales se copió `data/licitaciones.db` a un directorio
+temporal y se ejecutó el Depurador contra la copia. La copia conserva los `local_path`
+**absolutos** de la base original, así que la purga fue a buscar los ficheros de producción y
+borró 63 pliegos (35 MB) de `data/documents/`.
+
+**Por qué es una trampa perfecta y no un descuido**: copiar la base es exactamente lo que hace
+cualquiera que quiera probar el Depurador sin riesgo. La precaución razonable era la que
+activaba el daño. Y no da ninguna señal: la purga informa de una operación correcta, porque
+desde su punto de vista lo fue.
+
+**Qué se perdió y qué no**: los ficheros. Sobrevivieron íntegros los 63 textos extraídos, los
+10 análisis semánticos ya pagados, y los 12 expedientes con su scoring y su rastro. *(Dirección
+decidió el 2026-08-12 no recuperarlos: los PDF son peso purgable por la propia política y su
+contenido está en la base.)*
+
+**Cerrado con una invariante que no depende de que nadie se acuerde**: el Depurador sólo borra
+ficheros situados **bajo su propio directorio documental** (`_fichero_es_mio()`). Si la ruta
+apunta fuera, se rechaza en voz alta y se cuenta como error de borrado, en vez de borrar a
+ciegas. Una base copiada tiene su directorio documental en otro sitio, de modo que no puede
+alcanzar los ficheros del original.
+
+**Efecto colateral revelador**: al añadir el guardián fallaron 7 pruebas de los Pasos 5 y 6,
+porque sembraban los PDF en `tmp_path` y no bajo `documents/`, que es donde el Lector los deja
+de verdad. Estaban ejercitando una disposición que en producción no ocurre. Corregidas.
+
+**Regresión**: `tests/test_capa9_e2e.py::test_una_copia_de_la_base_no_puede_borrar_los_ficheros_del_original`.
 
 ---
 

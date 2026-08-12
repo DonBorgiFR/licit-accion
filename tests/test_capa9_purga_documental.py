@@ -51,15 +51,27 @@ def base(tmp_path):
 
 
 def crear_pdf(ruta, texto=TEXTO_PLIEGO):
-    """Un PDF de verdad, con texto nativo suficiente para no confundirse con un escaneado."""
+    """Un PDF de verdad, con texto nativo suficiente para no confundirse con un escaneado.
+
+    **Se coloca bajo `documents/`, junto a la base**, que es donde el Lector deja los pliegos
+    de verdad. No es un detalle: desde H-36 el Depurador sólo borra ficheros de su propio
+    directorio documental, así que una prueba que los sembrara en cualquier otro sitio
+    estaría ejercitando una disposición que en producción no ocurre — y dejaría de detectar
+    lo que dice comprobar.
+    """
     import fitz
+    from pathlib import Path
+
+    ruta = Path(ruta)
+    destino = ruta.parent / "documents" / ruta.name
+    destino.parent.mkdir(parents=True, exist_ok=True)
 
     documento = fitz.open()
     pagina = documento.new_page()
     pagina.insert_text((72, 72), texto)
-    documento.save(str(ruta))
+    documento.save(str(destino))
     documento.close()
-    return str(ruta)
+    return str(destino)
 
 
 def sembrar_expediente(memoria, exp_id="EXP-1", fecha_limite=None,

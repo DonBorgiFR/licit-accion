@@ -14,6 +14,61 @@ def print_header(title: str):
     print(f" {title.center(113)} ")
     print("=" * 115)
 
+def ejecutar_fase_depurador(db, politica, ejecucion_id: int):
+    """Las dos operaciones automáticas del Depurador, juntas y en una sola llamada.
+
+    **Por qué es una función y no dos bloques sueltos en el pipeline (H-35, Paso 10).**
+    La purga documental vivía anidada dentro del bloque de ingesta, herencia de cuando esta
+    operación pertenecía al Lector. Allí sólo se ejecutaba los días en que el feed traía
+    oportunidades nuevas **y además** el bootstrap del Lector tenía éxito: el mecanismo que
+    impide que el disco crezca sin límite quedaba condicionado a algo que no tiene nada que
+    ver con él. Un día tranquilo no purgaba, y nadie lo habría notado hasta quedarse sin
+    espacio. El archivado, en cambio, sí estaba bien colocado.
+
+    Ninguna de las dos depende de la ingesta: dependen del calendario. Reunirlas aquí no es
+    orden cosmético — hace que el defecto no pueda repetirse, porque ya no hay dos puntos de
+    llamada que puedan divergir, y da a la fase una superficie que las pruebas sí pueden
+    ejercitar sin salir a la red.
+
+    **La eliminación física no está aquí y no debe estarlo**: exige lista explícita y
+    confirmación de una persona. El pipeline no puede borrar un expediente ni queriendo.
+
+    Devuelve `(ResultadoArchivado, ResultadoPurgaDocumental)`.
+    """
+    depurador = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
+
+    # Archivar no borra nada y es reversible, por eso puede correr sin que nadie lo pida.
+    res_arch = depurador.archivar(solicitado_por="pipeline")
+    if not res_arch.ejecutado:
+        print(f"[~] Archivado omitido — {res_arch.motivo_degradacion}")
+    elif res_arch.hubo_cambios:
+        print(f"[+] Archivado: {res_arch.lotes_archivados} lotes y "
+              f"{res_arch.expedientes_archivados} expedientes salen del canal principal "
+              f"(corte: {res_arch.corte_utc}, política v{res_arch.version_politica}). "
+              f"Siguen en la base y siguen contando en los KPIs históricos.")
+    else:
+        print("[+] Archivado: nada que archivar en esta ejecución.")
+
+    print(f"[~] Purga de peso documental (retención de "
+          f"{politica.documentos_dias if politica else '?'} días)...")
+    res_purga = depurador.purgar_documentos(solicitado_por="pipeline")
+    if not res_purga.ejecutado:
+        print(f"[~] Purga documental omitida — {res_purga.motivo_degradacion}")
+    elif res_purga.hubo_cambios:
+        mb = res_purga.bytes_liberados / (1024 * 1024)
+        print(f"[+] Purga documental: {res_purga.documentos_purgados} documentos purgados, "
+              f"{res_purga.ficheros_borrados} ficheros borrados, {mb:.2f} MB liberados "
+              f"(corte: {res_purga.corte_utc}, política v{res_purga.version_politica}). "
+              f"Las filas permanecen con su rastro; ningún dato de negocio se ha tocado.")
+        if res_purga.errores_borrado:
+            print(f"[!] {res_purga.errores_borrado} ficheros no se pudieron borrar y se "
+                  f"reintentarán en la próxima corrida.")
+    else:
+        print("[+] Purga documental: nada que purgar en esta ejecución.")
+
+    return res_arch, res_purga
+
+
 def main():
     # Parseador de argumentos de línea de comandos
     parser = argparse.ArgumentParser(description="Pipeline de Licitaciones Incoop - Capa 6: Centinela Integrado")
@@ -174,27 +229,6 @@ def main():
                 # Motor de OCR diferido para PDFs escaneados (Paso 5)
                 print("[~] Iniciando motor de OCR diferido (Tesseract OCR)...")
                 lector.procesar_ocr_diferido_lote()
-                # Purga automática del peso documental (Capa 9, Paso 5). La gobierna el
-                # Depurador, no el Lector: éste descarga y lee pliegos, aquél decide qué
-                # deja de conservarse. Sin política legible no se purga, y se dice.
-                print(f"[~] Purga de peso documental (retención de "
-                      f"{politica.documentos_dias if politica else '?'} días)...")
-                depurador = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
-                res_purga = depurador.purgar_documentos(solicitado_por="pipeline")
-                if not res_purga.ejecutado:
-                    print(f"[~] Purga documental omitida — {res_purga.motivo_degradacion}")
-                elif res_purga.hubo_cambios:
-                    mb = res_purga.bytes_liberados / (1024 * 1024)
-                    print(f"[+] Purga documental: {res_purga.documentos_purgados} documentos "
-                          f"purgados, {res_purga.ficheros_borrados} ficheros borrados, "
-                          f"{mb:.2f} MB liberados (corte: {res_purga.corte_utc}, política "
-                          f"v{res_purga.version_politica}). Las filas permanecen con su "
-                          f"rastro; ningún dato de negocio se ha tocado.")
-                    if res_purga.errores_borrado:
-                        print(f"[!] {res_purga.errores_borrado} ficheros no se pudieron "
-                              f"borrar y se reintentarán en la próxima corrida.")
-                else:
-                    print("[+] Purga documental: nada que purgar en esta ejecución.")
 
                 # Analista IA - Extracción Semántica y Recalibración (Capa 5 Paso 8)
                 print("[~] Iniciando Analista IA (Extracción Semántica con LLM / Fallback)...")
@@ -261,27 +295,14 @@ def main():
             db.soft_delete_obsoletos(ejecucion_start_utc)
             print("[+] Proceso de Soft Delete finalizado.")
 
-        # 6.bis Archivado por caducidad de plazo (Capa 9, Paso 4).
+        # 6.bis Fase del Depurador: archivar y purgar peso documental (Capa 9).
         #
         # Va después del Soft Delete y no antes: primero el Radar marca lo que ha
         # desaparecido del feed, y sólo entonces el Depurador archiva por plazo lo que
-        # sigue publicado pero ya venció. Al revés, el archivado trabajaría sobre una foto
-        # de la base anterior a la corrida.
-        #
-        # Archivar no borra nada y es reversible, por eso puede correr sin que nadie lo pida.
+        # sigue publicado pero ya venció. Al revés, trabajaría sobre una foto de la base
+        # anterior a la corrida.
         if not args.dry_run:
-            depurador = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
-            res_arch = depurador.archivar(solicitado_por="pipeline")
-            if not res_arch.ejecutado:
-                print(f"[~] Archivado omitido — {res_arch.motivo_degradacion}")
-            elif res_arch.hubo_cambios:
-                print(f"[+] Archivado: {res_arch.lotes_archivados} lotes y "
-                      f"{res_arch.expedientes_archivados} expedientes salen del canal "
-                      f"principal (corte: {res_arch.corte_utc}, política "
-                      f"v{res_arch.version_politica}). Siguen en la base y siguen contando "
-                      f"en los KPIs históricos.")
-            else:
-                print("[+] Archivado: nada que archivar en esta ejecución.")
+            ejecutar_fase_depurador(db, politica, ejecucion_id)
 
         # 7. Backup transaccional en caliente y rotación (omitido en Dry Run)
         if not args.dry_run:

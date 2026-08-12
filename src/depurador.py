@@ -48,8 +48,16 @@ from src.retencion import PoliticaRetencion
 # que borrar (Convención C2).
 # =======================================================================================
 
-class PurgaBloqueadaPorMemoriaComercial(Exception):
-    """Se intentó eliminar un expediente con negocio o criterio humano invertido. HTTP 409."""
+# El contrato declaraba aquí un quinto error, `PurgaBloqueadaPorMemoriaComercial` (409).
+# **No existe, y es deliberado.** Su propio contrato lo hacía imposible: la Operación 3
+# especifica como salida "los eliminados y —igual de importante— los bloqueados con su
+# motivo", y una excepción no puede devolver a la vez lo que sí se hizo y lo que se protegió.
+#
+# Al ser una operación por lotes, la invariante se manifiesta **como dato y no como error**:
+# cada expediente protegido vuelve en `ResultadoEliminacion.bloqueados` con su motivo exacto,
+# y quien confirmó el borrado puede ver por qué se salvó cada uno. Lanzar un 409 obligaría a
+# elegir entre informar del éxito parcial o del bloqueo, escondiendo la mitad de lo ocurrido
+# justo en la operación donde más importa saberlo. Detectado y resuelto en el Paso 10.
 
 
 class PurgaBloqueadaPorIntegridad(Exception):
@@ -1127,6 +1135,26 @@ class Depurador:
             )
         return None
 
+    def _fichero_es_mio(self, ruta: str) -> bool:
+        """¿Este fichero pertenece al directorio documental de **esta** base? (H-36)
+
+        Se descubrió borrando 63 pliegos de producción durante el cierre de la capa. Una
+        copia de la base conserva las **rutas absolutas** de los ficheros originales, de modo
+        que purgar sobre la copia va a buscar los ficheros de producción y los borra. Es una
+        trampa perfecta: copiar la base es justo lo que hace cualquiera que quiera probar el
+        Depurador sin arriesgar nada, y es precisamente lo que lo vuelve destructivo.
+
+        La invariante que lo cierra es sencilla y no depende de que nadie se acuerde: **el
+        Depurador sólo borra ficheros que están bajo su propio directorio documental.** Si la
+        ruta apunta fuera, no es suya y no la toca, por mucho que su fila lo diga.
+        """
+        propio = os.path.abspath(directorio_documentos(getattr(self.memoria, "db_path", None)))
+        try:
+            objetivo = os.path.abspath(ruta)
+        except (OSError, ValueError):
+            return False
+        return os.path.commonpath([propio, objetivo]) == propio
+
     def _borrar_fichero_y_sidecar(self, ruta: str):
         """Borra el PDF y su sidecar de metadatos, midiendo lo liberado **antes** de borrar.
 
@@ -1134,6 +1162,16 @@ class Depurador:
         fichero todavía en disco porque después ya no hay a quién preguntárselo, y
         `bytes_liberados` es una postcondición del contrato, no un adorno del informe.
         """
+        if not self._fichero_es_mio(ruta):
+            # No es un error del fichero: es una señal de que esta base no es la que lo
+            # gobierna. Se rechaza en voz alta (Convención C2) en lugar de borrar a ciegas.
+            return 0, 0, PermissionError(
+                f"'{ruta}' está fuera del directorio documental de esta base "
+                f"({directorio_documentos(getattr(self.memoria, 'db_path', None))}). "
+                "El Depurador sólo borra sus propios ficheros: una copia de la base conserva "
+                "las rutas de la original, y purgarla habría borrado ficheros de producción."
+            )
+
         bytes_liberados = 0
         borrados = 0
         try:

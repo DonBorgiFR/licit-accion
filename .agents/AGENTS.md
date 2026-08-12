@@ -14,21 +14,25 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas, con la suite en **323/323** y el Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia en el README y **Pasos 1 a 9 cerrados**. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 34 hallazgos catalogados, los 34 están cerrados.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **334/334**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 36 hallazgos catalogados, los 36 están cerrados. **La capa activa es la 10**, el Lanzador.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 323/323
+python -m pytest tests/ -q          # debe dar 334/334
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: Capa 9, Paso 10 (cierre de capa)
+### ⏭️ Siguiente tarea concreta: abrir la Capa 10 — El Lanzador y Despertador
 
-**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 a 9 cerrados; sólo queda el 10.** El motor está completo, se sirve entero por HTTP y tiene pantalla. El Paso 10 es el cierre: suite E2E de capa, verificación en vivo completa (Convención C7) y actualización del dosier. **No se cierra con prisa**: así se colaron H-21, H-22 y H-23.
+**La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla para abrir la 10.
+
+La Capa 10 es el lanzador silencioso (VBS) y el servicio local que despierta el ecosistema sin mostrar consolas. **Empieza por su contrato y su máquina de estados** (Reglas 1 y 2), como todas las demás.
+
+> ⚠️ **Lo que la Capa 9 deja avisado para la 10**: el pipeline ya no es sólo prospección. Cada corrida **archiva y purga** —`main.ejecutar_fase_depurador()`—, es decir, **borra ficheros del disco**. Un lanzador que ejecute el pipeline dos veces a la vez, o que lo mate a mitad, opera sobre un proceso que destruye peso documental. El cerrojo de fichero con TTL y verificación de PID (Paso D1) es ahora una pieza crítica, no una precaución.
 
 * **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
 * **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`. Hoy en **v1.2.0**, con los bloques `archivado` (Paso 4) y `eliminacion` (Paso 6).
@@ -39,6 +43,7 @@ python -m pytest tests/ -q          # debe dar 323/323
 * **Paso 7** 🟢 — router administrativo de lectura en `src/api/routers/admin.py`. Cuatro endpoints que no mutan nada: es la mitad honesta de la purga en dos tiempos.
 * **Paso 8** 🟢 — router de mutación, el rescate `ARCHIVADO → VIVO` y el **esquema v7** (`rescatado_at`), que es lo que hace que un rescate sobreviva a la corrida siguiente.
 * **Paso 9** 🟢 — pantalla de administración en el Cockpit, con la purga en dos tiempos y lo protegido a la vista.
+* **Paso 10** 🟢 — **cierre de capa el 2026-08-12**: auditoría de contrato, suite E2E de las siete propiedades de la Regla 10 y verificación con corrida real. **Cierra H-35 y H-36.**
 
 > 🔑 **La lección del Paso 5, que vale para todo lo que queda**: el aviso de este dosier —*"antes de escribir código nuevo, comprobar qué hace ya el código viejo"*— era literal. La purga se ejecutaba en cada corrida, no fallaba nunca y **no liberaba un solo byte**, porque seleccionaba documentos por un estado que sólo tienen antes de procesarse. Y el mismo vocabulario partido dejaba al Analista IA sin recibir ni un pliego. Dos capas dadas por operativas trabajando en vacío, en verde y sin una sola excepción. **Que un módulo se ejecute no es prueba de que haga algo: hay que medir su efecto.**
 
@@ -350,7 +355,7 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 8 — Canal Proactivo Centinela (Oportunidades Fase Temprana DOGC/BOPB): 🟢 Completado y Validado.
   * Paso 9 — Modal / Drawer de Detalle Completo y Mutación Transaccional: 🟢 Completado y Validado.
   * Paso 10 — Suite de Pruebas Frontend, Build de Producción y Cierre Oficial de Capa 8: 🟢 Completado y Validado.
-* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Pasos 1 a 6 cerrados —el motor está completo—; del 7 al 10, pendientes.
+* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🟢 **Completada y Validada el 2026-08-12.** Los diez pasos cerrados, verificada con una corrida real del pipeline.
   * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟢 **Completado y validado el 2026-08-07.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
   * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 🟢 **Completado el 2026-08-07.** Los plazos dejan de estar codificados a fuego en `main.py`. Nuevo `src/retencion.py` como único punto de lectura, que **no aplica valores por defecto**: si la política falta o es incoherente lanza `PoliticaRetencionInvalida` y no se purga nada. 19 regresiones en `tests/test_retencion_politica.py`. Verificadas en vivo las dos ramas del cableado real de `main.py`.
   * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 🟢 **Completado el 2026-08-07.** Ciclo de vida a nivel de expediente, `version_scoring` en `lotes` (y poblado de verdad: Filtro → upsert → SQLite), métricas en `ejecuciones` y tabla `purgas`. **Cierra H-27** y destapó H-29. 9 regresiones en `tests/test_migracion_v6.py`, con DDL de v5 escrito a mano para que la migración se pruebe de verdad.
@@ -364,7 +369,9 @@ cd frontend && npm run dev          # http://localhost:5173
 
   > 🔑 **Por qué el rescate necesitó una migración**: sin marca, la corrida siguiente volvía a archivar el lote —la fecha límite sigue vencida— y quien lo rescató vería su decisión deshecha sola. Es la transición prohibida nº 7 vista desde el otro lado, y el mismo criterio que el Paso D5 fijó para el Centinela: **una reejecución del pipeline no puede pisar lo que decidió una persona.** Se resolvió con una columna y no con una entrada en `log_cambios` por la Convención C3: una protección que dependa de analizar texto libre es una protección que un día deja de encontrar lo que busca.
   * Paso 9 — Pantalla de Administración en el Cockpit (`frontend/src/components/AdminPanel.tsx`): 🟢 **Completado el 2026-08-12.** Ocupación en disco con la base **marcada como no purgable**, política vigente, historial de prospecciones y purga en dos tiempos. **El botón de eliminar nace deshabilitado y sólo se activa tras previsualizar**: una purga lanzable sin haber mirado es una purga a ciegas con pasos extra. **Lo protegido se pinta con el mismo peso visual que lo eliminable**, y no escondido en un desplegable: la garantía de que la memoria comercial no está en riesgo tiene que poder comprobarse con los ojos. La previsualización **no se lanza sola al abrir la pantalla**, porque su registro de auditoría debe corresponder a que alguien la pidiera. `tsc -b` limpio en modo estricto y `npm run build` correcto. **Verificado en vivo pilotando el navegador** contra la API y una base sembrada: previsualización con 1 eliminable y 3 protegidos por dos motivos distintos, confirmación ejecutada, copia previa creada y las cifras de disco actualizándose sin un solo error de consola. Los datos de verificación se retiraron después.
-  * Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9: 💤
+  * Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9: 🟢 **Completado el 2026-08-12.** Empezó por una **auditoría de contrato** —los 8 eventos JSONL, los 5 errores tipados y las 7 transiciones prohibidas, uno a uno— que destapó **H-35** (la purga documental sólo corría los días con ingesta nueva) y **dos capacidades declaradas que no existían**: un error tipado que nadie lanzaba y una entrada opcional que `archivar()` no acepta, ambas retiradas del contrato con su motivo. `tests/test_capa9_e2e.py` con 11 pruebas organizadas por las siete propiedades de la Regla 10. **Verificado con una corrida real del pipeline**: 12 expedientes, 88 documentos detectados, 63 descargados y leídos, **10 análisis del LLM** y 0 errores, con las cifras de la pantalla comparadas una a una contra la consulta directa. Y **H-36**, descubierto cometiéndolo: purgar sobre una copia de la base borra los ficheros del original.
+
+  > 🔑 **Las dos lecciones del cierre.** La primera: *un contrato que promete lo que no hay es peor que uno más corto* — tres de los huecos no eran errores de código sino promesas sin implementar, y sólo aparecen recorriendo el documento con una lista en la mano. La segunda, más cara: **la precaución razonable puede ser la que activa el daño**. Copiar la base para probar sin riesgo es lo que borró 63 pliegos de producción, porque la copia conserva las rutas absolutas del original. Ahora el Depurador sólo borra ficheros bajo su propio directorio documental.
 
   > ⚠️ **Este recuadro decía que el Paso 5 era "consolidar, no escribir", porque las dos piezas de purga "ya funcionaban y sólo les faltaba gobierno". Era falso, y se conserva como advertencia.** `lector.ejecutar_purga_obsoletos()` no alcanzaba ningún documento con peso (H-33) y `memoria.rotar_backups()` devolvía `None`, haciendo que el pipeline anunciase un fallo de backup inexistente (H-34). Las dos se ejecutaban en cada corrida sin fallar nunca. **Que un módulo se ejecute no prueba que haga algo: hay que medir su efecto sobre una base sembrada antes de darlo por bueno.**
 

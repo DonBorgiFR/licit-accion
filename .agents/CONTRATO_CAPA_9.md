@@ -1,6 +1,11 @@
 # Contrato de Servicio — Capa 9: El Histórico y Depurador
 
-**Versión:** 1.0.0 · **Estado:** 🟢 **validado por dirección el 2026-08-07.**
+**Versión:** 1.1.0 · **Estado:** 🟢 **validado por dirección el 2026-08-07 · capa cerrada el 2026-08-12.**
+
+> **v1.1.0 (2026-08-12, Paso 10)**: se retiran del contrato dos capacidades que nunca se
+> implementaron —el error `PurgaBloqueadaPorMemoriaComercial` y la lista opcional de expedientes
+> de la Operación 1— y se incorpora la cuarentena de la Operación 3. Un contrato que promete lo
+> que no hay es peor que uno más corto: describe garantías que nadie sostiene.
 Corresponde al **Paso 1** de la Capa 9 (Reglas 1 y 2). Los cuatro criterios de aceptación del final
 del documento quedaron aprobados sin modificaciones.
 
@@ -127,7 +132,7 @@ valor, hubo negocio.**
 
 | | |
 |---|---|
-| **Entrada** | Política de retención vigente; opcionalmente una lista explícita de expedientes. |
+| **Entrada** | Política de retención vigente. *(El contrato preveía además una lista explícita opcional de expedientes. **No se implementó y se retira en el Paso 10**: el archivado manual no se pide desde ninguna pantalla ni endpoint, y declarar una entrada que nadie acepta promete una capacidad inexistente. Si algún día hace falta archivar a mano, se añade entonces —con su plan y su prueba.)* |
 | **Salida** | Recuento de expedientes y lotes archivados, con sus motivos. |
 | **Precondición** | Base accesible; política válida y legible. |
 | **Postcondición** | Los archivados tienen `deleted_at` y `deleted_reason`; salen del canal principal y **siguen contando en los KPIs históricos**. |
@@ -172,7 +177,7 @@ la interrumpe, se revierte entera. Nunca queda un expediente sin lotes ni un lot
 
 | Error | Cuándo | HTTP |
 |---|---|---|
-| `PurgaBloqueadaPorMemoriaComercial` | Se intentó eliminar un expediente con negocio o criterio humano invertido. | `409` |
+| ~~`PurgaBloqueadaPorMemoriaComercial`~~ | **Retirado en el Paso 10.** No es un error sino un resultado: la eliminación opera sobre listas, y la salida de la Operación 3 exige devolver *"los eliminados y —igual de importante— los bloqueados con su motivo"*. Una excepción no puede hacer las dos cosas. Cada expediente protegido vuelve en `bloqueados` con su motivo exacto. | — |
 | `PurgaBloqueadaPorIntegridad` | Una FK `RESTRICT` detuvo el borrado. Indica un caso no previsto: **es un defecto, no un uso normal**. | `409` |
 | `CopiaSeguridadFallida` | No se pudo crear la copia previa. **La purga no se ejecuta.** | `503` |
 | `PoliticaRetencionInvalida` | `config/retencion.yaml` ausente, ilegible o con plazos incoherentes. | `503` |

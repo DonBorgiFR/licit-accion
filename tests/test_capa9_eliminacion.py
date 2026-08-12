@@ -255,7 +255,11 @@ def test_si_falla_la_copia_de_seguridad_no_se_elimina_nada(base, politica, monke
 
 def test_lo_que_nadie_miro_nunca_se_elimina_de_hoja_a_raiz(base, politica, tmp_path):
     """Una `Nueva` que caducó, se archivó y cumplió cuarentena. Sin huérfanos y con copia."""
-    ruta_pdf = str(tmp_path / "pliego.pdf")
+    # Bajo `documents/`, que es donde el Lector deja los pliegos y el único sitio del que el
+    # Depurador acepta borrar desde H-36.
+    carpeta = tmp_path / "documents"
+    carpeta.mkdir(exist_ok=True)
+    ruta_pdf = str(carpeta / "pliego.pdf")
     with open(ruta_pdf, "wb") as fichero:
         fichero.write(b"%PDF-1.4 contenido de prueba")
     sembrar(base)
