@@ -1,16 +1,19 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
-> **Estado del producto: Beta 0.2 (2026-08-07).** Las Capas 1–8 están implementadas y la **Capa 9
-> está en curso** (Pasos 1 a 4 cerrados). El sistema no contiene datos operativos reales
-> versionados: los datos locales se usan exclusivamente para pruebas. No debe tomarse una decisión
-> de licitación sin verificar el pliego y las fuentes oficiales.
+> **Estado del producto: Beta 0.3 (2026-08-12).** **Las Capas 1 a 9 están completadas y
+> validadas**, y la Capa 10 —el lanzador silencioso— es la activa. El 2026-08-12 se ejecutó la
+> **primera corrida real del pipeline completo**: 12 expedientes captados, 88 documentos
+> detectados, 63 pliegos descargados y leídos, 10 análisis semánticos del LLM y 0 errores.
+> No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, con la suite en **266/266** y los **32 hallazgos** catalogados cerrados, sin
-> ninguno abierto. La base de datos está **vacía a propósito**: los datos de la beta se borraron el
-> 2026-08-06 y la primera ejecución real producirá un conjunto coherente, puntuado íntegramente con
-> los criterios vigentes. El esquema vigente es **v6** y la política de retención, **v1.1.0**. El
-> Cockpit compila limpio con `tsc -b` en modo estricto y su bundle está al día.
+> están cerrados, con la suite en **334/334** y los **36 hallazgos** catalogados cerrados, sin
+> ninguno abierto. El esquema vigente es **v7** y la política de retención, **v1.2.0**. El Cockpit
+> compila limpio con `tsc -b` en modo estricto y su bundle está al día.
+>
+> ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra
+> ficheros del disco** según la política de retención. Es deliberado y está auditado en la tabla
+> `purgas`, pero conviene saberlo antes de automatizar su ejecución.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
 > hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
@@ -112,7 +115,10 @@ Documentación interactiva en `http://127.0.0.1:8000/docs`.
 cd frontend && npm run dev
 ```
 
-Disponible en `http://localhost:5173`. Requiere la API de la Capa 7 en marcha.
+Disponible en `http://localhost:5173`. Requiere la API de la Capa 7 en marcha. Tiene cuatro
+pestañas: **Dashboard KPIs**, **Funnel PSCP**, **Centinela** y **Administración** —esta última es
+la pantalla del Depurador (Capa 9): ocupación de disco, política de retención vigente, historial
+de prospecciones y purga en dos tiempos.
 
 ### 4. Suite de pruebas
 
@@ -209,6 +215,8 @@ Este proyecto no es una herramienta puntual: es un **sistema operativo de negoci
 
 El desarrollo sigue una metodología estrictamente secuencial (**bottom-up**): cada capa se diseña, implementa y valida antes de pasar a la siguiente. Esto permite construir sobre cimientos probados y ajustar el rumbo en cada etapa.
 
+**En verde, la última capa cerrada (la 9); en marrón, la activa (la 10).** Las anteriores están todas completadas y validadas.
+
 ```mermaid
 graph TD
     C1[Capa 1: El Radar<br/>Extracción de Datos Crudos] --> C2[Capa 2: El Filtro<br/>Reglas Duras y Solvencia]
@@ -223,8 +231,8 @@ graph TD
     B2 --> C9[Capa 9: El Histórico y Depurador<br/>Archivo y Purga de Datos]
     C9 --> C10[Capa 10: El Lanzador y Despertador<br/>Silent Launcher VBS y Alertas]
 
-    style C3 fill:#2d6a4f,stroke:#1b4332,color:#d8f3dc
-    style C8 fill:#1b4332,stroke:#0f2c1e,color:#d8f3dc
+    style C9 fill:#2d6a4f,stroke:#1b4332,color:#d8f3dc
+    style C10 fill:#7f5539,stroke:#4a2f1f,color:#f3e5d8
 ```
 
 > **¿Por qué esta secuencia ampliada?** 
@@ -732,7 +740,7 @@ A raíz del análisis continuo de riesgos del ecosistema, se han integrado 5 mej
 ---
 
 ## 🔌 Capa 7: La Pasarela API (FastAPI REST Micro-API)
-* **Estado actual**: 🟢 Implementada y validada en beta. Expone lectura paginada, healthcheck y mutaciones transaccionales locales.
+* **Estado actual**: 🟢 Completada y Validada. Expone lectura paginada, healthcheck y mutaciones transaccionales locales. La **Capa 9 le añadió el router administrativo** (`/api/v1/admin`): cuatro endpoints de lectura y tres de mutación para el Depurador.
 
 ### 🎯 Objetivo
 Construir una **micro-API local RESTful de alto rendimiento en Python utilizando FastAPI y Uvicorn** que conecte directamente la interfaz de usuario de grado empresarial (Capa 8) con la base de datos de persistencia **SQLite v5** (`licitaciones.db` en modo WAL). 
@@ -1002,7 +1010,7 @@ Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje
 
 4. **La política de retención es configuración versionada, no una constante** *(Regla 4)*: 🟢 **hecho en el Paso 2.**
    - Los plazos estaban **codificados a fuego**: `dias_retencion=90` en la llamada del pipeline al Lector y `dias_retencion=7` en la rotación de copias. Un criterio operativo que nadie podía consultar ni cambiar sin tocar código.
-   - Viven en `config/retencion.yaml` con número de versión —hoy **v1.1.0**—, y ese número queda registrado en cada purga ejecutada.
+   - Viven en `config/retencion.yaml` con número de versión —hoy **v1.2.0**—, y ese número queda registrado en cada purga ejecutada.
    - **Retención de pliegos: 180 días** *(decisión de dirección, 2026-08-07)*. Los 90 actuales se quedan cortos: el ciclo completo de una licitación —publicación, presentación, evaluación y adjudicación— los supera con frecuencia, y purgar a los 90 días puede borrar el pliego de un concurso todavía sin resolver.
 
 5. **Nada se purga en silencio** *(coherente con el criterio del Paso D5)*:
@@ -1021,7 +1029,7 @@ Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje
 
 ---
 
-### 🗄️ Modelo de Datos — Migración a Esquema v6
+### 🗄️ Modelo de Datos — Esquemas v6 y v7
 
 | Tabla | Cambio | Por qué |
 |---|---|---|
@@ -1030,6 +1038,8 @@ Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje
 | `ejecuciones` | **+** métricas de la corrida y `version_politica_retencion` | Convierte la tabla en un historial consultable de prospecciones. |
 | `purgas` *(nueva)* | Auditoría de cada purga | Qué se eliminó, cuánto espacio, quién lo pidió, bajo qué política y con qué copia de seguridad asociada. |
 | `lotes` y `expedientes` | **+** `rescatado_at` *(v7, Paso 8)* | Sin esta marca, el archivado automático deshacía en la corrida siguiente el rescate que había pedido una persona. |
+
+> La migración a **v6** llegó con el Paso 3 y la de **v7** con el Paso 8. Ambas van con copia previa y reversión, como todas las anteriores.
 
 ```mermaid
 graph TD
@@ -1060,9 +1070,10 @@ graph TD
 | **GET** | `/api/v1/admin/almacenamiento` | Cuánto ocupa cada cosa: documentos, base, copias. | `200 OK` |
 | **GET** | `/api/v1/admin/retencion` | Política vigente y su versión. | `200 OK` |
 | **GET** | `/api/v1/admin/purga/previsualizacion` | **Qué desaparecería** si se purgara ahora, sin tocar nada. | `200 OK` |
-| **POST** | `/api/v1/admin/purga` | Ejecuta la purga. Exige confirmación explícita y crea copia previa. | `200 OK` / `409 Conflict` (integridad) / `503` (modo degradado) |
+| **POST** | `/api/v1/admin/purga` | Ejecuta la purga —`documental` o `eliminacion`—. Exige confirmación explícita y, al eliminar, crea copia previa. | `200 OK` / `400` (sin confirmar o sin lista) / `409` (integridad) / `503` (modo degradado) |
 | **GET** | `/api/v1/admin/ejecuciones` | Historial paginado de prospecciones con sus métricas. | `200 OK` |
 | **POST** | `/api/v1/admin/backup` | Copia de seguridad manual bajo demanda. | `200 OK` |
+| **POST** | `/api/v1/admin/expedientes/rescatar` | Devuelve al canal principal expedientes archivados. **Siempre lo pide una persona.** | `200 OK` |
 
 ---
 
@@ -1078,7 +1089,7 @@ graph TD
    - **Cierra H-27**: normaliza las dos grafías del estado archivado y hace indiferente a la grafía la consulta de purga documental, que dependía de la escritura en minúsculas.
    - La versión del esquema deja de estar duplicada: `ESQUEMA_VERSION_ACTUAL` es la única fuente.
 
-> ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v6** desde el 2026-08-07.
+> ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v7** desde el 2026-08-12 (v6 el 2026-08-07).
 
 #### **Fase 2: Motor del Depurador**
 4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 🟢 Completado y Validado.
@@ -1138,10 +1149,30 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Servicio Local)
-* **Estado actual**: 🛠️ En planificación / Inicialización.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12**, en planificación. Empieza por su contrato de servicio y su máquina de estados *(Reglas 1 y 2)*, como todas las anteriores.
 
 ### 🎯 Objetivo
 Garantizar la ejecución autónoma y ergonómica del ecosistema. Inicia el servidor FastAPI en segundo plano (`uvicorn`), ejecuta el pipeline del Radar y despliega el Cockpit Visual en el navegador sin mostrar consolas de terminal.
+
+### ⚠️ Lo que la Capa 9 le deja avisado
+
+**El pipeline ya no sólo prospecta: cada corrida archiva y purga, es decir, borra ficheros del
+disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
+
+1. **La ejecución concurrente deja de ser un problema de rendimiento y pasa a ser uno de
+   integridad.** Dos corridas simultáneas operarían a la vez sobre un proceso destructivo. El
+   cerrojo de fichero con TTL y verificación de PID *(Paso D1)* es ahora una pieza crítica, no una
+   precaución: el lanzador debe respetarlo y **decir en voz alta** cuando no puede adquirirlo, en
+   vez de arrancar igual.
+2. **Matar el proceso a mitad tiene consecuencias asimétricas.** El archivado y la eliminación son
+   transaccionales y revierten solos; la purga documental borra ficheros **antes** de tocar la
+   base, de modo que una interrupción deja el fichero fuera y la fila sin marcar. Es la dirección
+   recuperable a propósito —la corrida siguiente lo termina—, pero el lanzador no debe reintentar
+   a ciegas ni suponer que un proceso muerto no hizo nada.
+3. **La ejecución silenciosa no puede tragarse los avisos.** Si la política de retención es
+   ilegible, el Depurador se detiene y lo dice; sin consola, ese mensaje tiene que llegar a algún
+   sitio que una persona mire. Un lanzador que oculte la salida convierte un modo degradado
+   honesto en un silencio *(Convención C2)*.
 
 
 ---
