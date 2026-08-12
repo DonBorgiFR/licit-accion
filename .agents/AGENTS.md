@@ -30,7 +30,12 @@ python -m pytest tests/ -q          # debe dar 334/334
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla para abrir la 10.
 
-La Capa 10 es el lanzador silencioso (VBS) y el servicio local que despierta el ecosistema sin mostrar consolas. **Empieza por su contrato y su máquina de estados** (Reglas 1 y 2), como todas las demás.
+**La Capa 10 ya está redactada y pautada en el `README.md`**, sección *"🚀 Capa 10: El Lanzador y Despertador"*: objetivo, diez consideraciones de diseño, los artefactos que produce y **los 10 pasos atómicos en cuatro fases**. No hay que rediseñarla: **empieza por su Paso 1**, el contrato de servicio y la máquina de estados (Reglas 1 y 2).
+
+**Tres decisiones de dirección ya tomadas el 2026-08-12** que la redacción respeta y que no hay que volver a plantear:
+* **La capa arranca, no avisa.** Nada de notificaciones activas: el canal por el que el sistema habla es el Cockpit, que ya existe. El nombre "Despertador" se refiere a despertar el ecosistema, no a avisar a una persona.
+* **La ejecución automática se apoya en el Programador de tareas de Windows**, no en un servicio residente propio. Programar es configuración, no código.
+* **La máquina de destino sólo necesitará Python**: FastAPI servirá `frontend/dist/` como estáticos. Ojo, **esto cambia el contrato de la Capa 7**: la raíz `/` deja de devolver el JSON de bienvenida y pasa a servir el Cockpit; el JSON se traslada a `/api/v1/`.
 
 > ⚠️ **Lo que la Capa 9 deja avisado para la 10**: el pipeline ya no es sólo prospección. Cada corrida **archiva y purga** —`main.ejecutar_fase_depurador()`—, es decir, **borra ficheros del disco**. Un lanzador que ejecute el pipeline dos veces a la vez, o que lo mate a mitad, opera sobre un proceso que destruye peso documental. El cerrojo de fichero con TTL y verificación de PID (Paso D1) es ahora una pieza crítica, no una precaución.
 

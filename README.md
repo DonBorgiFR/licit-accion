@@ -229,7 +229,7 @@ graph TD
     C8 --> C85[Capa 8.5: Cimientos de Infraestructura<br/>Concurrencia, Locks y Entorno]
     C85 --> B2[Bloque 2: Coherencia de Negocio LCSP<br/>Escala única, cláusulas y estado por lote]
     B2 --> C9[Capa 9: El Histórico y Depurador<br/>Archivo y Purga de Datos]
-    C9 --> C10[Capa 10: El Lanzador y Despertador<br/>Silent Launcher VBS y Alertas]
+    C9 --> C10[Capa 10: El Lanzador y Despertador<br/>Silent Launcher VBS y Tarea Programada]
 
     style C9 fill:#2d6a4f,stroke:#1b4332,color:#d8f3dc
     style C10 fill:#7f5539,stroke:#4a2f1f,color:#f3e5d8
@@ -241,7 +241,7 @@ graph TD
 > 3. **La Pasarela API (Capa 7)** actúa como la frontera tecnológica: expone SQLite mediante una micro-API REST local (FastAPI + Pydantic v2) que el navegador consume, y recoge las decisiones tomadas en la UI para reinyectarlas en el motor de persistencia. *(Nota: el diseño original planteaba un exportador a fichero estático `dashboard_data.js`; se sustituyó por una API REST para permitir mutaciones transaccionales desde la UI, imposibles con un fichero plano.)*
 > 4. **El Cockpit (Capa 8)** proporciona la cara humana del sistema mediante una SPA local-first premium (React + Vite + Tailwind + TanStack).
 > 5. **El Histórico e Historial (Capa 9)** nos permite depurar el sistema, agrupar ejecuciones anteriores y dotar a la cooperativa del botón de "Borrar/Purgar" para limpiar registros antiguos sin comprometer la integridad.
-> 6. **El Lanzador Silencioso (Capa 10)** elimina la necesidad de consolas o comandos al envolver la ejecución en un script VBS silencioso que se ejecuta al hacer doble clic.
+> 6. **El Lanzador Silencioso (Capa 10)** elimina la necesidad de consolas o comandos: un script VBS silencioso al hacer doble clic, y una tarea programada de Windows que prospecta sola cada mañana. **No incluye avisos activos** *(decisión de dirección, 2026-08-12)*: el canal por el que el sistema habla es el Cockpit, que ya existe.
 
 ---
 
@@ -1148,11 +1148,14 @@ graph TD
 
 ---
 
-## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Servicio Local)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12**, en planificación. Empieza por su contrato de servicio y su máquina de estados *(Reglas 1 y 2)*, como todas las anteriores.
+## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12**, redactada y pendiente de desarrollo. Empieza por su contrato de servicio y su máquina de estados *(Reglas 1 y 2)*, como todas las anteriores.
 
 ### 🎯 Objetivo
-Garantizar la ejecución autónoma y ergonómica del ecosistema. Inicia el servidor FastAPI en segundo plano (`uvicorn`), ejecuta el pipeline del Radar y despliega el Cockpit Visual en el navegador sin mostrar consolas de terminal.
+
+Convertir un ecosistema que hoy exige tres comandos y una terminal en algo que se usa con un doble clic y se ejecuta solo cada mañana. La capa no añade inteligencia de negocio: **añade que la inteligencia que ya existe llegue a usarse**.
+
+Al terminar, un ordenador de la cooperativa sin nada instalado salvo Python debe poder: abrir el Cockpit con los datos al día haciendo doble clic en un icono, y haber prospectado por su cuenta durante la noche sin que nadie abriera una consola.
 
 ### ⚠️ Lo que la Capa 9 le deja avisado
 
@@ -1174,6 +1177,185 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    sitio que una persona mire. Un lanzador que oculte la salida convierte un modo degradado
    honesto en un silencio *(Convención C2)*.
 
+---
+
+### 🔍 Consideraciones Críticas de Diseño e Inteligencia de Negocio
+
+1. **Un lanzador silencioso no puede ser un lanzador mudo.** Es la tensión central de la capa: se
+   ocultan las consolas porque nadie quiere ver una terminal, pero ocultar la consola es
+   exactamente cómo se pierde un aviso. La Convención C2 se aplica aquí a nivel de sistema
+   operativo: **el estado degradado tiene que ser visible en algún sitio que una persona mire**, y
+   ese sitio es el Cockpit, no un fichero que nadie abre.
+
+2. **La máquina de destino sólo necesitará Python** *(decisión de dirección, 2026-08-12)*. Hoy ver
+   el Cockpit exige Node.js y un segundo servidor (`npm run dev`). Como `frontend/dist/` ya se
+   compila y la API ya está en marcha, servir el bundle desde FastAPI elimina de golpe una
+   dependencia por cada PC de la cooperativa, un proceso que arrancar y un puerto que vigilar.
+   Node sigue haciendo falta para *desarrollar*, no para *usar*.
+
+3. **El pipeline es ahora destructivo, así que el cerrojo deja de ser una optimización.** Antes,
+   dos corridas simultáneas eran un desperdicio; desde la Capa 9 son dos procesos borrando
+   ficheros a la vez. El lanzador **no puede arrancar un pipeline sin comprobar el cerrojo**, y
+   ante un cerrojo tomado y vivo su respuesta correcta es no arrancar y decirlo.
+
+4. **Reutilizar es más seguro que arrancar.** Si el puerto ya responde a nuestro `/health`, hay una
+   API viva: el lanzador la usa en vez de levantar una segunda. Y si el puerto está ocupado por
+   algo que **no** es nuestro, se detiene en lugar de pelearse por él. Un lanzador que arranca a
+   ciegas acaba dejando instancias duplicadas que se pisan en la misma base.
+
+5. **Esperar a que la API responda, no dormir un rato.** El error clásico de este tipo de
+   lanzadores es `sleep 5` y abrir el navegador: en un equipo lento la pantalla sale en blanco y
+   parece que el sistema no funciona. Se espera **consultando `/health` hasta que conteste**, con
+   un tope declarado en configuración, y si no contesta se informa en lugar de abrir un navegador
+   sobre nada.
+
+6. **El lanzador sólo apaga lo que él encendió.** Si encuentra una API que ya estaba corriendo
+   —porque alguien la lanzó a mano para desarrollar—, la usa pero **no la mata al terminar**.
+   Matar procesos ajenos es la forma más rápida de que una herramienta de comodidad se convierta
+   en una molestia.
+
+7. **Programar la ejecución es configuración, no código** *(decisión de dirección, 2026-08-12)*. El
+   despertador se apoya en el **Programador de tareas de Windows**: sobrevive a los reinicios, no
+   deja ningún proceso residente consumiendo memoria y aporta su propio registro de ejecuciones
+   además del nuestro. Construir un servicio residente propio sería asumir la responsabilidad de
+   mantenerlo vivo a cambio de nada que el sistema operativo no dé ya hecho.
+
+8. **Ningún plazo ni puerto inventado** *(Regla 4 y lección de H-18)*. Todo parámetro operativo
+   —puerto, tope de espera, ruta del bundle, hora del despertador— vive en configuración
+   versionada. Si falta o es incoherente, el lanzador **no arranca con valores por defecto**: se
+   detiene y lo dice. Es la misma doctrina que `config/retencion.yaml`.
+
+9. **El código de salida es información, no un formalismo.** El Programador de tareas de Windows
+   registra si la tarea terminó bien o mal, y esa es la única señal que verá quien revise por qué
+   una noche no se prospectó. Un lanzador que siempre devuelve `0` deja ciego al programador que
+   lo invoca.
+
+10. **La instalación en un equipo nuevo forma parte de la capa.** De poco sirve un doble clic si
+    antes hay que adivinar cómo dejar el equipo listo. El arranque en frío —dependencias, ficheros
+    de configuración, base inexistente, bundle sin compilar— se comprueba y se reporta con
+    precisión *(Regla 6)*, porque **es el momento en que más falta hace un diagnóstico claro y el
+    único en que no hay nadie experto delante**.
+
+---
+
+### 🧩 Artefactos que produce la capa
+
+| Artefacto | Qué es | Por qué |
+|---|---|---|
+| `Incoop.vbs` | Envoltorio silencioso de Windows | Ejecuta el orquestador con la ventana oculta. Es el fichero del doble clic. |
+| `src/lanzador.py` | Orquestador real | Toda la lógica vive en Python y es comprobable; el VBS sólo lo invoca sin consola. |
+| `config/lanzador.yaml` | Configuración versionada | Puerto, tope de espera, apertura del navegador y hora del despertador. Sin valores por defecto. |
+| `data/lanzador.pid` | Marca del servidor propio | Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
+| Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
+
+> ⚠️ **Cambio de contrato de la Capa 7 que esta capa introduce**: al servir el Cockpit desde
+> FastAPI, la raíz `/` deja de devolver el JSON de bienvenida y pasa a servir la aplicación. El
+> JSON se conserva bajo `/api/v1/`. Es un cambio visible para cualquier cliente de la API y por
+> eso se declara aquí, no se descubre.
+
+---
+
+### 🛣️ Plan de Ejecución Detallado (10 Pasos Atómicos de la Capa 10)
+
+#### **Fase 1: Contrato y comprobación previa**
+
+1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Lanzador** *(Reglas 1 y 2)*: 💤
+   - Estados `DETENIDO → COMPROBANDO → ARRANCANDO → OPERATIVO → DETENIENDO → DETENIDO`, con
+     `DEGRADADO` como salida honesta desde cualquiera de ellos.
+   - **Transiciones prohibidas**, que son la parte sustantiva: arrancar sin healthcheck
+     satisfactorio; lanzar un pipeline con el cerrojo tomado y vivo; apagar un proceso que el
+     lanzador no encendió; y terminar en `DEGRADADO` sin dejar rastro ni código de salida distinto
+     de cero.
+   - Modos de invocación declarados: **completo** (servidor + pipeline + navegador), **sólo
+     pipeline** (el del despertador, sin abrir nada) y **sólo Cockpit** (abrir la pantalla sin
+     prospectar).
+
+2. **Paso 2 — Healthcheck de Arranque en Frío (`src/lanzador.py`)** *(Regla 6)*: 💤
+   - Verifica intérprete y versión de Python, dependencias importables, ficheros de configuración
+     legibles, base accesible y migrable, espacio libre en disco y existencia de `frontend/dist/`.
+   - **Distingue tres estados del puerto**, que es donde se equivocan estos lanzadores: libre;
+     ocupado por **nuestra** API viva —se reutiliza—; u ocupado por otra cosa —se detiene—.
+   - Sin healthcheck satisfactorio no se arranca nada, y el diagnóstico dice **qué** falta y
+     **cómo** resolverlo, no sólo que algo falló.
+
+3. **Paso 3 — Configuración Versionada del Lanzador (`config/lanzador.yaml`)** *(Regla 4)*: 💤
+   - Puerto, host, tope de espera a que la API responda, comportamiento ante puerto ocupado, ruta
+     del bundle y hora del despertador.
+   - **No aplica valores por defecto**: fichero ausente o incoherente significa no arrancar, igual
+     que `src/retencion.py` decidió para la purga.
+
+#### **Fase 2: Un solo proceso que lo sirve todo**
+
+4. **Paso 4 — El Cockpit servido por FastAPI: se acaba la dependencia de Node**: 💤
+   - `frontend/dist/` montado como ficheros estáticos con reenvío a `index.html` para las rutas de
+     la SPA, **sin pisar** `/api/v1/*`, `/docs` ni `/openapi.json`.
+   - La raíz `/` pasa a servir el Cockpit y el JSON de bienvenida se traslada a `/api/v1/`.
+   - Regresión obligada: que un bundle ausente dé un diagnóstico claro y no un 404 desnudo. Es el
+     primer síntoma que verá quien clone el repositorio sin compilar.
+
+5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y parar sólo lo propio**: 💤
+   - Arranca `uvicorn` en segundo plano y **espera consultando `/health`** hasta el tope declarado,
+     nunca durmiendo un tiempo fijo.
+   - Escribe `data/lanzador.pid` para saber qué encendió él. Al terminar apaga **sólo eso**: una
+     API que ya estaba viva se reutiliza y se respeta.
+   - Reclama su propio PID huérfano con la misma doctrina que el cerrojo de base de datos *(Paso
+     D1)*: comprobar que el proceso existe de verdad antes de dar por buena la marca.
+
+6. **Paso 6 — Ejecución del Pipeline Respetando el Cerrojo**: 💤
+   - Antes de lanzar el pipeline comprueba el cerrojo. Si está tomado y vivo, **no arranca**,
+     registra `LANZADOR_PIPELINE_OMITIDO` con la causa y devuelve un código de salida propio.
+   - Si el cerrojo está huérfano **no lo borra por su cuenta**: deja que lo reclame la lógica que
+     ya existe y sabe hacerlo bien. Un lanzador que fuerce cerrojos anula la protección que la
+     Capa 9 necesita.
+
+#### **Fase 3: Ergonomía silenciosa y despertador**
+
+7. **Paso 7 — Lanzador Silencioso VBS y Accesos Directos (`Incoop.vbs`)**: 💤
+   - Envoltorio de una docena de líneas que invoca el orquestador con la ventana oculta. **Toda la
+     lógica se queda en Python**: VBS no se puede probar con la suite, así que sólo hace de puerta.
+   - Accesos directos con icono para escritorio y menú de inicio, y ruta absoluta anclada a la raíz
+     del proyecto *(lección de H-18: el directorio de trabajo de un acceso directo no es el que
+     uno cree)*.
+
+8. **Paso 8 — El Despertador: Tarea Programada de Windows**: 💤
+   - Herramienta del proyecto para **registrar y dar de baja** la tarea, no configuración a mano
+     por la interfaz gráfica: lo que se hace a mano no se documenta ni se reproduce.
+   - Ejecuta el modo **sólo pipeline** —prospectar de madrugada no debe abrir un navegador en una
+     sesión que nadie está mirando—.
+   - Idempotente: registrarla dos veces no crea dos tareas, y darla de baja es tan sencillo como
+     registrarla.
+
+9. **Paso 9 — La Voz del Proceso Silencioso**: 💤
+   - Tres canales, en orden de quién los mira: **el Cockpit** avisa en pantalla si la última corrida
+     falló o quedó degradada —ya tiene el historial de prospecciones del Paso 7 de la Capa 9, sólo
+     le falta el distintivo—; `data/lanzador.log` y los eventos `LANZADOR_*` en `pipeline.jsonl`
+     para el diagnóstico; y el **código de salida** para que el Programador de tareas registre el
+     resultado.
+   - Es el paso que impide que esta capa convierta el sistema en una caja negra silenciosa.
+
+#### **Fase 4: Verificación y Cierre del Ecosistema**
+
+10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de la Capa 10**: 💤
+    - `tests/test_capa10_lanzador.py`, con regresiones sobre lo que de verdad puede romperse: que
+      un healthcheck insatisfactorio impide arrancar; que una API viva se reutiliza en vez de
+      duplicarse; que el pipeline no se lanza con el cerrojo tomado; y que el apagado no toca
+      procesos ajenos.
+    - **Verificación en vivo del doble clic**, que es la única que vale aquí *(Convención C7)*:
+      ejecutar el `.vbs` de verdad, comprobar que no aparece ninguna consola, que el Cockpit abre
+      con datos y que la tarea programada dispara una corrida real.
+    - **Cierre del ecosistema completo**: con esta capa se cierra el recorrido de la Capa 1 a la 10.
+
+---
+
+### 🛠️ Herramientas y Código a Crear
+
+- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 💤
+- `config/lanzador.yaml`: configuración versionada del lanzador. 💤
+- `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
+- `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
+- `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 💤
+- `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 💤
 
 ---
 
