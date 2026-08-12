@@ -1,27 +1,36 @@
-"""El Depurador — Capa 9, Paso 4: motor de archivado.
+"""El Depurador — Capa 9: motor de archivado (Paso 4) y de purga documental (Paso 5).
 
-Primer código del Depurador propiamente dicho, y deliberadamente el más inofensivo de sus
-tres motores: **archivar no borra nada**. Escribe `deleted_at` y `deleted_reason`, con lo que
-el lote sale del canal principal del Funnel pero sigue en la base, sigue contando en los KPIs
-históricos y puede rescatarse vaciando esa columna. Purgar documentos (Paso 5) y eliminar
-filas (Paso 6) son irreversibles; esto no.
+Dos de las tres operaciones del contrato, en orden creciente de daño posible:
+
+* **Archivar** no borra nada. Escribe `deleted_at` y `deleted_reason`, con lo que el lote sale
+  del canal principal del Funnel pero sigue en la base, sigue contando en los KPIs históricos
+  y puede rescatarse vaciando esa columna.
+* **Purgar peso documental** sí es irreversible, pero sólo sobre el peso: borra el PDF del
+  disco y vacía `texto_extraido`. La fila del documento permanece con su URL, su hash y su
+  rastro —se sabe qué hubo y por qué ya no está— y **ninguna fila de negocio se toca**.
+
+Falta la tercera, la eliminación física de filas, que es la única capaz de destruir memoria
+comercial y por eso exige confirmación explícita. Vive en el Paso 6.
 
 **Lo que este motor tiene prohibido**, según `.agents/CONTRATO_CAPA_9.md`:
 
 * Escribir en `estado_operativo`. No es su columna. Un expediente adjudicado sigue adjudicado
   después de archivarse; lo que pierde es presencia en pantalla, no condición de negocio.
-* Tocar un solo fichero del disco. Eso es el Paso 5.
+* Borrar una sola fila. Purgar libera peso, no registros.
 * Desarchivar. El rescate `ARCHIVADO → VIVO` existe, pero lo pide una persona: si un criterio
   automático archivara y otro criterio automático desarchivara, el sistema oscilaría sin que
   nadie se enterase.
-* Inventarse plazos. Sin política declarada no se archiva, y se dice en voz alta.
+* Inventarse plazos. Sin política declarada no se archiva ni se purga, y se dice en voz alta.
 """
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
+from src import ruta_datos
 from src.memoria import Memoria
 from src.retencion import PoliticaRetencion
 
@@ -37,6 +46,49 @@ MOTIVO_SIN_FECHA_LIMITE = "sin_fecha_limite_conocida"
 #: 'N' ordene después de '2' en una comparación de texto sería otra coherencia por accidente,
 #: que es justo lo que H-27 documentó.
 FECHAS_LIMITE_DESCONOCIDAS = ("N/A", "")
+
+
+#: Vocabulario de la columna `purgas.tipo`, declarado en el DDL del esquema v6. Se usa el
+#: declarado y no uno nuevo: inventar un estado que nadie más consulta es exactamente el
+#: defecto que H-33 documentó, y esta capa no puede permitírselo en su propia auditoría.
+TIPO_PURGA_DOCUMENTAL = "DOCUMENTAL"
+
+#: La rotación de copias es parte de la Operación 2 del contrato ("documentos purgados,
+#: bytes liberados, **copias rotadas**"), pero ocurre en otro momento del pipeline: después
+#: de crear la copia nueva. Comparte tipo y se distingue por este campo del detalle.
+OPERACION_DOCUMENTOS = "documentos"
+OPERACION_ROTACION_COPIAS = "rotacion_copias"
+
+
+@dataclass
+class ResultadoPurgaDocumental:
+    """Lo que liberó —o lo que decidió no tocar— una pasada de purga documental."""
+
+    ejecutado: bool
+    #: Filas que pasaron a `PURGADO`. Sólo cuenta aquello cuyo peso se liberó de verdad.
+    documentos_purgados: int = 0
+    ficheros_borrados: int = 0
+    bytes_liberados: int = 0
+    #: Ficheros que no se pudieron borrar. No es lo mismo que no tener nada que purgar, y
+    #: por eso se cuenta aparte (Convención C2).
+    errores_borrado: int = 0
+    version_politica: Optional[str] = None
+    corte_utc: Optional[str] = None
+    motivo_degradacion: Optional[str] = None
+
+    @property
+    def hubo_cambios(self) -> bool:
+        return self.documentos_purgados > 0
+
+
+@dataclass
+class ResultadoRotacionCopias:
+    """Copias de seguridad retiradas por antigüedad."""
+
+    ejecutado: bool
+    copias_rotadas: int = 0
+    version_politica: Optional[str] = None
+    motivo_degradacion: Optional[str] = None
 
 
 @dataclass
@@ -60,7 +112,11 @@ class ResultadoArchivado:
 
 
 class Depurador:
-    """Motor de ciclo de vida del dato. En el Paso 4 sólo sabe archivar."""
+    """Motor de ciclo de vida del dato: archiva (Paso 4) y purga peso documental (Paso 5).
+
+    Le falta la tercera operación del contrato, la eliminación física de filas, que es la
+    única irreversible sobre la memoria comercial y vive en el Paso 6.
+    """
 
     def __init__(
         self,
@@ -233,8 +289,252 @@ class Depurador:
         return resultado
 
     # -----------------------------------------------------------------------------------
+    # Operación 2 del contrato — Purgar peso documental
+    # -----------------------------------------------------------------------------------
+
+    def purgar_documentos(
+        self,
+        ahora: Optional[datetime] = None,
+        solicitado_por: str = "pipeline",
+    ) -> ResultadoPurgaDocumental:
+        """Libera el peso documental que ya superó la retención: ficheros y texto extraído.
+
+        Precondición: política válida y permiso de escritura en `data/documents/`.
+        Postcondición: los ficheros salen del disco, `texto_extraido` queda vacío y el
+        documento pasa a `PURGADO`. **Ninguna fila de `lotes` se modifica**: esta operación
+        no toca la memoria comercial, sólo su peso.
+        Idempotencia: un documento ya `PURGADO` no vuelve a seleccionarse ni a contarse.
+
+        Qué **no** hace: decidir plazos por su cuenta, tocar `estado_operativo` ni borrar
+        una sola fila. Eliminar filas es el Paso 6 y exige confirmación explícita.
+        """
+        degradacion = self._motivo_para_no_purgar()
+        if degradacion:
+            self._registrar_evento("DEPURADOR_MODO_DEGRADADO", degradacion)
+            return ResultadoPurgaDocumental(ejecutado=False, motivo_degradacion=degradacion)
+
+        ahora = ahora or datetime.now(timezone.utc)
+        corte = (ahora - timedelta(days=self.politica.documentos_dias)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        self._registrar_evento(
+            "DEPURADOR_PURGA_INICIADA",
+            f"tipo=documental corte={corte} retencion_dias={self.politica.documentos_dias} "
+            f"politica=v{self.politica.version} solicitada_por={solicitado_por}",
+        )
+
+        candidatos = self.memoria.obtener_documentos_para_purga(corte)
+        if not candidatos:
+            self._registrar_evento(
+                "DEPURADOR_PURGA_COMPLETADA",
+                f"tipo=documental documentos=0 bytes=0 corte={corte} "
+                f"politica=v{self.politica.version}",
+            )
+            return ResultadoPurgaDocumental(
+                ejecutado=True,
+                version_politica=self.politica.version,
+                corte_utc=corte,
+            )
+
+        # Primero el disco y después la base, y no al revés. Si fallara la escritura en la
+        # base tras haber borrado, la corrida siguiente reencontraría el documento y lo
+        # terminaría de purgar; al revés quedaría marcado `PURGADO` con el fichero todavía
+        # en disco, invisible para siempre a cualquier purga posterior.
+        ids_purgables: List[int] = []
+        bytes_liberados = 0
+        ficheros_borrados = 0
+        errores_borrado = 0
+
+        for doc in candidatos:
+            ruta = doc.get("local_path")
+
+            if not ruta or not os.path.exists(ruta):
+                # Sin fichero en disco no hay bytes que liberar, pero puede quedar texto en
+                # la base: sigue siendo purgable, y purgarlo es precisamente lo que vacía
+                # `texto_extraido`.
+                ids_purgables.append(doc["id"])
+                continue
+
+            liberado, borrado, error = self._borrar_fichero_y_sidecar(ruta)
+            bytes_liberados += liberado
+            if error:
+                # El fichero sigue ahí: no se marca como purgado. Marcarlo lo sacaría de
+                # futuras selecciones y dejaría el fichero huérfano en disco para siempre.
+                # (Los cerrojos de fichero en Windows son reales: lección del Paso D1.)
+                errores_borrado += 1
+                print(f"  [!] [depurador] No se pudo borrar '{ruta}': {error}")
+                continue
+
+            ficheros_borrados += borrado
+            ids_purgables.append(doc["id"])
+
+        documentos_purgados = 0
+        if ids_purgables:
+            with self.memoria.db_lock():
+                with self.memoria.conectar() as conn:
+                    with conn:
+                        documentos_purgados = self.memoria.marcar_documentos_como_purgados(
+                            ids_purgables, conn=conn
+                        )
+                        self.memoria.registrar_purga(
+                            tipo=TIPO_PURGA_DOCUMENTAL,
+                            solicitada_por=solicitado_por,
+                            version_politica=self.politica.version,
+                            resultado="COMPLETADA",
+                            documentos_purgados=documentos_purgados,
+                            bytes_liberados=bytes_liberados,
+                            detalle=json.dumps(
+                                {
+                                    "operacion": OPERACION_DOCUMENTOS,
+                                    "ficheros_borrados": ficheros_borrados,
+                                    "errores_borrado": errores_borrado,
+                                    "candidatos": len(candidatos),
+                                    "corte_utc": corte,
+                                    "retencion_dias": self.politica.documentos_dias,
+                                },
+                                ensure_ascii=False,
+                            ),
+                            conn=conn,
+                        )
+
+        resultado = ResultadoPurgaDocumental(
+            ejecutado=True,
+            documentos_purgados=documentos_purgados,
+            ficheros_borrados=ficheros_borrados,
+            bytes_liberados=bytes_liberados,
+            errores_borrado=errores_borrado,
+            version_politica=self.politica.version,
+            corte_utc=corte,
+        )
+
+        self._registrar_evento(
+            "DEPURADOR_PURGA_COMPLETADA",
+            f"tipo=documental documentos={documentos_purgados} "
+            f"ficheros={ficheros_borrados} bytes={bytes_liberados} "
+            f"errores={errores_borrado} corte={corte} politica=v{self.politica.version}",
+        )
+        return resultado
+
+    def rotar_copias(self, solicitado_por: str = "pipeline") -> ResultadoRotacionCopias:
+        """Retira las copias de seguridad que superan su plazo.
+
+        Es la otra mitad de la Operación 2: las copias son peso que crece sin límite y sin
+        valor comercial. Va aparte de `purgar_documentos()` porque en el pipeline ocurre en
+        otro momento —después de crear la copia de esta corrida—, no porque sea otra cosa.
+        """
+        if self.politica is None:
+            motivo = (
+                "politica_retencion_ausente: no se rotan copias sin política declarada, y "
+                "no se aplican plazos por defecto"
+            )
+            self._registrar_evento("DEPURADOR_MODO_DEGRADADO", motivo)
+            return ResultadoRotacionCopias(ejecutado=False, motivo_degradacion=motivo)
+
+        try:
+            rotadas = self.memoria.rotar_backups(dias_retencion=self.politica.backups_dias)
+        except Exception as exc:
+            # Una rotación fallida no puede confundirse con "no había nada que rotar"
+            # (Convención C2): es justo lo que hacía el `except` amplio del pipeline, que
+            # además la anunciaba como un fallo del backup.
+            motivo = f"rotacion_copias_fallida: {type(exc).__name__}: {exc}"
+            self._registrar_evento("DEPURADOR_PURGA_ABORTADA", motivo)
+            return ResultadoRotacionCopias(
+                ejecutado=False,
+                version_politica=self.politica.version,
+                motivo_degradacion=motivo,
+            )
+
+        if rotadas:
+            self.memoria.registrar_purga(
+                tipo=TIPO_PURGA_DOCUMENTAL,
+                solicitada_por=solicitado_por,
+                version_politica=self.politica.version,
+                resultado="COMPLETADA",
+                documentos_purgados=0,
+                detalle=json.dumps(
+                    {
+                        "operacion": OPERACION_ROTACION_COPIAS,
+                        "copias_rotadas": rotadas,
+                        "retencion_dias": self.politica.backups_dias,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+
+        self._registrar_evento(
+            "DEPURADOR_PURGA_COMPLETADA",
+            f"tipo=rotacion_copias copias={rotadas} "
+            f"retencion_dias={self.politica.backups_dias} politica=v{self.politica.version}",
+        )
+        return ResultadoRotacionCopias(
+            ejecutado=True,
+            copias_rotadas=rotadas,
+            version_politica=self.politica.version,
+        )
+
+    # -----------------------------------------------------------------------------------
     # Internos
     # -----------------------------------------------------------------------------------
+
+    def _borrar_fichero_y_sidecar(self, ruta: str):
+        """Borra el PDF y su sidecar de metadatos, midiendo lo liberado **antes** de borrar.
+
+        Devuelve `(bytes_liberados, ficheros_borrados, error)`. El tamaño se toma con el
+        fichero todavía en disco porque después ya no hay a quién preguntárselo, y
+        `bytes_liberados` es una postcondición del contrato, no un adorno del informe.
+        """
+        bytes_liberados = 0
+        borrados = 0
+        try:
+            bytes_liberados += os.path.getsize(ruta)
+            os.remove(ruta)
+            borrados += 1
+        except OSError as exc:
+            return 0, 0, exc
+
+        sidecar = ruta + ".meta.json"
+        if os.path.exists(sidecar):
+            try:
+                bytes_liberados += os.path.getsize(sidecar)
+                os.remove(sidecar)
+                borrados += 1
+            except OSError as exc:
+                # El pliego ya no está: el peso se liberó. Que quede su sidecar de
+                # metadatos no invalida la purga, pero se dice.
+                print(f"  [!] [depurador] Sidecar no borrado '{sidecar}': {exc}")
+
+        return bytes_liberados, borrados, None
+
+    def _motivo_para_no_purgar(self) -> Optional[str]:
+        """Precondiciones de la purga documental. Devuelve la causa, o None si se puede.
+
+        Purgar es irreversible: en caso de duda, la degradación correcta es no hacer nada.
+        """
+        if self.politica is None:
+            return (
+                "politica_retencion_ausente: no se purga sin política declarada, y no se "
+                "aplican plazos por defecto"
+            )
+
+        directorio = ruta_datos("documents")
+        if os.path.isdir(directorio) and not self._directorio_escribible(directorio):
+            return (
+                f"sin_permiso_escritura: no se puede escribir en '{directorio}', de modo "
+                "que tampoco se puede garantizar el borrado de sus ficheros"
+            )
+        return None
+
+    @staticmethod
+    def _directorio_escribible(directorio: str) -> bool:
+        """Comprueba el permiso escribiendo de verdad, no preguntando.
+
+        `os.access()` miente en Windows: informa del atributo de sólo lectura, no de la ACL
+        efectiva. La única comprobación fiable es intentarlo.
+        """
+        try:
+            with tempfile.NamedTemporaryFile(dir=directorio, prefix=".depurador_", suffix=".tmp"):
+                return True
+        except OSError:
+            return False
 
     def _motivo_para_no_archivar(self) -> Optional[str]:
         """Comprueba las precondiciones. Devuelve la causa concreta, o None si se puede.

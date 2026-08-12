@@ -59,9 +59,11 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-30 · Archivar lo adjudicado habría vaciado el win-rate | 🟢 Cerrado | Capa 9, Paso 4 |
 | H-31 · No existía rastro de los estados por los que pasó un lote | 🟢 Cerrado | Capa 9, Paso 4 |
 | H-32 · Un lote archivado no puede editarse desde el Cockpit | 🟢 Cerrado | Capa 9, Paso 4 |
+| H-33 · El vocabulario de estados documentales estaba partido en dos | 🟢 Cerrado | Capa 9, Paso 5 |
+| H-34 · La rotación de copias anunciaba un fallo del backup que no existía | 🟢 Cerrado | Capa 9, Paso 5 |
 
-**No queda ningún hallazgo abierto**: los 32 catalogados están cerrados con prueba de regresión o
-verificación reproducible. Suite: **266/266**.
+**No queda ningún hallazgo abierto**: los 34 catalogados están cerrados con prueba de regresión o
+verificación reproducible. Suite: **280/280**.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -1135,6 +1137,95 @@ loteados —lo normal— sacaba visualmente del canal algo que estaba dentro. Co
 
 ---
 
+## Hallazgos de la purga documental — 2026-08-12 (Capa 9, Paso 5)
+
+Los dos salieron de cumplir el aviso del propio dosier —*"antes de escribir código nuevo, comprobar
+qué hace ya el código viejo"*— antes de consolidar nada. El Paso 5 se planteaba como trabajo de
+gobierno sobre dos piezas que ya funcionaban. **Ninguna de las dos funcionaba.**
+
+### H-33 · El vocabulario de estados documentales estaba partido en dos 🟢 CERRADO (Capa 9, Paso 5)
+
+El Lector escribía `TEXTO_EXTRAIDO` al terminar de extraer el texto de un pliego
+(`lector.py:937` y `lector.py:1156`). Ese valor **no se leía en ningún punto del proyecto**: ni en
+`src/`, ni en la API, ni en el Cockpit. El resto del sistema hablaba de `PROCESADO`:
+
+| Componente | Escribe | Lee |
+|---|---|---|
+| Lector, tras extraer texto | `TEXTO_EXTRAIDO` | — |
+| Analista IA, para encontrar trabajo | — | `PROCESADO` |
+| Purga documental | — | `DESCARGADO` |
+| DDL de `documentos` y contrato de la Capa 9 | declaran `PROCESADO` | |
+
+**Dos consecuencias, y la primera desborda la Capa 9.**
+
+*Una*: `listar_expedientes_pendientes_analisis()` (`memoria.py:2435`) y
+`obtener_datos_completos_expediente()` (`memoria.py:2382`) buscan documentos en `PROCESADO`. Con el
+vocabulario partido devolvían siempre la lista vacía y la cadena vacía. **El Analista IA no recibió
+ni un solo pliego por la vía del pipeline.** Es el mismo patrón que H-05 en el Centinela: una capa
+entera trabajando en vacío sin que nada falle.
+
+*Dos*: `obtener_documentos_para_purga()` seleccionaba `estado = 'DESCARGADO'`, un estado que un
+documento sólo tiene **antes** de procesarse. La purga documental se ejecutaba en cada corrida sin
+poder alcanzar jamás los documentos que pesan —los que además arrastran su `texto_extraido`—.
+
+**Reproducido** sobre base sembrada, mismo documento, ingesta de hace siete meses, retención de 180
+días:
+
+| Estado del documento | Pendientes de análisis | Texto que recibe el LLM | Candidatos a purga |
+|---|---|---|---|
+| `TEXTO_EXTRAIDO` (lo que escribía el Lector) | `[]` | `''` | `[]` |
+| `PROCESADO` (lo que lee el sistema) | `[EXP-1]` | el pliego | — |
+
+**Por qué no lo vio la suite**: la única prueba que tocaba la purga
+(`test_migracion_v6.py::test_la_consulta_de_purga_tolera_ambas_grafias`) sembraba el documento en
+`'DESCARGADO'` **a mano**. Afirmaba sobre una población que en producción es de paso. Es la familia
+de la Convención C4: la ruta real no se ejercitaba.
+
+**Cerrado con**: el Lector escribe `PROCESADO` en sus dos caminos de éxito —extracción nativa y
+OCR—; la selección de purga deja de mirar el estado y mira lo que de verdad la define, tener peso
+que liberar; y `setup_db()` normaliza de forma idempotente las bases que puedan arrastrar el estado
+huérfano, porque una base escrita en otra máquina puede estar ya en v6 y no volver a pasar por la
+migración.
+
+**Regresiones**: `tests/test_capa9_purga_documental.py`, y en particular
+`test_el_lector_deja_el_documento_en_el_estado_que_el_resto_del_sistema_lee`, que hace pasar un PDF
+real por el Lector real **sin sembrar ningún estado**. Es la prueba que faltaba.
+
+---
+
+### H-34 · La rotación de copias anunciaba un fallo del backup que no existía 🟢 CERRADO (Capa 9, Paso 5)
+
+`Memoria.rotar_backups()` no tenía `return` en su camino normal (`memoria.py:1930-1996`): su único
+`return` era el de la salida temprana cuando el directorio de copias no existe. Rotar copias de
+verdad devolvía `None`.
+
+El pipeline hacía `if purgados > 0` (`main.py:282`), lo que en Python lanza
+`TypeError: '>' not supported between instances of 'NoneType' and 'int'`. Y ese `if` vivía dentro
+del `try` del backup, cuyo `except Exception` amplio lo presentaba como
+*"No se pudo completar el backup de seguridad"*.
+
+**Reproducido**:
+
+```
+rotar_backups (con directorio de copias existente) devuelve: None
+>>> TypeError: '>' not supported between instances of 'NoneType' and 'int'
+```
+
+**Qué significaba en la práctica**: en toda corrida a partir de la segunda —cuando ya existe el
+directorio de copias— el pipeline anunciaba un fallo de backup. El backup estaba hecho y las copias
+se habían rotado; lo único falso era el mensaje. Convención C2: un `except` amplio degradando a un
+estado que el usuario no puede distinguir de un fallo real.
+
+**Cerrado con**: la función devuelve su recuento; la rotación sale del `try` del backup y pasa por
+`Depurador.rotar_copias()`, que la audita y distingue una rotación fallida de una que no tenía nada
+que rotar. Y el `except` que silenciaba por completo el fallo de reescritura del catálogo ahora lo
+dice.
+
+**Regresiones**: `test_rotar_backups_devuelve_su_recuento` y
+`test_la_rotacion_de_copias_retira_las_caducadas_y_lo_audita`.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -1159,3 +1250,6 @@ loteados —lo normal— sacaba visualmente del canal algo que estaba dentro. Co
 | 2026-08-07 | **La retención documental sube a 180 días y deja de estar codificada a fuego** | Los 90 días actuales viven como literal en la llamada de `main.py` al Lector, invisibles y no versionados (incumple la Regla 4). Y se quedan cortos: el ciclo completo de una licitación —publicación, presentación, evaluación y adjudicación— los supera con frecuencia, de modo que la purga podía borrar el pliego de un concurso todavía sin resolver. Pasan a `config/retencion.yaml` con número de versión, registrado en cada purga. |
 | 2026-08-07 | **La purga se ejecuta en dos tiempos y nunca a ciegas** | El disparador es mixto: el peso documental se purga solo por política en cada ejecución, pero archivar o eliminar expedientes exige que una persona lo pida desde el Cockpit **tras previsualizar exactamente qué va a desaparecer**. Toda purga manual crea copia de seguridad previa; si la copia falla, la purga no se ejecuta (Regla 5). |
 | 2026-08-07 | **La sectorización por CPV se resuelve por código completo, no por orden del YAML** | Hoy gana el primer sector del diccionario que case un prefijo, así que la clasificación depende del orden en que estén escritas las claves — un criterio que nadie declaró y que nadie ve. Los prefijos de 3 **y de 5** dígitos están compartidos entre `educativo`, `social` y `consultoria`, de modo que ni "sólo 5 dígitos" ni "prefijo más largo" bastan (5/9 aciertos ambas). El código completo primero acierta 8/9; el empate restante exige una prelación entre sectores declarada explícitamente. |
+| 2026-08-12 | **El plazo de retención documental se cuenta desde la fecha límite, no desde la ingesta** | Es el mismo ancla que usa el motor de archivado del Paso 4, de modo que los dos motores de la capa miden el tiempo igual y hay un solo concepto de "cuándo empieza a contar". Y es el prudente: la ingesta siempre precede a la fecha límite, así que contar desde ella purgaría antes y podría borrar el pliego de un concurso todavía abierto — justo lo que la decisión de subir a 180 días quería evitar. Si el feed no trajo fecha límite legible, se cae a la ingesta. |
+| 2026-08-12 | **Ningún estado permite saltarse el plazo de retención** | Hasta el Paso 5, un expediente con todos sus lotes inactivos perdía sus pliegos de inmediato, sin esperar plazo alguno. Pero que una licitación desaparezca del feed no significa que esté resuelta: la regla borraba la documentación de una oferta viva justo mientras se esperaba la adjudicación, y el órgano de contratación puede haber retirado ya la publicación. Lo que hace purgable a un documento es haber cumplido su plazo, no en qué estado está su expediente. |
+| 2026-08-12 | **Gobernar el ciclo de vida del dato es competencia exclusiva del Depurador** | La purga documental vivía en `Lector.ejecutar_purga_obsoletos()` y la rotación de copias se invocaba directamente sobre `Memoria`. Dos puntos de entrada a una operación irreversible, ninguno de los dos auditado. El Lector descarga pliegos y les saca el texto; qué deja de conservarse lo decide el Depurador, que es quien registra en la tabla `purgas` y emite los eventos del contrato. |

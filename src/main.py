@@ -174,14 +174,27 @@ def main():
                 # Motor de OCR diferido para PDFs escaneados (Paso 5)
                 print("[~] Iniciando motor de OCR diferido (Tesseract OCR)...")
                 lector.procesar_ocr_diferido_lote()
-                # Purga automática del peso documental según la política versionada.
-                # Sin política legible no se purga: ver la carga en el paso 2.bis.
-                if politica:
-                    print(f"[~] Purga de peso documental (retención de {politica.documentos_dias} "
-                          f"días, política v{politica.version})...")
-                    lector.ejecutar_purga_obsoletos(dias_retencion=politica.documentos_dias)
+                # Purga automática del peso documental (Capa 9, Paso 5). La gobierna el
+                # Depurador, no el Lector: éste descarga y lee pliegos, aquél decide qué
+                # deja de conservarse. Sin política legible no se purga, y se dice.
+                print(f"[~] Purga de peso documental (retención de "
+                      f"{politica.documentos_dias if politica else '?'} días)...")
+                depurador = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
+                res_purga = depurador.purgar_documentos(solicitado_por="pipeline")
+                if not res_purga.ejecutado:
+                    print(f"[~] Purga documental omitida — {res_purga.motivo_degradacion}")
+                elif res_purga.hubo_cambios:
+                    mb = res_purga.bytes_liberados / (1024 * 1024)
+                    print(f"[+] Purga documental: {res_purga.documentos_purgados} documentos "
+                          f"purgados, {res_purga.ficheros_borrados} ficheros borrados, "
+                          f"{mb:.2f} MB liberados (corte: {res_purga.corte_utc}, política "
+                          f"v{res_purga.version_politica}). Las filas permanecen con su "
+                          f"rastro; ningún dato de negocio se ha tocado.")
+                    if res_purga.errores_borrado:
+                        print(f"[!] {res_purga.errores_borrado} ficheros no se pudieron "
+                              f"borrar y se reintentarán en la próxima corrida.")
                 else:
-                    print("[~] Purga documental omitida: sin política de retención válida.")
+                    print("[+] Purga documental: nada que purgar en esta ejecución.")
 
                 # Analista IA - Extracción Semántica y Recalibración (Capa 5 Paso 8)
                 print("[~] Iniciando Analista IA (Extracción Semántica con LLM / Fallback)...")
@@ -277,15 +290,22 @@ def main():
                 backup_file = db.realizar_backup(run_id=ejecucion_id)
                 print(f"[+] Backup en caliente generado con éxito: {backup_file}")
                 
-                if politica:
-                    purgados = db.rotar_backups(dias_retencion=politica.backups_dias)
-                    if purgados > 0:
-                        print(f"[+] Rotación de backups: Se han eliminado {purgados} copias obsoletas "
-                              f"(retención de {politica.backups_dias} días, política v{politica.version}).")
-                else:
-                    print("[~] Rotación de copias omitida: sin política de retención válida.")
             except Exception as e_bak:
                 print(f"[!] Advertencia: No se pudo completar el backup de seguridad: {e_bak}")
+
+            # Rotación de copias fuera del `try` del backup (Capa 9, Paso 5). Estaba dentro,
+            # y como `rotar_backups()` devolvía None el `if purgados > 0` lanzaba un
+            # TypeError que ese `except` presentaba como un fallo del backup: el backup se
+            # había hecho y las copias se habían rotado (H-34). Un fallo de rotación es un
+            # fallo de rotación, y ahora se dice como tal.
+            depurador_copias = Depurador(memoria=db, politica=politica, run_id=ejecucion_id)
+            res_rot = depurador_copias.rotar_copias(solicitado_por="pipeline")
+            if not res_rot.ejecutado:
+                print(f"[!] Rotación de copias omitida — {res_rot.motivo_degradacion}")
+            elif res_rot.copias_rotadas:
+                print(f"[+] Rotación de copias: {res_rot.copias_rotadas} copias obsoletas "
+                      f"eliminadas (retención de {politica.backups_dias} días, política "
+                      f"v{res_rot.version_politica}).")
 
         # --- RENDER TERMINAL ---
         print("\n" + "=" * 115)

@@ -959,6 +959,25 @@ class Memoria:
                 except Exception:
                     pass
 
+        # --- NORMALIZACIÓN DEL VOCABULARIO DE ESTADOS DOCUMENTALES (H-33) ---
+        #
+        # El Lector escribía `TEXTO_EXTRAIDO` al terminar de extraer, un estado que no
+        # consulta nadie: ni el DDL, ni el contrato de la Capa 9, ni el Analista —que busca
+        # sus pliegos con `estado = 'PROCESADO'`—, ni la purga documental. Un documento leído
+        # con éxito quedaba así fuera de análisis y fuera de purga a la vez.
+        #
+        # Va aquí y no dentro del bloque de migración a propósito: una base escrita por otra
+        # máquina puede estar ya en v6 y arrastrar el estado huérfano igualmente, y esa rama
+        # no vuelve a pasar por la migración. Es idempotente y en una instalación nueva no
+        # toca ninguna fila.
+        with self.conectar() as conn_estados:
+            with conn_estados:
+                filas = conn_estados.execute(
+                    "UPDATE documentos SET estado = 'PROCESADO' WHERE estado = 'TEXTO_EXTRAIDO';"
+                ).rowcount or 0
+        if filas:
+            print(f"[+] Normalizados {filas} documentos de 'TEXTO_EXTRAIDO' a 'PROCESADO' (H-33).")
+
         # --- RECREACIÓN DE VISTAS ANALÍTICAS CON TARIFA CONFIGURABLE ---
         tarifa_hora = 35.0
         yaml_path = ruta_proyecto("config/perfil_incoop.yaml")
@@ -1988,12 +2007,25 @@ class Memoria:
                         
                 os.replace(tmp_catalog_path, catalog_path)
             except Exception as e:
+                # El catálogo es el índice, no la copia: si no se puede reescribir, los
+                # ficheros ya borrados siguen borrados y hay que decirlo. Antes se
+                # silenciaba por completo (Convención C2).
+                print(f"[!] [memoria] Copias rotadas, pero no se pudo actualizar el "
+                      f"catálogo '{catalog_path}': {e}")
                 # Limpiar temporal si falló
                 if os.path.exists(tmp_catalog_path):
                     try:
                         os.remove(tmp_catalog_path)
                     except Exception:
                         pass
+
+        # H-34: esta función no devolvía nada por su camino normal. El único `return` es el
+        # de la salida temprana, así que rotar copias de verdad devolvía `None`, y el
+        # `if purgados > 0` del pipeline reventaba con un TypeError que un `except` amplio
+        # convertía en "No se pudo completar el backup de seguridad". El backup estaba hecho
+        # y las copias rotadas: lo único falso era el mensaje.
+        return purgados
+
     def registrar_documento_detectado(self, expediente_id: str, doc: Dict[str, Any]) -> bool:
         """
         Registra un documento detectado por el radar en la base de datos (esquema v3).
@@ -2120,55 +2152,89 @@ class Memoria:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def obtener_documentos_para_purga(self, dias_retencion: int) -> List[Dict[str, Any]]:
+    def obtener_documentos_para_purga(self, corte_utc: str) -> List[Dict[str, Any]]:
         """
-        Busca documentos descargados asociados a expedientes inactivos (lotes inactivos)
-        o cuya fecha de ingesta supere los dias_retencion establecidos.
+        Documentos cuyo peso puede liberarse: los que ya han superado la retención documental.
+
+        `corte_utc` es la fecha de corte ya calculada por el Depurador, que es quien conoce la
+        política. Aquí no se aplica ningún plazo por defecto.
+
+        **El plazo se cuenta desde la fecha límite**, con caída a la fecha de ingesta cuando el
+        feed no la trajo legible *(decisión de dirección, 2026-08-12)*. Es el mismo ancla que
+        usa el motor de archivado del Paso 4, de modo que los dos motores de la capa miden el
+        tiempo igual, y es el prudente: contar desde la ingesta purgaría antes, pudiendo borrar
+        el pliego de un concurso todavía abierto.
+
+        **Ningún estado permite saltarse el plazo.** Hasta el Paso 5, un expediente con todos
+        sus lotes inactivos perdía sus pliegos de inmediato; pero que una licitación desaparezca
+        del feed no significa que esté resuelta, y esa regla borraba la documentación de una
+        oferta viva justo mientras se esperaba la adjudicación.
+
+        Lo que hace candidato a un documento es **tener peso que liberar** —un fichero en disco
+        o texto en la base—, no su estado. Filtrar por `estado = 'DESCARGADO'`, como se hacía
+        hasta aquí, dejaba fuera precisamente a los procesados, que son los que pesan (H-33):
+        la purga se ejecutaba en cada corrida sin encontrar nunca nada.
         """
         sql = """
-        SELECT d.id, d.local_path, d.titulo
+        SELECT d.id, d.local_path, d.titulo, d.estado, d.mida_bytes
         FROM documentos d
         JOIN expedientes e ON d.expediente_id = e.id
-        WHERE d.estado = 'DESCARGADO' AND d.local_path IS NOT NULL
+        WHERE d.estado <> 'PURGADO'
+          AND (d.local_path IS NOT NULL OR d.texto_extraido IS NOT NULL)
           AND (
-            NOT EXISTS (
-              SELECT 1 FROM lotes l
-              -- LOWER() y no el literal: hasta v6 convivieron dos grafías del mismo
-              -- estado (H-27), y esta consulta dependía de que el Radar escribiera en
-              -- minúsculas. Comparar normalizado la hace indiferente a la grafía
-              -- almacenada, también en bases migradas desde v5.
-              WHERE l.expediente_id = e.id
-                AND LOWER(l.estado_operativo) NOT IN ('inactiva', 'anulada_administracion')
-            )
-            OR datetime(e.fecha_ingesta) <= datetime('now', ?)
-          );
+            CASE
+              WHEN e.fecha_limite IS NULL OR TRIM(e.fecha_limite) IN ('', 'N/A')
+                THEN e.fecha_ingesta
+              ELSE e.fecha_limite
+            END
+          ) < ?;
         """
-        # Formato de modificador de tiempo para SQLite: '-90 days'
-        modifier = f"-{dias_retencion} days"
         with self.conectar() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute(sql, (modifier,))
+            cursor.execute(sql, (corte_utc,))
             return [dict(row) for row in cursor.fetchall()]
 
-    def marcar_documentos_como_purgados(self, doc_ids: List[int]) -> None:
+    def marcar_documentos_como_purgados(
+        self,
+        doc_ids: List[int],
+        conn: Optional[sqlite3.Connection] = None
+    ) -> int:
         """
-        Pasa el estado de los documentos a PURGADO y limpia sus rutas físicas y metadatos de almacenamiento.
+        Pasa los documentos a `PURGADO`: sin fichero, sin texto y sin dejar de existir.
+
+        **`texto_extraido` se vacía** (postcondición del contrato de la Capa 9). Es la mitad
+        del peso que esta operación existe para liberar —y la que crece dentro de la base, no
+        en el disco—, y hasta aquí se quedaba intacta: la fila decía `PURGADO` conservando
+        íntegro el texto del pliego.
+
+        La fila **permanece** con su URL, su hash y su rastro: se sabe qué hubo y por qué ya no
+        está. `conn` permite escribir dentro de la misma transacción que su auditoría, para que
+        el hecho y su rastro no puedan quedar desacoplados.
         """
         if not doc_ids:
-            return
-            
+            return 0
+
         placeholders = ",".join("?" for _ in doc_ids)
         sql = f"""
         UPDATE documentos
-        SET estado = 'PURGADO', local_path = NULL, error_detalle = 'PURGADO_HISTORICO', updated_at = ?
+        SET estado = 'PURGADO',
+            local_path = NULL,
+            texto_extraido = NULL,
+            error_detalle = 'PURGADO_HISTORICO',
+            updated_at = ?
         WHERE id IN ({placeholders});
         """
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        parametros = [now_str] + list(doc_ids)
+
+        if conn is not None:
+            return conn.execute(sql, parametros).rowcount or 0
+
         with self.db_lock():
-            with self.conectar() as conn:
-                with conn:
-                    conn.execute(sql, [now_str] + doc_ids)
+            with self.conectar() as c:
+                with c:
+                    return c.execute(sql, parametros).rowcount or 0
 
     def obtener_documentos_para_extraccion(self) -> List[Dict[str, Any]]:
         """

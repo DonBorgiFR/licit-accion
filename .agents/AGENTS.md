@@ -14,26 +14,29 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas, con la suite en **266/266** y el Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia en el README y **Pasos 1, 2, 3 y 4 cerrados**. El esquema de base de datos vigente es **v6** y la política de retención, **v1.1.0**. De 32 hallazgos catalogados, los 32 están cerrados.
+**Estado en una línea**: Capas 1-8 construidas, con la suite en **280/280** y el Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia en el README y **Pasos 1, 2, 3, 4 y 5 cerrados**. El esquema de base de datos vigente es **v6** y la política de retención, **v1.1.0**. De 34 hallazgos catalogados, los 34 están cerrados.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 266/266
+python -m pytest tests/ -q          # debe dar 280/280
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: Capa 9, Paso 5
+### ⏭️ Siguiente tarea concreta: Capa 9, Paso 6
 
-**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 a 4 cerrados; del 5 al 10, pendientes.**
+**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 a 5 cerrados; del 6 al 10, pendientes.**
 
 * **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
 * **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`.
 * **Paso 3** 🟢 — esquema **v6**: ciclo de vida en `expedientes`, `version_scoring` en `lotes`, métricas en `ejecuciones` y tabla `purgas`.
 * **Paso 4** 🟢 — motor de archivado en `src/depurador.py`, verificado en vivo con la API y el Cockpit levantados. **Cierra H-30, H-31 y H-32.**
+* **Paso 5** 🟢 — motor de purga documental en `src/depurador.py`. **Cierra H-33 y H-34.** No fue consolidación sino reparación: ninguna de las dos piezas que había hacía su trabajo.
+
+> 🔑 **La lección del Paso 5, que vale para todo lo que queda**: el aviso de este dosier —*"antes de escribir código nuevo, comprobar qué hace ya el código viejo"*— era literal. La purga se ejecutaba en cada corrida, no fallaba nunca y **no liberaba un solo byte**, porque seleccionaba documentos por un estado que sólo tienen antes de procesarse. Y el mismo vocabulario partido dejaba al Analista IA sin recibir ni un pliego. Dos capas dadas por operativas trabajando en vacío, en verde y sin una sola excepción. **Que un módulo se ejecute no es prueba de que haga algo: hay que medir su efecto.**
 
 > 🔑 **Principio que salió de este paso y que rige el resto de la capa**: `deleted_at` gobierna **la visibilidad en el canal principal, no la editabilidad**. Un lote archivado se sigue pudiendo editar —registrar el importe de una adjudicación, sus garantías, sus costes—; simplemente no aparece en el Funnel salvo que se pidan las archivadas. Filtrar por `deleted_at` en una consulta de escritura es, a partir de ahora, un defecto. Y **editar no desarchiva**: el rescate `ARCHIVADO → VIVO` es explícito y vive en el Paso 8; si la edición desarchivara, la corrida siguiente volvería a archivar y el lote oscilaría solo.
 
@@ -43,7 +46,9 @@ python -m pytest tests/ -q          # debe dar 266/266
 * **Archivado a los 60 días de la fecha límite**, sin que `Presentada` sea archivable jamás: una oferta entregada y sin resolver es lo más vivo del embudo. El código rechaza `Presentada` en `estados_archivables` aunque se declare en el fichero.
 * **Los bloqueos se resuelven quitando el bloqueo, no recortando la política** *(2026-08-07)*. Ante H-32 se planteó reducir los estados archivables a los que nadie edita; la dirección eligió lo contrario: arreglar la causa para que se puedan archivar los cinco sin congelar nada. De ahí sale el principio del recuadro anterior.
 
-**Después de H-32, el Paso 5** (purga documental) **no parte de cero**: consolida `lector.ejecutar_purga_obsoletos()` y `memoria.rotar_backups()`, que ya funcionan y ya leen la política versionada desde el Paso 2. Es trabajo de gobierno, no de escritura.
+**El Paso 6** (eliminación física) es el único que puede destruir memoria comercial: exige lista explícita de expedientes, confirmación, copia de seguridad previa correcta y borrado en orden hoja→raíz sin desactivar jamás las claves foráneas. Es el paso más delicado de la capa.
+
+> ⚠️ **Aviso heredado del Paso 5, que se planteó como "consolidar, no escribir" y resultó ser lo contrario.** Se daba por hecho que `lector.ejecutar_purga_obsoletos()` y `memoria.rotar_backups()` "ya funcionaban y sólo les faltaba gobierno". No funcionaban: una no alcanzaba ningún documento con peso y la otra devolvía `None`, haciendo que el pipeline anunciara un fallo de backup inexistente. **Antes de dar por bueno lo que hay, medir su efecto sobre una base sembrada.**
 
 Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados. El detalle está más abajo, en "Pasos completados"; el contrato del Bloque 2 vive en [`CONTRATO_BLOQUE_2.md`](CONTRATO_BLOQUE_2.md).
 
@@ -341,19 +346,19 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 8 — Canal Proactivo Centinela (Oportunidades Fase Temprana DOGC/BOPB): 🟢 Completado y Validado.
   * Paso 9 — Modal / Drawer de Detalle Completo y Mutación Transaccional: 🟢 Completado y Validado.
   * Paso 10 — Suite de Pruebas Frontend, Build de Producción y Cierre Oficial de Capa 8: 🟢 Completado y Validado.
-* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Estrategia redactada en el README; ningún paso implementado.
+* **Capa 9** - El Histórico y Depurador (Archivo y Purga de Datos): 🛠️ **Activa desde el 2026-08-07.** Pasos 1 a 5 cerrados; del 6 al 10, pendientes.
   * Paso 1 — Contrato de Servicio y Máquina de Estados del Ciclo de Vida: 🟢 **Completado y validado el 2026-08-07.** Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md). Destapó H-27.
   * Paso 2 — Política de Retención Versionada (`config/retencion.yaml`): 🟢 **Completado el 2026-08-07.** Los plazos dejan de estar codificados a fuego en `main.py`. Nuevo `src/retencion.py` como único punto de lectura, que **no aplica valores por defecto**: si la política falta o es incoherente lanza `PoliticaRetencionInvalida` y no se purga nada. 19 regresiones en `tests/test_retencion_politica.py`. Verificadas en vivo las dos ramas del cableado real de `main.py`.
   * Paso 3 — Migración a Esquema v6 (`src/memoria.py`): 🟢 **Completado el 2026-08-07.** Ciclo de vida a nivel de expediente, `version_scoring` en `lotes` (y poblado de verdad: Filtro → upsert → SQLite), métricas en `ejecuciones` y tabla `purgas`. **Cierra H-27** y destapó H-29. 9 regresiones en `tests/test_migracion_v6.py`, con DDL de v5 escrito a mano para que la migración se pruebe de verdad.
   * Paso 4 — Motor de Archivado (`src/depurador.py`): 🟢 **Completado el 2026-08-07.** Archivado a los 60 días de la fecha límite —o de la ingesta, si el feed no trajo fecha legible—, con cascada al expediente cuando ninguno de sus lotes sigue vivo. No toca `estado_operativo` ni un solo fichero, y es idempotente por construcción (todo `UPDATE` filtra `deleted_at IS NULL`). Parámetros en el bloque `archivado` de `config/retencion.yaml` (política **v1.1.0**), que rechaza `Presentada` aunque se declare. Auditoría en la tabla `purgas` y eventos `DEPURADOR_ARCHIVADO` / `DEPURADOR_MODO_DEGRADADO`. Pobladas por fin las métricas de `ejecuciones`. **Cierra H-30, H-31 y H-32.** 41 regresiones en `tests/test_capa9_archivado.py`. Verificado en vivo con la API y el Cockpit levantados contra base sembrada: Funnel de 3 filas por defecto y 7 con *"Incluir archivadas"*, y edición de un lote archivado desde la tabla que persiste sin desarchivarlo.
-  * Paso 5 — Motor de Purga Documental: 💤
+  * Paso 5 — Motor de Purga Documental (`src/depurador.py`): 🟢 **Completado el 2026-08-12.** `purgar_documentos()` y `rotar_copias()`, con medición real de bytes liberados, vaciado de `texto_extraido`, fila en `purgas` y los eventos `DEPURADOR_PURGA_INICIADA` / `COMPLETADA` / `ABORTADA`. La selección deja de mirar `estado_operativo`: lo que hace purgable a un documento es haber cumplido su plazo —contado desde la fecha límite, con caída a la ingesta— y tener peso que liberar. Un fichero que no se puede borrar **no** se marca como purgado, para que no quede huérfano en disco. La purga sale del Lector: gobernar el ciclo de vida es competencia exclusiva del Depurador. **Cierra H-33 y H-34.** 14 regresiones en `tests/test_capa9_purga_documental.py`, la primera de ellas recorriendo el Lector real sobre un PDF real sin sembrar estados (C4). Verificado en vivo contra base sembrada con ficheros en disco: 4 ficheros y 1.832 bytes liberados, el pliego dentro de plazo intacto y la memoria comercial del expediente adjudicado sin un solo campo movido.
   * Paso 6 — Motor de Eliminación Física con Orden de Integridad: 💤
   * Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`): 💤
   * Paso 8 — Router Administrativo de Mutación: 💤
   * Paso 9 — Pantalla de Administración en el Cockpit: 💤
   * Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9: 💤
 
-  > ⚠️ **La Capa 9 no parte de cero, y el Paso 5 consiste en consolidar, no en escribir.** Las dos piezas de purga documental ya funcionan y ya **leen la política versionada** desde el Paso 2: `lector.ejecutar_purga_obsoletos(dias_retencion=politica.documentos_dias)` y `memoria.rotar_backups(dias_retencion=politica.backups_dias)`, ambas invocadas desde `src/main.py`. Lo que les falta no es plazo —eso se arregló—, sino **gobierno**: no registran en la tabla `purgas`, no emiten los eventos `DEPURADOR_*` del contrato y no pasan por el `Depurador`. **Antes de escribir código nuevo, comprobar qué hace ya el código viejo.**
+  > ⚠️ **Este recuadro decía que el Paso 5 era "consolidar, no escribir", porque las dos piezas de purga "ya funcionaban y sólo les faltaba gobierno". Era falso, y se conserva como advertencia.** `lector.ejecutar_purga_obsoletos()` no alcanzaba ningún documento con peso (H-33) y `memoria.rotar_backups()` devolvía `None`, haciendo que el pipeline anunciase un fallo de backup inexistente (H-34). Las dos se ejecutaban en cada corrida sin fallar nunca. **Que un módulo se ejecute no prueba que haga algo: hay que medir su efecto sobre una base sembrada antes de darlo por bueno.**
 
 * **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Servicio Local): 💤
 
@@ -417,7 +422,7 @@ cd frontend && npm run dev          # http://localhost:5173
 
 ### Pasos pendientes
 
-Ninguno. **32 hallazgos catalogados, 32 cerrados** con prueba de regresión o verificación reproducible. Los seis últimos (H-27 a H-32) no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 2, 3 y 4.
+Ninguno. **34 hallazgos catalogados, 34 cerrados** con prueba de regresión o verificación reproducible. Los ocho últimos (H-27 a H-34) no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 2, 3, 4 y 5.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 

@@ -232,29 +232,41 @@ def test_el_radar_escribe_la_grafia_canonica(tmp_path):
     assert borrado is not None, "Y marcar el borrado lógico"
 
 
-def test_la_consulta_de_purga_tolera_ambas_grafias(base_v5):
-    """`obtener_documentos_para_purga()` comparaba contra el literal en minúsculas.
+def test_la_purga_documental_ya_no_mira_el_estado_operativo(base_v5):
+    """Aquí vivía una regresión sobre las dos grafías del estado archivado (H-27).
 
-    Dependía de que el Radar escribiera así. Tras normalizar a la grafía capitalizada,
-    una comparación literal habría dejado de encontrar los expedientes archivados y la
-    purga documental habría dejado de liberar espacio en silencio.
+    Ha dejado de tener objeto: desde el Paso 5, `obtener_documentos_para_purga()` **no lee
+    `estado_operativo`**, así que no puede depender de cómo esté escrito. La lección de H-27
+    sigue vigilada donde sigue aplicando, que es el filtro de estados del motor de archivado
+    (`tests/test_capa9_archivado.py`).
+
+    Lo que se fija ahora es la decisión que la sustituye *(dirección, 2026-08-12)*: **ningún
+    estado permite saltarse el plazo**. Antes, un expediente con todos sus lotes inactivos
+    perdía sus pliegos de inmediato; pero desaparecer del feed no es estar resuelto, y esa
+    regla borraba la documentación de una oferta viva mientras se esperaba la adjudicación.
     """
     memoria = Memoria(db_path=base_v5)
     memoria.setup_db()
 
     with memoria.conectar() as conn:
         with conn:
-            # Todos los lotes archivados: el expediente entero es candidato a purga documental.
+            # El caso que antes purgaba de inmediato: expediente entero archivado.
             conn.execute("UPDATE lotes SET estado_operativo = ? WHERE expediente_id='EXP-V5';",
                          (ESTADO_INACTIVA,))
             conn.execute(
                 "INSERT INTO documentos (expediente_id, titulo, url, tipo, hash_documento, "
                 "estado, local_path, updated_at) VALUES ('EXP-V5', 'PCA.pdf', "
-                "'http://example.invalid/p.pdf', 'PCA', 'h1', 'DESCARGADO', '/tmp/p.pdf', "
+                "'http://example.invalid/p.pdf', 'PCA', 'h1', 'PROCESADO', '/tmp/p.pdf', "
                 "'2026-07-01T10:00:00Z');"
             )
 
-    candidatos = memoria.obtener_documentos_para_purga(dias_retencion=180)
+    # El expediente se ingestó el 2026-07-01 y no trae fecha límite, así que el plazo se
+    # cuenta desde la ingesta. Con el corte antes de esa fecha, no toca purgar nada por
+    # mucho que todos sus lotes estén archivados.
+    assert memoria.obtener_documentos_para_purga("2026-01-01T00:00:00Z") == []
+
+    # Y con el plazo vencido sí, sin que ningún estado haya cambiado entre una llamada y otra.
+    candidatos = memoria.obtener_documentos_para_purga("2026-12-31T00:00:00Z")
     assert [d["titulo"] for d in candidatos] == ["PCA.pdf"]
 
 

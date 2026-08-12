@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 4 cerrados**, del 5 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.1.0**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 5 cerrados**, del 6 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.1.0**.
 
 ### 🎯 Objetivo
 
@@ -1085,8 +1085,12 @@ graph TD
    - Criterios en el bloque `archivado` de `config/retencion.yaml`. `Presentada` **no es archivable jamás** y el código lo rechaza aunque se declare: una oferta entregada y sin resolver es lo más vivo del embudo.
    - **Cierra H-30**: `vista_win_rate` excluía lo archivado, de modo que archivar lo adjudicado habría puesto a cero el indicador de si la cooperativa gana concursos. Y **H-31**: no existía rastro de los estados por los que pasaba un lote, del que depende la invariante del Paso 6.
    - **Y H-32**: un lote archivado no podía editarse desde el Cockpit, lo que habría congelado el registro de un contrato ganado justo cuando toca anotar su importe y sus garantías. Se cierra separando las dos cosas que `deleted_at` gobernaba a la vez: **archivar decide qué se ve en el canal principal, no qué se puede tocar**. El Funnel gana el filtro *"Incluir archivadas"* y las filas archivadas llegan marcadas. Editar **no desarchiva**: el rescate sigue siendo explícito y vive en el Paso 8.
-5. **Paso 5 — Motor de Purga Documental**: 💤
-   - Consolidación de lo que hoy vive disperso en `lector.ejecutar_purga_obsoletos()` y `memoria.rotar_backups()`, ahora gobernado por la política versionada. Libera disco sin tocar ninguna fila de negocio.
+5. **Paso 5 — Motor de Purga Documental**: 🟢 Completado y Validado.
+   - `Depurador.purgar_documentos()` y `Depurador.rotar_copias()`: borran el fichero, **vacían `texto_extraido`** y dejan el documento en `PURGADO` conservando su fila con la URL, el hash y el rastro. Ninguna fila de negocio se toca. Con medición real de bytes liberados, auditoría en `purgas` y los eventos `DEPURADOR_PURGA_*`.
+   - **El plazo se cuenta desde la fecha límite, con caída a la fecha de ingesta** *(decisión de dirección, 2026-08-12)*: mismo ancla que el motor de archivado. Y **ningún estado permite saltárselo**: hasta aquí, un expediente con todos sus lotes inactivos perdía sus pliegos de inmediato, aunque desaparecer del feed no signifique estar resuelto.
+   - **Cierra H-33**: el Lector escribía `TEXTO_EXTRAIDO`, un estado que no leía nadie, mientras el Analista y la purga buscaban `PROCESADO`. El Analista IA no recibía ni un pliego y la purga sólo alcanzaba documentos descargados y nunca procesados — los que no pesan. Se ejecutaba en cada corrida sin liberar un byte.
+   - **Y H-34**: `rotar_backups()` no devolvía su recuento, de modo que el `if purgados > 0` del pipeline lanzaba un `TypeError` que un `except` amplio anunciaba como un fallo del backup que no había ocurrido.
+   - La purga sale del Lector: **gobernar el ciclo de vida del dato es competencia exclusiva del Depurador**, que es quien audita.
 6. **Paso 6 — Motor de Eliminación Física con Orden de Integridad**: 💤
    - Borrado de hoja a raíz respetando `ON DELETE RESTRICT`, reservado a expedientes que caducaron sin salir de `Nueva`. Copia de seguridad previa obligatoria; si falla, no se ejecuta *(Regla 5)*.
 
@@ -1106,7 +1110,8 @@ graph TD
 
 ### 🛠️ Herramientas y Código a Crear
 - `config/retencion.yaml`: política de retención versionada. 🟢 **Creado (Paso 2, v1.1.0)**, con el bloque `archivado` añadido en el Paso 4. Se lee desde `src/retencion.py`.
-- `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟡 **Creado (Paso 4)** con la operación de archivado; le faltan la purga documental y la eliminación física.
+- `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟡 **Archivado (Paso 4) y purga documental (Paso 5)**; le falta la eliminación física del Paso 6.
+- `tests/test_capa9_purga_documental.py`: regresiones de la purga documental. 🟢 **Creado (Paso 5)**, 14 pruebas.
 - `src/api/routers/admin.py`: endpoints de administración y purga. 💤 Pasos 7 y 8.
 - `tests/test_capa9_archivado.py`: regresiones del ciclo de vida. 🟢 **Creado (Paso 4)**, 41 pruebas. La suite E2E del Paso 10 se sumará aquí.
 - `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 💤 Paso 9.

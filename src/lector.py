@@ -727,55 +727,12 @@ class Lector:
         except Exception as e:
             print(f"[!] [lector] Error al generar reporte CSV consolidado: {e}")
 
-    def ejecutar_purga_obsoletos(self, dias_retencion: int = 90) -> int:
-        """
-        Elimina físicamente los archivos PDF y sidecars correspondientes a expedientes soft-deleted
-        o cuya fecha de ingesta supere los dias_retencion establecidos.
-        Pasa el estado en BD a PURGADO.
-        Devuelve el número de documentos purgados.
-        """
-        if not self.db:
-            print("[!] [lector] No se puede ejecutar purga. Base de datos no conectada.")
-            return 0
-            
-        docs_purga = self.db.obtener_documentos_para_purga(dias_retencion)
-        if not docs_purga:
-            print("[~] [lector] No se encontraron documentos que requieran purga por retención.")
-            return 0
-            
-        print(f"[~] [lector] Iniciando purga física de {len(docs_purga)} documentos (> {dias_retencion} días o inactivos)...")
-        
-        doc_ids = []
-        purgados_conteo = 0
-        
-        for doc in docs_purga:
-            doc_id = doc["id"]
-            pdf_path = doc["local_path"]
-            doc_ids.append(doc_id)
-            
-            # Borrar PDF físico
-            if pdf_path and os.path.exists(pdf_path):
-                try:
-                    os.remove(pdf_path)
-                    purgados_conteo += 1
-                    # Borrar sidecar JSON si existe
-                    sidecar_path = pdf_path + ".meta.json"
-                    if os.path.exists(sidecar_path):
-                        os.remove(sidecar_path)
-                    print(f"  [+] Purgado físico: {doc['titulo']} ({pdf_path})")
-                except Exception as e:
-                    print(f"  [!] Error borrando archivo {pdf_path}: {e}")
-                    
-        # Actualizar base de datos
-        if doc_ids:
-            try:
-                self.db.marcar_documentos_como_purgados(doc_ids)
-                self.registrar_log_JSONL(action="purge_completed", reason=f"Purgados: {len(doc_ids)} | Eliminados en disco: {purgados_conteo}")
-                print(f"[+] [lector] Purga completada de {len(doc_ids)} documentos en base de datos.")
-            except Exception as e:
-                print(f"[!] Error al actualizar estados de purga en BD: {e}")
-                
-        return purgados_conteo
+    # La purga documental vivía aquí (`ejecutar_purga_obsoletos`). Se trasladó al Depurador
+    # en el Paso 5 de la Capa 9: gobernar el ciclo de vida del dato no es competencia del
+    # Lector, cuyo trabajo es descargar pliegos y sacarles el texto. Tener dos puntos de
+    # entrada a una operación irreversible es exactamente lo que el contrato evita, y de
+    # paso el motor gana lo que aquí no tenía —medición de bytes, fila en `purgas` y los
+    # eventos `DEPURADOR_PURGA_*`—. Ver `src/depurador.py`.
 
     def extraer_texto_pdf_nativo(self, local_path: str) -> ExtraccionResult:
         """
@@ -934,7 +891,12 @@ class Lector:
                     )
                     print(f"[~] [lector] Documento ID {doc_id} ('{titulo[:30]}') requiere OCR (Paso 5).")
                 else:
-                    estado_final = "TEXTO_EXTRAIDO"
+                    # PROCESADO, y no "TEXTO_EXTRAIDO" (H-33). Es el estado que declaran el
+                    # DDL y la máquina de estados del contrato de la Capa 9, y el único que
+                    # el resto del sistema sabe leer: el Analista busca sus pliegos con
+                    # `estado = 'PROCESADO'`. Mientras aquí se escribió un estado que nadie
+                    # consultaba, la extracción funcionaba y no servía para nada.
+                    estado_final = "PROCESADO"
                     exitos += 1
                     self.db.guardar_resultado_extraccion_texto(
                         doc_id=doc_id,
@@ -1153,7 +1115,9 @@ class Lector:
                     exitos += 1
                     self.db.guardar_resultado_extraccion_texto(
                         doc_id=doc_id,
-                        estado="TEXTO_EXTRAIDO",
+                        # Mismo destino que la extracción nativa: un pliego leído por OCR
+                        # está tan procesado como uno leído directamente (H-33).
+                        estado="PROCESADO",
                         texto_extraido=resultado.texto,
                         metodo=resultado.metodo,
                         idioma=resultado.idioma_detectado,
