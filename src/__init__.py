@@ -57,9 +57,38 @@ ESTADOS_OPERATIVOS_VALIDOS = (
 )
 
 
+#: Grafía con la que un estado debe **escribirse y mostrarse**, indexada por su forma
+#: normalizada. Es la contraparte de la tupla de arriba: aquélla sirve para comparar, ésta
+#: para persistir y pintar.
+#:
+#: Por qué hace falta y no basta con `.capitalize()`: `anulada_administracion` tiene dos
+#: mayúsculas y el método se comería la segunda, produciendo una tercera grafía del mismo
+#: estado. Que es exactamente cómo empezó H-27.
+ESTADOS_OPERATIVOS_CANONICOS = {
+    "nueva": "Nueva",
+    "estudiando": "Estudiando",
+    "presentada": "Presentada",
+    "adjudicada": "Adjudicada",
+    "perdida": "Perdida",
+    "descartada": "Descartada",
+    "anulada_administracion": "Anulada_Administracion",
+    "inactiva": "Inactiva",
+}
+
+
 def normalizar_estado_operativo(estado) -> str:
     """Reduce un estado operativo a su forma comparable: sin espacios y en minúsculas."""
     return str(estado or "").strip().lower()
+
+
+def grafia_canonica_estado(estado) -> str:
+    """Devuelve la grafía con la que se escribe un estado en la base y en pantalla.
+
+    Un estado desconocido se devuelve tal cual: esta función normaliza la escritura, no
+    valida el vocabulario. Quien deba rechazar un estado inválido lo hace antes, contra
+    `ESTADOS_OPERATIVOS_VALIDOS`, y con un error explícito.
+    """
+    return ESTADOS_OPERATIVOS_CANONICOS.get(normalizar_estado_operativo(estado), estado)
 
 
 def ruta_datos(*partes) -> str:

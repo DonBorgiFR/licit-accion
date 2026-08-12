@@ -259,3 +259,162 @@ def test_los_cuatro_endpoints_estan_publicados_en_el_esquema(client):
                  "/api/v1/admin/purga/previsualizacion", "/api/v1/admin/ejecuciones"):
         assert ruta in esquema, f"Falta {ruta} en el esquema OpenAPI"
         assert list(esquema[ruta]) == ["get"], f"{ruta} sólo debe permitir lectura en el Paso 7"
+
+
+# --------------------------------------------------------------------------------------
+# Mutación (Paso 8): aquí empieza lo que sí altera
+# --------------------------------------------------------------------------------------
+
+def test_sin_confirmacion_explicita_la_api_no_purga(client, base_api):
+    """La confirmación viaja en el cuerpo y no tiene valor por defecto.
+
+    Un campo con `= True` convertiría "olvidé enviarlo" en "sí, adelante", que es
+    exactamente lo que el contrato prohíbe.
+    """
+    respuesta = client.post("/api/v1/admin/purga",
+                            json={"tipo": "documental", "confirmar": False})
+
+    assert respuesta.status_code == 400
+
+
+def test_la_eliminacion_por_api_exige_la_lista_explicita(client, base_api):
+    """"Nunca se deduce": sin expedientes no hay nada que borrar, y se dice con un 400."""
+    respuesta = client.post("/api/v1/admin/purga",
+                            json={"tipo": "eliminacion", "confirmar": True, "expedientes": []})
+
+    assert respuesta.status_code == 400
+    assert "explícita" in respuesta.json()["detail"]
+
+
+def test_la_api_elimina_lo_eliminable_y_devuelve_lo_protegido_con_su_motivo(client, base_api):
+    """Que todo quede bloqueado no es un error: es la invariante funcionando.
+
+    Devolverlo como 409 escondería el motivo justo cuando más falta hace.
+    """
+    sembrar_expediente(base_api, "EXP-BORRABLE", deleted_at="2024-02-01T09:00:00Z")
+    sembrar_expediente(base_api, "EXP-ADJUDICADO", deleted_at="2024-02-01T09:00:00Z",
+                       estado="Adjudicada")
+
+    respuesta = client.post("/api/v1/admin/purga", json={
+        "tipo": "eliminacion", "confirmar": True,
+        "expedientes": ["EXP-BORRABLE", "EXP-ADJUDICADO"], "solicitado_por": "direccion",
+    })
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["expedientes_eliminados"] == 1
+    assert datos["bloqueados"][0]["expediente_id"] == "EXP-ADJUDICADO"
+    assert datos["bloqueados"][0]["motivo"] == "memoria_comercial"
+    assert datos["backup_asociado"], "Toda eliminación crea su copia previa"
+
+    with base_api.conectar() as conn:
+        vivos = [f[0] for f in conn.execute("SELECT id FROM expedientes;")]
+    assert vivos == ["EXP-ADJUDICADO"]
+
+
+def test_si_falla_la_copia_previa_la_api_responde_503_y_no_borra(client, base_api, monkeypatch):
+    """503 y no 500: no es un fallo del servidor sino la negativa a borrar sin red."""
+    sembrar_expediente(base_api, "EXP-1", deleted_at="2024-02-01T09:00:00Z")
+    monkeypatch.setattr(Memoria, "realizar_backup",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("disco lleno")))
+
+    respuesta = client.post("/api/v1/admin/purga", json={
+        "tipo": "eliminacion", "confirmar": True, "expedientes": ["EXP-1"],
+    })
+
+    assert respuesta.status_code == 503
+    with base_api.conectar() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM expedientes;").fetchone()[0] == 1
+
+
+def test_la_copia_bajo_demanda_se_crea_y_se_mide(client, base_api):
+    respuesta = client.post("/api/v1/admin/backup")
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert os.path.exists(datos["ruta"])
+    assert datos["bytes"] > 0
+
+
+# --------------------------------------------------------------------------------------
+# El rescate ARCHIVADO → VIVO
+# --------------------------------------------------------------------------------------
+
+def test_el_rescate_devuelve_al_canal_sin_tocar_el_estado_comercial(client, base_api):
+    """Recuperar visibilidad no es cambiar de situación comercial.
+
+    Un lote que el Radar marcó `Inactiva` al desaparecer del feed vuelve siendo `Inactiva`:
+    qué es ahora esa oportunidad lo decide quien mire la ficha, no el Depurador.
+    """
+    sembrar_expediente(base_api, "EXP-1", deleted_at="2026-01-01T09:00:00Z", estado="Inactiva")
+
+    respuesta = client.post("/api/v1/admin/expedientes/rescatar",
+                            json={"expedientes": ["EXP-1"], "solicitado_por": "direccion"})
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["rescatados"] == 1
+    with base_api.conectar() as conn:
+        borrado, rescatado = conn.execute(
+            "SELECT deleted_at, rescatado_at FROM expedientes WHERE id='EXP-1';"
+        ).fetchone()
+        estado = conn.execute(
+            "SELECT estado_operativo FROM lotes WHERE expediente_id='EXP-1';"
+        ).fetchone()[0]
+    assert borrado is None, "Vuelve al canal principal"
+    assert rescatado is not None, "Y queda constancia de que lo devolvió una persona"
+    assert estado == "Inactiva", "El Depurador no escribe jamás en estado_operativo"
+
+
+def test_la_siguiente_corrida_no_vuelve_a_archivar_lo_rescatado(base_api):
+    """Sin esta marca el rescate no serviría de nada, y el lote oscilaría solo.
+
+    Es la transición prohibida nº 7 vista desde el otro lado, y el mismo criterio que el
+    Paso D5 fijó para el Centinela: una reejecución del pipeline no puede pisar lo que
+    decidió una persona.
+    """
+    from src.depurador import Depurador
+    from src.retencion import PoliticaArchivado, PoliticaRetencion
+
+    politica = PoliticaRetencion(
+        version="1.2.0", documentos_dias=180, backups_dias=7,
+        archivado=PoliticaArchivado(
+            dias_tras_fecha_limite=60,
+            estados_archivables=("nueva",),
+            archivar_expediente_con_todos_sus_lotes=True,
+        ),
+    )
+    # Plazo vencido de sobra: sin el rescate, el archivador lo cogería en cada pasada.
+    sembrar_expediente(base_api, "EXP-1", deleted_at="2026-01-01T09:00:00Z")
+    depurador = Depurador(memoria=base_api, politica=politica)
+    depurador.rescatar(["EXP-1"])
+
+    resultado = depurador.archivar()
+
+    assert resultado.lotes_archivados == 0, "Lo rescatado a mano no se vuelve a archivar solo"
+    with base_api.conectar() as conn:
+        assert conn.execute(
+            "SELECT deleted_at FROM lotes WHERE expediente_id='EXP-1';"
+        ).fetchone()[0] is None
+
+
+# --------------------------------------------------------------------------------------
+# El cabo suelto de la familia H-27
+# --------------------------------------------------------------------------------------
+
+def test_el_estado_se_persiste_en_la_grafia_que_el_selector_del_cockpit_ofrece(base_api):
+    """`actualizar_estado_lote()` guardaba minúsculas y el `<select>` no las reconocería.
+
+    Un lote guardado como 'perdida' se habría pintado como "Nueva", porque el desplegable
+    no encuentra la opción y cae en la primera. No llegó a ocurrir —ningún código de
+    producción llamaba a este método—, pero era la familia de H-27 esperando a que alguien
+    lo cableara a una CLI o a un endpoint.
+    """
+    sembrar_expediente(base_api, "EXP-1")
+
+    base_api.actualizar_estado_lote("EXP-1", 1, "perdida")
+
+    with base_api.conectar() as conn:
+        estado = conn.execute(
+            "SELECT estado_operativo FROM lotes WHERE expediente_id='EXP-1';"
+        ).fetchone()[0]
+    assert estado == "Perdida"

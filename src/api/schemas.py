@@ -374,6 +374,52 @@ class PrevisualizacionPurgaSchema(BaseModel):
     degradado: Optional[str] = Field(None, description="Causa por la que no se ha podido evaluar, si la hay")
 
 
+class SolicitudPurgaSchema(BaseModel):
+    """Cuerpo de `POST /admin/purga`. La confirmación es explícita y no tiene valor por defecto.
+
+    `confirmar` no lleva `= True` a propósito: un campo con valor por defecto convierte
+    "olvidé enviarlo" en "sí, adelante", que es justo lo que el contrato prohíbe.
+    """
+    tipo: str = Field(..., description="'documental' (libera peso) o 'eliminacion' (borra filas)")
+    confirmar: bool = Field(..., description="Debe ser true de forma expresa. Sin ella, 400")
+    expedientes: List[str] = Field(default_factory=list, description="Obligatorio para 'eliminacion': nunca se deduce")
+    solicitado_por: str = Field("cockpit", description="Quién lo pide, para el rastro de auditoría")
+
+    @field_validator("tipo")
+    @classmethod
+    def validar_tipo(cls, v: str) -> str:
+        if v not in ("documental", "eliminacion"):
+            raise ValueError("tipo debe ser 'documental' o 'eliminacion'")
+        return v
+
+
+class ResultadoPurgaSchema(BaseModel):
+    """Lo que hizo una purga, o lo que decidió no hacer y por qué."""
+    ejecutado: bool
+    tipo: str
+    version_politica: Optional[str] = None
+    documentos_purgados: int = 0
+    ficheros_borrados: int = 0
+    bytes_liberados: int = 0
+    expedientes_eliminados: int = 0
+    bloqueados: List[ExpedienteEvaluadoSchema] = Field(default_factory=list)
+    backup_asociado: Optional[str] = None
+    degradado: Optional[str] = Field(None, description="Causa por la que no se ejecutó, si no se ejecutó")
+
+
+class SolicitudRescateSchema(BaseModel):
+    """Cuerpo del rescate `ARCHIVADO → VIVO`, que siempre lo pide una persona."""
+    expedientes: List[str] = Field(..., min_length=1, description="Expedientes a devolver al canal principal")
+    solicitado_por: str = Field("cockpit", description="Quién lo pide, para el rastro")
+
+
+class ResultadoBackupSchema(BaseModel):
+    """Copia de seguridad creada bajo demanda."""
+    ruta: str = Field(..., description="Fichero .bak generado")
+    bytes: int = Field(..., description="Tamaño de la copia")
+    creado_at: str = Field(..., description="Timestamp ISO 8601 UTC")
+
+
 class EjecucionSchema(BaseModel):
     """Una corrida del pipeline con lo que encontró (esquema v6)."""
     id: int

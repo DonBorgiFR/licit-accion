@@ -347,6 +347,7 @@ class Depurador:
                 SELECT l.id FROM lotes l
                 JOIN expedientes e ON e.id = l.expediente_id
                 WHERE l.deleted_at IS NULL
+                  AND l.rescatado_at IS NULL
                   AND {condicion_estado}
                   AND e.fecha_limite IS NOT NULL
                   AND TRIM(e.fecha_limite) NOT IN ({marcadores_desconocidas})
@@ -365,6 +366,7 @@ class Depurador:
                 SELECT l.id FROM lotes l
                 JOIN expedientes e ON e.id = l.expediente_id
                 WHERE l.deleted_at IS NULL
+                  AND l.rescatado_at IS NULL
                   AND {condicion_estado}
                   AND (e.fecha_limite IS NULL OR TRIM(e.fecha_limite) IN ({marcadores_desconocidas}))
                   AND e.fecha_ingesta < ?
@@ -377,6 +379,7 @@ class Depurador:
         sql_expedientes = """
             UPDATE expedientes SET deleted_at = ?, deleted_reason = ?
             WHERE deleted_at IS NULL
+              AND rescatado_at IS NULL
               AND EXISTS (SELECT 1 FROM lotes WHERE expediente_id = expedientes.id)
               AND NOT EXISTS (
                   SELECT 1 FROM lotes
@@ -683,6 +686,59 @@ class Depurador:
             version_politica=self.politica.version,
             corte_utc=corte,
         )
+
+    # -----------------------------------------------------------------------------------
+    # Rescate manual: la única vía ARCHIVADO → VIVO
+    # -----------------------------------------------------------------------------------
+
+    def rescatar(self, expediente_ids: Sequence[str], solicitado_por: str = "usuario") -> int:
+        """Devuelve al canal principal expedientes archivados. **Sólo a petición de una persona.**
+
+        La transición `ARCHIVADO → VIVO` existe pero nunca es automática: si un criterio
+        archivara y otro desarchivara, el sistema oscilaría sin que nadie se enterase.
+
+        Marca `rescatado_at` además de vaciar `deleted_at`, y esa marca es la que hace que el
+        rescate sirva de algo: sin ella, la corrida siguiente volvería a archivar el lote
+        —la fecha límite sigue vencida— y quien lo rescató vería su decisión deshecha sola.
+        Mismo criterio que el Paso D5 aplicó al Centinela.
+
+        **No toca `estado_operativo`.** Un lote que el Radar marcó `Inactiva` al desaparecer
+        del feed vuelve al canal siendo `Inactiva`: recuperar visibilidad no es cambiar de
+        situación comercial, y eso lo decide quien mire la ficha.
+
+        Devuelve cuántos expedientes se rescataron.
+        """
+        if not expediente_ids:
+            return 0
+
+        marca = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        marcadores = ", ".join("?" for _ in expediente_ids)
+        ids = list(expediente_ids)
+
+        with self.memoria.db_lock():
+            with self.memoria.conectar() as conn:
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        f"UPDATE expedientes SET deleted_at = NULL, deleted_reason = NULL, "
+                        f"rescatado_at = ? WHERE id IN ({marcadores}) AND deleted_at IS NOT NULL;",
+                        [marca, *ids],
+                    )
+                    rescatados = cursor.rowcount or 0
+                    cursor.execute(
+                        f"UPDATE lotes SET deleted_at = NULL, deleted_reason = NULL, "
+                        f"rescatado_at = ? WHERE expediente_id IN ({marcadores}) "
+                        f"AND deleted_at IS NOT NULL;",
+                        [marca, *ids],
+                    )
+                    lotes = cursor.rowcount or 0
+
+        self._registrar_evento(
+            "DEPURADOR_RESCATE_MANUAL",
+            f"expedientes={rescatados} lotes={lotes} solicitado_por={solicitado_por} "
+            f"ids={','.join(ids)}",
+        )
+        return rescatados
 
     # -----------------------------------------------------------------------------------
     # Operación 3 del contrato — Eliminar físicamente

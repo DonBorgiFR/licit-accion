@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 7 cerrados** —el motor del Depurador está completo y su lectura ya se sirve por HTTP—, del 8 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.2.0**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 8 cerrados** —el motor del Depurador está completo y se sirve entero por HTTP—, el 9 y el 10 pendientes. Esquema de base de datos en **v7**; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1029,6 +1029,7 @@ Sin esta distinción, un "botón de borrar" es un botón de destruir aprendizaje
 | `lotes` | **+** `version_scoring` | Evita que dos generaciones de puntuación convivan sin distinguirse (lección D10). |
 | `ejecuciones` | **+** métricas de la corrida y `version_politica_retencion` | Convierte la tabla en un historial consultable de prospecciones. |
 | `purgas` *(nueva)* | Auditoría de cada purga | Qué se eliminó, cuánto espacio, quién lo pidió, bajo qué política y con qué copia de seguridad asociada. |
+| `lotes` y `expedientes` | **+** `rescatado_at` *(v7, Paso 8)* | Sin esta marca, el archivado automático deshacía en la corrida siguiente el rescate que había pedido una persona. |
 
 ```mermaid
 graph TD
@@ -1104,8 +1105,11 @@ graph TD
    - `/almacenamiento` separa **lo purgable de lo que no lo es**: la base de datos nunca entra, porque sus filas son memoria comercial y no espacio recuperable.
    - `/purga/previsualizacion` ensaya las dos purgas a la vez y devuelve **los expedientes protegidos con su motivo**, no sólo los eliminables: en una pantalla de borrado, poder comprobar que lo intocable no está en riesgo importa tanto como ver lo que va a desaparecer. No altera nada, pero deja constancia de quién miró.
    - Una política ilegible responde **503, nunca un listado vacío** *(Convención C2)*.
-8. **Paso 8 — Router Administrativo de Mutación**: 💤
-   - `POST /purga` y `POST /backup`, con confirmación explícita en el cuerpo, trazabilidad JSONL y errores tipados que distinguen el bloqueo por integridad del fallo por modo degradado.
+8. **Paso 8 — Router Administrativo de Mutación**: 🟢 Completado y Validado.
+   - `POST /purga` —documental o eliminación—, `POST /backup` y `POST /expedientes/rescatar`, con trazabilidad JSONL y errores tipados que distinguen el bloqueo por integridad (409) del modo degradado (503) y de la falta de confirmación (400).
+   - **La confirmación no tiene valor por defecto**: un campo con `= True` convertiría un olvido en un consentimiento. Y la lista de expedientes a eliminar nunca se deduce.
+   - Que todos los expedientes queden bloqueados **no se devuelve como error**: es la invariante funcionando, y esconder el motivo tras un 409 quitaría la información justo cuando más falta hace.
+   - **Rescate `ARCHIVADO → VIVO`** y migración a **esquema v7** (`rescatado_at`). Sin esa marca el rescate no serviría de nada: la corrida siguiente volvería a archivar el lote y quien lo rescató vería su decisión deshecha sola. Es una columna y no una entrada de texto en el histórico por la Convención C3. El rescate **no altera el estado comercial**: recuperar visibilidad no es cambiar de situación.
 
 #### **Fase 4: Cockpit, Verificación y Cierre**
 9. **Paso 9 — Pantalla de Administración en el Cockpit**: 💤

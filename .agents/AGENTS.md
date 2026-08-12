@@ -14,21 +14,21 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: Capas 1-8 construidas, con la suite en **315/315** y el Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia en el README y **Pasos 1 a 7 cerrados**. El esquema de base de datos vigente es **v6** y la política de retención, **v1.2.0**. De 34 hallazgos catalogados, los 34 están cerrados.
+**Estado en una línea**: Capas 1-8 construidas, con la suite en **323/323** y el Cockpit compilado y **verificado arrancándolo contra la base real**. **La Capa 9 está abierta desde el 2026-08-07**: estrategia en el README y **Pasos 1 a 8 cerrados**. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 34 hallazgos catalogados, los 34 están cerrados.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 315/315
+python -m pytest tests/ -q          # debe dar 323/323
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Siguiente tarea concreta: Capa 9, Paso 8
+### ⏭️ Siguiente tarea concreta: Capa 9, Paso 9
 
-**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 a 7 cerrados; del 8 al 10, pendientes.** El motor está completo y su mitad de lectura ya se sirve por HTTP: queda la mutación (Paso 8), la pantalla (Paso 9) y el cierre de capa (Paso 10).
+**La Capa 9 se abrió el 2026-08-07.** Su estrategia completa está en el `README.md`, sección *"💾 Capa 9: El Histórico y Depurador"*. **Pasos 1 a 8 cerrados; el 9 y el 10, pendientes.** El motor está completo y se sirve entero por HTTP: queda la pantalla de administración (Paso 9) y el cierre de capa (Paso 10).
 
 * **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
 * **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`. Hoy en **v1.2.0**, con los bloques `archivado` (Paso 4) y `eliminacion` (Paso 6).
@@ -37,6 +37,7 @@ python -m pytest tests/ -q          # debe dar 315/315
 * **Paso 5** 🟢 — motor de purga documental en `src/depurador.py`. **Cierra H-33 y H-34.** No fue consolidación sino reparación: ninguna de las dos piezas que había hacía su trabajo.
 * **Paso 6** 🟢 — motor de eliminación física, con la invariante de memoria comercial apoyada en tres fuentes y una cuarentena de 365 días archivado. **Nunca se dispara sola.**
 * **Paso 7** 🟢 — router administrativo de lectura en `src/api/routers/admin.py`. Cuatro endpoints que no mutan nada: es la mitad honesta de la purga en dos tiempos.
+* **Paso 8** 🟢 — router de mutación, el rescate `ARCHIVADO → VIVO` y el **esquema v7** (`rescatado_at`), que es lo que hace que un rescate sobreviva a la corrida siguiente.
 
 > 🔑 **La lección del Paso 5, que vale para todo lo que queda**: el aviso de este dosier —*"antes de escribir código nuevo, comprobar qué hace ya el código viejo"*— era literal. La purga se ejecutaba en cada corrida, no fallaba nunca y **no liberaba un solo byte**, porque seleccionaba documentos por un estado que sólo tienen antes de procesarse. Y el mismo vocabulario partido dejaba al Analista IA sin recibir ni un pliego. Dos capas dadas por operativas trabajando en vacío, en verde y sin una sola excepción. **Que un módulo se ejecute no es prueba de que haga algo: hay que medir su efecto.**
 
@@ -68,7 +69,7 @@ Queda **una cuestión de diseño abierta, sin urgencia**: el Cockpit no muestra 
 pantalla —`sector` sólo existe en `frontend/src/types/api.ts`, sin componente que lo pinte—. El
 dato se calcula, se persiste y se sirve, pero nadie lo ve.
 
-Y una **inconsistencia latente, hoy inocua**: `Memoria.actualizar_estado_lote()` guarda el estado
+~~Y una **inconsistencia latente, hoy inocua**~~ **— cerrada el 2026-08-12 dentro del Paso 8.** `Memoria.actualizar_estado_lote()` guardaba el estado
 en minúsculas, mientras el selector del Cockpit ofrece los valores capitalizados del enum. Un lote
 guardado como `'perdida'` se pintaría en la interfaz como *"Nueva"*, porque el `<select>` no
 encuentra la opción y cae en la primera. **No afecta hoy**: ningún código de producción llama a ese
@@ -358,7 +359,9 @@ cd frontend && npm run dev          # http://localhost:5173
   * Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`): 🟢 **Completado el 2026-08-12.** `/almacenamiento`, `/retencion`, `/purga/previsualizacion` e `/ejecuciones`, todos GET y ninguno con efectos. La previsualización **no altera nada pero no es anónima**: emite `DEPURADOR_PURGA_PREVISUALIZADA`. Una política ilegible devuelve **503, nunca un listado vacío**: "no hay nada que purgar" y "no he podido leer el criterio" no pueden parecerse en pantalla. Nuevos `medir_almacenamiento()`, `directorio_documentos()` y `Depurador.previsualizar_purga_documental()`, más `Memoria.listar_ejecuciones()`. 11 regresiones en `tests/test_capa9_admin_api.py`. **Verificado levantando la API real** y consultando los cuatro endpoints por HTTP.
 
   > 🔎 **Dos coherencias por accidente detectadas y unificadas aquí**: los pliegos y el registro JSONL del Depurador viven **junto a la base** (`dirname(db_path)`), no en `ruta_datos()` — coinciden sólo mientras la base esté en `data/`. `directorio_documentos()` es ahora el único sitio que lo decide. Y la política guarda los estados normalizados en minúsculas (H-27), de modo que servirlos tal cual habría pintado *"nueva"* junto a los *"Nueva"* del Funnel; la grafía visible sale del enum, no de un `.capitalize()` que se comería la mayúscula de `Anulada_Administracion`.
-  * Paso 8 — Router Administrativo de Mutación: 💤
+  * Paso 8 — Router Administrativo de Mutación: 🟢 **Completado el 2026-08-12.** `POST /purga` (documental o eliminación), `POST /backup` y `POST /expedientes/rescatar`. **La confirmación viaja en el cuerpo y no tiene valor por defecto**: un campo con `= True` convertiría "olvidé enviarlo" en "sí, adelante". Errores tipados traducidos: 400 sin confirmación o sin lista explícita, 409 por integridad, 503 si falla la copia previa o la política. Que todo quede bloqueado **no es un 409**: es la invariante funcionando, y el cliente necesita ver el motivo de cada expediente. **Esquema v7**: nueva columna `rescatado_at` en `lotes` y `expedientes`. 8 regresiones nuevas en `tests/test_capa9_admin_api.py`. Verificado en vivo con la API real, incluida la migración v6→v7 de la base.
+
+  > 🔑 **Por qué el rescate necesitó una migración**: sin marca, la corrida siguiente volvía a archivar el lote —la fecha límite sigue vencida— y quien lo rescató vería su decisión deshecha sola. Es la transición prohibida nº 7 vista desde el otro lado, y el mismo criterio que el Paso D5 fijó para el Centinela: **una reejecución del pipeline no puede pisar lo que decidió una persona.** Se resolvió con una columna y no con una entrada en `log_cambios` por la Convención C3: una protección que dependa de analizar texto libre es una protección que un día deja de encontrar lo que busca.
   * Paso 9 — Pantalla de Administración en el Cockpit: 💤
   * Paso 10 — Suite E2E, Verificación en Vivo y Cierre de Capa 9: 💤
 

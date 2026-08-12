@@ -130,7 +130,7 @@ def test_una_base_nueva_nace_en_v6_completa(tmp_path):
     memoria.setup_db()
 
     with memoria.conectar() as conn:
-        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == 6
+        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == ESQUEMA_VERSION_ACTUAL
         assert {"deleted_at", "deleted_reason"} <= columnas(conn, "expedientes")
         assert "version_scoring" in columnas(conn, "lotes")
         assert {"expedientes_nuevos", "errores", "version_politica_retencion"} <= columnas(conn, "ejecuciones")
@@ -152,7 +152,7 @@ def test_la_migracion_desde_v5_anade_las_columnas_del_ciclo_de_vida(base_v5):
     memoria.setup_db()
 
     with memoria.conectar() as conn:
-        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == 6
+        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == ESQUEMA_VERSION_ACTUAL
         assert {"deleted_at", "deleted_reason"} <= columnas(conn, "expedientes")
         assert "version_scoring" in columnas(conn, "lotes")
         assert {"lotes_evaluados", "version_politica_retencion"} <= columnas(conn, "ejecuciones")
@@ -179,7 +179,7 @@ def test_la_migracion_es_idempotente(base_v5):
     memoria.setup_db()
 
     with memoria.conectar() as conn:
-        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == 6
+        assert conn.execute("SELECT version FROM metadata;").fetchone()[0] == ESQUEMA_VERSION_ACTUAL
         assert conn.execute("SELECT COUNT(*) FROM lotes;").fetchone()[0] == 3
 
 

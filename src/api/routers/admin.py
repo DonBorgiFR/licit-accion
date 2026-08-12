@@ -10,7 +10,9 @@ anónima**. Emite `DEPURADOR_PURGA_PREVISUALIZADA` porque el contrato pide que c
 miró: en una operación irreversible, saber quién la estudió y cuándo forma parte del rastro.
 """
 
+import os
 import sqlite3
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -25,8 +27,18 @@ from src.api.schemas import (
     PoliticaRetencionSchema,
     PrevisualizacionPurgaSchema,
     PurgaDocumentalPreviaSchema,
+    ResultadoBackupSchema,
+    ResultadoPurgaSchema,
+    SolicitudPurgaSchema,
+    SolicitudRescateSchema,
 )
-from src.depurador import Depurador, medir_almacenamiento
+from src.depurador import (
+    ConfirmacionRequerida,
+    CopiaSeguridadFallida,
+    Depurador,
+    PurgaBloqueadaPorIntegridad,
+    medir_almacenamiento,
+)
 from src.memoria import Memoria
 from src.retencion import PoliticaRetencionInvalida, cargar_politica
 
@@ -193,3 +205,170 @@ def get_ejecuciones(
         limit=limit,
         total_pages=total_pages,
     )
+
+
+# =======================================================================================
+# Mutación (Capa 9, Paso 8)
+#
+# Aquí empieza lo que sí altera. Las precondiciones del motor no se relajan al exponerlo:
+# la confirmación viaja en el cuerpo y no tiene valor por defecto, la lista de expedientes
+# nunca se deduce, y cada error tipado del contrato tiene su código HTTP.
+# =======================================================================================
+
+@router.post(
+    "/purga",
+    response_model=ResultadoPurgaSchema,
+    responses={
+        400: {"model": APIErrorResponse, "description": "Falta la confirmación explícita"},
+        409: {"model": APIErrorResponse, "description": "Integridad referencial"},
+        503: {"model": APIErrorResponse, "description": "Modo degradado: política o copia de seguridad"},
+    },
+    summary="Ejecuta una purga",
+    description="`tipo='documental'` libera peso en disco y no toca ninguna fila de negocio. "
+                "`tipo='eliminacion'` borra expedientes que nunca llegaron a ser negocio, "
+                "exige la lista explícita y crea una copia de seguridad previa. Los "
+                "expedientes protegidos se devuelven con su motivo, no se silencian.",
+)
+def post_purga(solicitud: SolicitudPurgaSchema):
+    if not solicitud.confirmar:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La purga exige confirmación explícita. Previsualice primero en "
+                   "GET /api/v1/admin/purga/previsualizacion.",
+        )
+
+    politica = _politica_o_503()
+    depurador = Depurador(memoria=Memoria(), politica=politica)
+
+    if solicitud.tipo == "documental":
+        resultado = depurador.purgar_documentos(solicitado_por=solicitud.solicitado_por)
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_PURGA_DOCUMENTAL",
+            {"ejecutado": resultado.ejecutado, "documentos": resultado.documentos_purgados,
+             "bytes": resultado.bytes_liberados, "solicitado_por": solicitud.solicitado_por},
+            estado="INFO" if resultado.ejecutado else "ERROR",
+        )
+        if not resultado.ejecutado:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Purga documental no ejecutada: {resultado.motivo_degradacion}",
+            )
+        return ResultadoPurgaSchema(
+            ejecutado=True,
+            tipo="documental",
+            version_politica=resultado.version_politica,
+            documentos_purgados=resultado.documentos_purgados,
+            ficheros_borrados=resultado.ficheros_borrados,
+            bytes_liberados=resultado.bytes_liberados,
+        )
+
+    if not solicitud.expedientes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La eliminación exige la lista explícita de expedientes. Nunca se deduce.",
+        )
+
+    try:
+        resultado = depurador.eliminar_expedientes(
+            solicitud.expedientes, confirmado=True, solicitado_por=solicitud.solicitado_por
+        )
+    except ConfirmacionRequerida as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except CopiaSeguridadFallida as exc:
+        # 503 y no 500: no es un fallo del servidor sino la negativa deliberada a borrar
+        # sin red. La degradación correcta de una operación irreversible es no hacer nada.
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except PurgaBloqueadaPorIntegridad as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    trazabilidad_api.registrar_evento(
+        "API_ADMIN_ELIMINACION",
+        {"eliminados": resultado.expedientes_eliminados,
+         "bloqueados": len(resultado.bloqueados),
+         "solicitado_por": solicitud.solicitado_por},
+        estado="INFO" if resultado.ejecutado else "ERROR",
+    )
+    if not resultado.ejecutado:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Eliminación no ejecutada: {resultado.motivo_degradacion}",
+        )
+
+    # Que todo quedara bloqueado **no es un error**: es la invariante funcionando, y el
+    # cliente necesita ver el motivo de cada uno. Devolverlo como 409 escondería la
+    # información justo cuando más falta hace.
+    return ResultadoPurgaSchema(
+        ejecutado=True,
+        tipo="eliminacion",
+        version_politica=resultado.version_politica,
+        documentos_purgados=resultado.documentos_eliminados,
+        ficheros_borrados=resultado.ficheros_borrados,
+        bytes_liberados=resultado.bytes_liberados,
+        expedientes_eliminados=resultado.expedientes_eliminados,
+        bloqueados=resultado.bloqueados,
+        backup_asociado=resultado.backup_asociado,
+    )
+
+
+@router.post(
+    "/backup",
+    response_model=ResultadoBackupSchema,
+    responses={503: {"model": APIErrorResponse, "description": "No se pudo crear la copia"}},
+    summary="Copia de seguridad bajo demanda",
+    description="Copia transaccional en caliente de la base, con verificación de "
+                "consistencia. Es la red que conviene tender antes de tocar nada.",
+)
+def post_backup(solicitado_por: str = Query("cockpit", description="Quién la pide, para el rastro")):
+    try:
+        ruta = Memoria().realizar_backup(run_id=0)
+    except Exception as exc:
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_BACKUP_FAILED", {"error": str(exc)}, estado="ERROR"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No se pudo crear la copia de seguridad: {exc}",
+        )
+
+    tamano = os.path.getsize(ruta) if os.path.exists(ruta) else 0
+    trazabilidad_api.registrar_evento(
+        "API_ADMIN_BACKUP", {"ruta": ruta, "bytes": tamano, "solicitado_por": solicitado_por},
+        estado="INFO",
+    )
+    return ResultadoBackupSchema(
+        ruta=ruta, bytes=tamano, creado_at=datetime.now(timezone.utc).isoformat()
+    )
+
+
+@router.post(
+    "/expedientes/rescatar",
+    response_model=dict,
+    responses={503: {"model": APIErrorResponse, "description": "Fallo escribiendo en la base"}},
+    summary="Devuelve expedientes archivados al canal principal",
+    description="La transición ARCHIVADO → VIVO. Existe, pero **siempre la pide una "
+                "persona**: si un criterio automático archivara y otro desarchivara, el "
+                "sistema oscilaría sin que nadie se enterase. El rescate deja marca, de modo "
+                "que la corrida siguiente no vuelve a archivar lo que alguien devolvió. No "
+                "altera el estado comercial: recuperar visibilidad no es cambiar de situación.",
+)
+def post_rescatar(solicitud: SolicitudRescateSchema):
+    try:
+        rescatados = Depurador(memoria=Memoria()).rescatar(
+            solicitud.expedientes, solicitado_por=solicitud.solicitado_por
+        )
+    except sqlite3.Error as exc:
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_RESCATE_FAILED", {"error": str(exc)}, estado="ERROR"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No se pudo completar el rescate: {exc}",
+        )
+
+    trazabilidad_api.registrar_evento(
+        "API_ADMIN_RESCATE",
+        {"rescatados": rescatados, "expedientes": solicitud.expedientes,
+         "solicitado_por": solicitud.solicitado_por},
+        estado="INFO",
+    )
+    return {"rescatados": rescatados, "expedientes": solicitud.expedientes}

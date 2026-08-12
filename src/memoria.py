@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from src import (
     ESTADOS_OPERATIVOS_VALIDOS,
     PROJECT_ROOT,
+    grafia_canonica_estado,
     normalizar_estado_operativo,
     ruta_proyecto,
     ruta_datos,
@@ -170,7 +171,7 @@ def calcular_feed_hash(licitacion: Dict[str, Any]) -> str:
 # como atributo de clase—, de modo que una base recién creada podía nacer declarando una
 # versión distinta de la que el código esperaba y disparar una migración sobre un esquema
 # que ya estaba al día. Ahora sólo hay una fuente.
-ESQUEMA_VERSION_ACTUAL = 6
+ESQUEMA_VERSION_ACTUAL = 7
 
 SQL_CREATE_METADATA = """
 CREATE TABLE IF NOT EXISTS metadata (
@@ -221,7 +222,9 @@ CREATE TABLE IF NOT EXISTS expedientes (
     -- Ciclo de vida (Capa 9, esquema v6). Hasta v5 sólo `lotes` tenía borrado lógico, así
     -- que un expediente entero no podía archivarse. Ver `.agents/CONTRATO_CAPA_9.md`.
     deleted_at TEXT,
-    deleted_reason TEXT
+    deleted_reason TEXT,
+    -- Rescate manual (esquema v7). Ver la nota en `lotes`.
+    rescatado_at TEXT
 );
 """
 
@@ -256,6 +259,11 @@ CREATE TABLE IF NOT EXISTS lotes (
     fecha_devolucion_garantia TEXT,
     deleted_at TEXT,
     deleted_reason TEXT,
+    -- Marca de rescate manual (esquema v7). Mientras tenga valor, el archivado automático
+    -- no vuelve a tocar el lote: lo devolvió al canal una persona, y una corrida del
+    -- pipeline no puede deshacer esa decisión. Si lo hiciera, el lote entraría y saldría
+    -- del Funnel solo, que es la transición prohibida nº 7 del contrato vista al revés.
+    rescatado_at TEXT,
     -- Versión del contrato de scoring bajo la que se puntuó este lote (esquema v6).
     -- Lección del borrado de la beta (Paso D10): los datos de julio hubo que tirarlos
     -- porque estaban puntuados con la lógica anterior al Bloque 2 y convivían con los
@@ -908,6 +916,28 @@ class Memoria:
                                                 (ESTADO_ANULADA_ADMINISTRACION,)
                                             )
 
+                                        # Migración a v7 — Capa 9, Paso 8: el rescate manual
+                                        #
+                                        # Sin esta marca, rescatar un lote archivado no serviría
+                                        # de nada: la corrida siguiente volvería a archivarlo
+                                        # —la fecha límite sigue vencida— y el lote entraría y
+                                        # saldría del Funnel solo. Es la transición prohibida
+                                        # nº 7 del contrato vista desde el otro lado, y el mismo
+                                        # criterio que el Paso D5 fijó para el Centinela: una
+                                        # reejecución del pipeline no puede pisar lo que decidió
+                                        # una persona.
+                                        #
+                                        # Es una columna y no una entrada en `log_cambios` a
+                                        # propósito (Convención C3): una protección que dependa
+                                        # de analizar texto libre es una protección que un día
+                                        # deja de encontrar lo que busca.
+                                        if version_actual < 7:
+                                            for tabla in ("lotes", "expedientes"):
+                                                if not _columna_existe(tabla, "rescatado_at"):
+                                                    conn_mig.execute(
+                                                        f"ALTER TABLE {tabla} ADD COLUMN rescatado_at TEXT;"
+                                                    )
+
 
                                         # Re-crear índices (v2, v3, v4 y v5)
                                         for query in SQL_CREATE_INDICES:
@@ -1492,7 +1522,15 @@ class Memoria:
     def actualizar_estado_lote(self, expediente_id: str, lote_numero: int, estado: str) -> None:
         """
         Actualiza el estado operativo comercial de un lote específico por el usuario.
-        Aplica normalización higiénica en minúsculas y sin espacios.
+
+        **Escribe la grafía canónica, no la normalizada.** Hasta el Paso 8 guardaba el estado
+        en minúsculas mientras el selector del Cockpit ofrece los valores capitalizados del
+        enum: un lote guardado como `'perdida'` se habría pintado como *"Nueva"*, porque el
+        `<select>` no encontraría su opción y caería en la primera. No llegó a ocurrir porque
+        ningún código de producción llamaba a este método —la vía real es
+        `mutar_estado_lote_transaccional()`—, pero era la misma familia de H-27 esperando a
+        que alguien lo cableara a una CLI o a un endpoint. La comparación se sigue haciendo
+        normalizada; lo que cambia es lo que se persiste.
 
         Deja rastro del cambio en `expedientes.log_cambios` (H-31). No es cosmético: es la
         única evidencia de que alguien invirtió criterio en este lote, y de ella depende la
@@ -1500,6 +1538,7 @@ class Memoria:
         """
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         estado_clean = normalizar_estado_operativo(estado)
+        estado_persistido = grafia_canonica_estado(estado)
         with self.conectar() as conn:
             with conn:
                 cursor = conn.cursor()
@@ -1512,7 +1551,7 @@ class Memoria:
 
                 cursor.execute(
                     "UPDATE lotes SET estado_operativo = ?, updated_by = 'user', updated_at = ? WHERE expediente_id = ? AND lote_numero = ?;",
-                    (estado_clean, now_str, expediente_id, lote_numero)
+                    (estado_persistido, now_str, expediente_id, lote_numero)
                 )
 
                 # Sólo se anota si hubo cambio real: reafirmar el estado actual no es
