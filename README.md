@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 6 cerrados** —el motor del Depurador está completo—, del 7 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.2.0**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 7 cerrados** —el motor del Depurador está completo y su lectura ya se sirve por HTTP—, del 8 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1099,8 +1099,11 @@ graph TD
    - **No se cablea al pipeline.** `run.py` no puede eliminar un expediente ni queriendo: la operación exige lista explícita y confirmación expresa, y sólo llegará por la API del Paso 8.
 
 #### **Fase 3: Exposición por la Pasarela API**
-7. **Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`)**: 💤
-   - `/almacenamiento`, `/retencion`, `/purga/previsualizacion` e `/ejecuciones`. Ninguno altera estado: sirven para **mirar antes de decidir**.
+7. **Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`)**: 🟢 Completado y Validado.
+   - `/almacenamiento`, `/retencion`, `/purga/previsualizacion` e `/ejecuciones`. Ninguno altera estado: sirven para **mirar antes de decidir**, y sin ellos el Paso 8 sería un botón que borra a ciegas.
+   - `/almacenamiento` separa **lo purgable de lo que no lo es**: la base de datos nunca entra, porque sus filas son memoria comercial y no espacio recuperable.
+   - `/purga/previsualizacion` ensaya las dos purgas a la vez y devuelve **los expedientes protegidos con su motivo**, no sólo los eliminables: en una pantalla de borrado, poder comprobar que lo intocable no está en riesgo importa tanto como ver lo que va a desaparecer. No altera nada, pero deja constancia de quién miró.
+   - Una política ilegible responde **503, nunca un listado vacío** *(Convención C2)*.
 8. **Paso 8 — Router Administrativo de Mutación**: 💤
    - `POST /purga` y `POST /backup`, con confirmación explícita en el cuerpo, trazabilidad JSONL y errores tipados que distinguen el bloqueo por integridad del fallo por modo degradado.
 
@@ -1117,7 +1120,8 @@ graph TD
 - `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟢 **Completo (Pasos 4, 5 y 6)**.
 - `tests/test_capa9_purga_documental.py`: regresiones de la purga documental. 🟢 **Creado (Paso 5)**, 14 pruebas.
 - `tests/test_capa9_eliminacion.py`: regresiones de la invariante de memoria comercial. 🟢 **Creado (Paso 6)**, 24 pruebas.
-- `src/api/routers/admin.py`: endpoints de administración y purga. 💤 Pasos 7 y 8.
+- `src/api/routers/admin.py`: endpoints de administración y purga. 🟡 **Lectura completa (Paso 7)**; le falta la mutación del Paso 8.
+- `tests/test_capa9_admin_api.py`: regresiones del router administrativo. 🟢 **Creado (Paso 7)**, 11 pruebas.
 - `tests/test_capa9_archivado.py`: regresiones del ciclo de vida. 🟢 **Creado (Paso 4)**, 41 pruebas. La suite E2E del Paso 10 se sumará aquí.
 - `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 💤 Paso 9.
 

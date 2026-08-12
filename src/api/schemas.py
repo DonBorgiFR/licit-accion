@@ -312,6 +312,88 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 
 # ==============================================================================
+# Esquemas de Administración y Depurador (Capa 9, Pasos 7 y 8)
+# ==============================================================================
+
+class AlmacenamientoSchema(BaseModel):
+    """Dónde está el peso. Separa lo purgable de lo que no lo es, que es la decisión."""
+    base_datos_bytes: int = Field(..., description="Tamaño del fichero SQLite. NO es purgable: sus filas son la memoria comercial")
+    documentos_bytes: int = Field(..., description="Pliegos y anexos descargados en data/documents/")
+    documentos_ficheros: int = Field(..., description="Número de ficheros documentales en disco")
+    copias_bytes: int = Field(..., description="Copias de seguridad en data/backups/")
+    copias_ficheros: int = Field(..., description="Número de copias de seguridad conservadas")
+    registros_bytes: int = Field(..., description="Tamaño del registro de trazabilidad pipeline.jsonl")
+    total_bytes: int = Field(..., description="Suma de todo lo anterior")
+    purgable_bytes: int = Field(..., description="Lo que una purga podría liberar: documentos y copias, nunca la base")
+
+
+class PoliticaArchivadoSchema(BaseModel):
+    dias_tras_fecha_limite: int
+    estados_archivables: List[str]
+    archivar_expediente_con_todos_sus_lotes: bool
+
+
+class PoliticaEliminacionSchema(BaseModel):
+    dias_archivado_minimo: int
+
+
+class PoliticaRetencionSchema(BaseModel):
+    """La política vigente y su versión, tal y como se lee de config/retencion.yaml."""
+    version: str = Field(..., description="Versión de la política bajo la que se ejecuta cada purga")
+    documentos_dias: int = Field(..., description="Días que se conservan los pliegos, contados desde la fecha límite")
+    backups_dias: int = Field(..., description="Días que se conservan las copias de seguridad")
+    archivado: Optional[PoliticaArchivadoSchema] = Field(None, description="Ausente significa que no se archiva nada")
+    eliminacion: Optional[PoliticaEliminacionSchema] = Field(None, description="Ausente significa que no se elimina nada")
+
+
+class ExpedienteEvaluadoSchema(BaseModel):
+    """Veredicto sobre un expediente. El motivo del bloqueo importa tanto como el borrado."""
+    expediente_id: str
+    eliminable: bool
+    motivo: Optional[str] = None
+    detalle_motivo: Optional[str] = None
+    lotes: int = 0
+    documentos: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PurgaDocumentalPreviaSchema(BaseModel):
+    documentos_candidatos: int = Field(..., description="Documentos que perderían su fichero y su texto")
+    ficheros_en_disco: int = Field(..., description="Cuántos de ellos tienen todavía fichero que borrar")
+    bytes_estimados: int = Field(..., description="Espacio que se liberaría, medido en disco")
+    corte_utc: Optional[str] = Field(None, description="Fecha de corte aplicada según la política")
+
+
+class PrevisualizacionPurgaSchema(BaseModel):
+    """Qué desaparecería si se purgara ahora. **No altera nada, pero consta quién miró.**"""
+    version_politica: Optional[str] = None
+    documental: PurgaDocumentalPreviaSchema
+    eliminables: List[ExpedienteEvaluadoSchema] = Field(default_factory=list, description="Expedientes que nunca llegaron a ser negocio")
+    bloqueados: List[ExpedienteEvaluadoSchema] = Field(default_factory=list, description="Protegidos, con el motivo exacto de cada uno")
+    degradado: Optional[str] = Field(None, description="Causa por la que no se ha podido evaluar, si la hay")
+
+
+class EjecucionSchema(BaseModel):
+    """Una corrida del pipeline con lo que encontró (esquema v6)."""
+    id: int
+    start_time: str
+    end_time: Optional[str] = None
+    estado: str
+    expedientes_nuevos: Optional[int] = 0
+    expedientes_actualizados: Optional[int] = 0
+    lotes_evaluados: Optional[int] = 0
+    documentos_descargados: Optional[int] = 0
+    analisis_realizados: Optional[int] = 0
+    alertas_generadas: Optional[int] = 0
+    errores: Optional[int] = 0
+    version_scoring: Optional[str] = None
+    version_politica_retencion: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==============================================================================
 # Esquemas de Mutación / Transición de Estado (PUT Body)
 # ==============================================================================
 

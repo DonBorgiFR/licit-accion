@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.schemas import APIErrorResponse
 from src.api.dependencies import APIDependencyError, trazabilidad_api
 from src.api.middleware import TrazabilidadMiddleware
-from src.api.routers import health, kpis, licitaciones, centinela
+from src.api.routers import admin, health, kpis, licitaciones, centinela
 
 
 from contextlib import asynccontextmanager
@@ -122,6 +122,7 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(kpis.router, prefix="/api/v1")
 app.include_router(licitaciones.router, prefix="/api/v1")
 app.include_router(centinela.router, prefix="/api/v1")
+app.include_router(admin.router, prefix="/api/v1")
 
 
 # ==============================================================================

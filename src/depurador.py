@@ -227,6 +227,65 @@ class ResultadoArchivado:
         return self.lotes_archivados > 0 or self.expedientes_archivados > 0
 
 
+def directorio_documentos(db_path: Optional[str] = None) -> str:
+    """Dónde viven los pliegos descargados: **junto a la base**, no en `data/` sin más.
+
+    Existe para que haya un solo sitio que lo decida. `Lector._path_for_document()` los
+    escribe en `dirname(db_path)/documents` con caída a `ruta_datos()`, y cualquier otro
+    módulo que dedujera la ruta por su cuenta acertaría sólo mientras las dos coincidieran
+    —que es hoy, y por accidente—. Un Depurador que buscara los ficheros en otro directorio
+    no fallaría: no encontraría nada y diría que no hay nada que purgar.
+    """
+    base = ruta_datos()
+    if db_path:
+        base = os.path.dirname(db_path) or ruta_datos()
+    return os.path.join(base, "documents")
+
+
+def medir_almacenamiento(db_path: Optional[str] = None) -> Dict[str, int]:
+    """Inventario de lo que ocupa cada cosa, en bytes. **No toca nada.**
+
+    Existe para responder a la pregunta con la que empieza cualquier decisión de purga:
+    *¿dónde está el peso?* Separa lo purgable —pliegos y copias— de lo que no lo es —la
+    base—, porque son los dos platos de la balanza y confundirlos lleva a purgar lo que no
+    libera espacio: la memoria comercial son filas, no ficheros.
+    """
+    def peso_de(directorio: str):
+        total = 0
+        ficheros = 0
+        if not os.path.isdir(directorio):
+            return 0, 0
+        for raiz, _, nombres in os.walk(directorio):
+            for nombre in nombres:
+                try:
+                    total += os.path.getsize(os.path.join(raiz, nombre))
+                    ficheros += 1
+                except OSError:
+                    continue
+        return total, ficheros
+
+    ruta_db = db_path or os.environ.get("DB_PATH_INCOOP") or ruta_datos("licitaciones.db")
+    documentos_bytes, documentos_ficheros = peso_de(directorio_documentos(ruta_db))
+    copias_bytes, copias_ficheros = peso_de(os.path.join(os.path.dirname(ruta_db), "backups"))
+
+    base_bytes = os.path.getsize(ruta_db) if os.path.exists(ruta_db) else 0
+    registro = ruta_datos("pipeline.jsonl")
+    registros_bytes = os.path.getsize(registro) if os.path.exists(registro) else 0
+
+    return {
+        "base_datos_bytes": base_bytes,
+        "documentos_bytes": documentos_bytes,
+        "documentos_ficheros": documentos_ficheros,
+        "copias_bytes": copias_bytes,
+        "copias_ficheros": copias_ficheros,
+        "registros_bytes": registros_bytes,
+        "total_bytes": base_bytes + documentos_bytes + copias_bytes + registros_bytes,
+        # Lo que una purga podría liberar. La base no entra: sus filas son la memoria
+        # comercial, y no se purgan jamás.
+        "purgable_bytes": documentos_bytes + copias_bytes,
+    }
+
+
 class Depurador:
     """Motor de ciclo de vida del dato: archiva, purga peso documental y elimina.
 
@@ -585,6 +644,44 @@ class Depurador:
             ejecutado=True,
             copias_rotadas=rotadas,
             version_politica=self.politica.version,
+        )
+
+    def previsualizar_purga_documental(
+        self, ahora: Optional[datetime] = None
+    ) -> ResultadoPurgaDocumental:
+        """Qué documentos se purgarían ahora, **sin borrar nada**.
+
+        Alimenta la pantalla de administración: mirar antes de decidir. Devuelve la misma
+        forma que `purgar_documentos()` para que la interfaz no tenga que distinguir entre
+        el ensayo y la función, con `documentos_purgados` como recuento de candidatos y
+        `bytes_liberados` como estimación tomada del disco.
+        """
+        degradacion = self._motivo_para_no_purgar()
+        if degradacion:
+            return ResultadoPurgaDocumental(ejecutado=False, motivo_degradacion=degradacion)
+
+        ahora = ahora or datetime.now(timezone.utc)
+        corte = (ahora - timedelta(days=self.politica.documentos_dias)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        candidatos = self.memoria.obtener_documentos_para_purga(corte)
+
+        bytes_estimados = 0
+        ficheros = 0
+        for doc in candidatos:
+            ruta = doc.get("local_path")
+            if ruta and os.path.exists(ruta):
+                ficheros += 1
+                try:
+                    bytes_estimados += os.path.getsize(ruta)
+                except OSError:
+                    pass
+
+        return ResultadoPurgaDocumental(
+            ejecutado=True,
+            documentos_purgados=len(candidatos),
+            ficheros_borrados=ficheros,
+            bytes_liberados=bytes_estimados,
+            version_politica=self.politica.version,
+            corte_utc=corte,
         )
 
     # -----------------------------------------------------------------------------------
@@ -1014,7 +1111,7 @@ class Depurador:
                 "aplican plazos por defecto"
             )
 
-        directorio = ruta_datos("documents")
+        directorio = directorio_documentos(getattr(self.memoria, "db_path", None))
         if os.path.isdir(directorio) and not self._directorio_escribible(directorio):
             return (
                 f"sin_permiso_escritura: no se puede escribir en '{directorio}', de modo "

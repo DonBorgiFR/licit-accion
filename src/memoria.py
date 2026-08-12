@@ -1153,6 +1153,28 @@ class Memoria:
             )
             return cursor.fetchone()[0]
 
+    def listar_ejecuciones(self, page: int = 1, limit: int = 25):
+        """Historial paginado de prospecciones con sus métricas (esquema v6).
+
+        Convierte la tabla `ejecuciones` en lo que el punto 8 del diseño de la Capa 9 pedía:
+        algo capaz de responder a *"¿qué encontró la prospección del martes?"*. Hasta v6 sólo
+        guardaba cuándo empezó y acabó cada corrida.
+
+        Devuelve `(items, total)`. Más reciente primero: al abrir la pantalla, lo que
+        interesa es la última corrida, no la primera de la historia.
+        """
+        offset = max(0, (max(1, page) - 1) * limit)
+        with self.conectar() as conn:
+            conn.row_factory = sqlite3.Row
+            total = conn.execute("SELECT COUNT(*) FROM ejecuciones;").fetchone()[0]
+            filas = conn.execute(
+                "SELECT id, start_time, end_time, estado, "
+                + ", ".join(self.METRICAS_EJECUCION_VALIDAS)
+                + " FROM ejecuciones ORDER BY id DESC LIMIT ? OFFSET ?;",
+                (limit, offset),
+            ).fetchall()
+        return [dict(fila) for fila in filas], total
+
     def registrar_purga(
         self,
         tipo: str,
