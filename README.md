@@ -1182,61 +1182,91 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 ### 🔍 Consideraciones Críticas de Diseño e Inteligencia de Negocio
 
 1. **Un lanzador silencioso no puede ser un lanzador mudo.** Es la tensión central de la capa: se
-   ocultan las consolas porque nadie quiere ver una terminal, pero ocultar la consola es
-   exactamente cómo se pierde un aviso. La Convención C2 se aplica aquí a nivel de sistema
-   operativo: **el estado degradado tiene que ser visible en algún sitio que una persona mire**, y
-   ese sitio es el Cockpit, no un fichero que nadie abre.
+   ocultan las consolas porque nadie quiere ver una terminal, y ocultar la consola es exactamente
+   cómo se pierde un aviso. La Convención C2 aplicada al sistema operativo.
 
-2. **La máquina de destino sólo necesitará Python** *(decisión de dirección, 2026-08-12)*. Hoy ver
+   **Y hay un punto ciego que el Cockpit no puede cubrir.** Si el healthcheck falla —falta una
+   dependencia, el `.yaml` está corrupto, el puerto lo ocupa otra aplicación—, FastAPI nunca llega
+   a levantarse, así que *no existe la pantalla donde avisar*. El usuario haría doble clic y no
+   pasaría absolutamente nada: la sensación de que el botón está roto. **Todo fallo anterior a que
+   el servidor sirva el Cockpit exige un diálogo nativo del sistema operativo** con la causa
+   exacta, no una línea en un registro que nadie va a abrir.
+
+2. **Pero ese diálogo nativo es, a su vez, la forma de colgar el despertador.** Una tarea programada
+   con *"ejecutar tanto si el usuario ha iniciado sesión como si no"* corre en la **Session 0**, un
+   entorno sin escritorio interactivo: un cuadro de diálogo allí espera para siempre a un usuario
+   que no existe y deja un proceso zombi cada noche. **La solución del punto anterior es la causa
+   de este fallo**, así que ninguna de las dos puede diseñarse sin la otra.
+
+   La regla que las concilia: **una sola función decide si hay sesión interactiva**, consultando el
+   identificador de sesión del proceso —no el modo de invocación, que es una intención declarada y
+   puede llegar equivocada por un defecto—. Toda llamada a interfaz gráfica, sea el diálogo de
+   error o la apertura del navegador, pasa por esa comprobación. Sin escritorio, los canales son el
+   código de salida y el registro; con escritorio, además, la pantalla.
+
+3. **La máquina de destino sólo necesitará Python** *(decisión de dirección, 2026-08-12)*. Hoy ver
    el Cockpit exige Node.js y un segundo servidor (`npm run dev`). Como `frontend/dist/` ya se
    compila y la API ya está en marcha, servir el bundle desde FastAPI elimina de golpe una
    dependencia por cada PC de la cooperativa, un proceso que arrancar y un puerto que vigilar.
    Node sigue haciendo falta para *desarrollar*, no para *usar*.
 
-3. **El pipeline es ahora destructivo, así que el cerrojo deja de ser una optimización.** Antes,
+4. **El pipeline es ahora destructivo, así que el cerrojo deja de ser una optimización.** Antes,
    dos corridas simultáneas eran un desperdicio; desde la Capa 9 son dos procesos borrando
    ficheros a la vez. El lanzador **no puede arrancar un pipeline sin comprobar el cerrojo**, y
-   ante un cerrojo tomado y vivo su respuesta correcta es no arrancar y decirlo.
+   ante uno tomado y vivo su respuesta correcta es no arrancar y decirlo.
 
-4. **Reutilizar es más seguro que arrancar.** Si el puerto ya responde a nuestro `/health`, hay una
+5. **Reutilizar es más seguro que arrancar.** Si el puerto ya responde a nuestro `/health`, hay una
    API viva: el lanzador la usa en vez de levantar una segunda. Y si el puerto está ocupado por
    algo que **no** es nuestro, se detiene en lugar de pelearse por él. Un lanzador que arranca a
    ciegas acaba dejando instancias duplicadas que se pisan en la misma base.
 
-5. **Esperar a que la API responda, no dormir un rato.** El error clásico de este tipo de
-   lanzadores es `sleep 5` y abrir el navegador: en un equipo lento la pantalla sale en blanco y
-   parece que el sistema no funciona. Se espera **consultando `/health` hasta que conteste**, con
-   un tope declarado en configuración, y si no contesta se informa en lugar de abrir un navegador
-   sobre nada.
+6. **Esperar a que la API responda, no dormir un rato.** El error clásico de estos lanzadores es
+   `sleep 5` y abrir el navegador: en un equipo lento la pantalla sale en blanco y parece que el
+   sistema no funciona. Se espera **consultando `/health` hasta que conteste**, con un tope
+   declarado en configuración, y si no contesta se informa en vez de abrir un navegador sobre nada.
 
-6. **El lanzador sólo apaga lo que él encendió.** Si encuentra una API que ya estaba corriendo
-   —porque alguien la lanzó a mano para desarrollar—, la usa pero **no la mata al terminar**.
-   Matar procesos ajenos es la forma más rápida de que una herramienta de comodidad se convierta
-   en una molestia.
+7. **Apagar no es matar, y el riesgo real no es el que parece.** SQLite en modo WAL **sobrevive sin
+   corromperse** a un `TerminateProcess`, igual que a un corte de luz: una transacción interrumpida
+   queda confirmada o revertida, nunca a medias. Lo que sí se pierde al matar el servidor a lo
+   bruto es otra cosa, y es lo que el apagado ordenado protege:
+   * **la escritura en vuelo** — alguien acaba de pulsar *"Adjudicada"* en el Cockpit y su petición
+     muere sin respuesta: el dato no se corrompe, simplemente no se guarda, y el usuario cree que sí;
+   * **la devolución limpia del cerrojo** — `db_lock()` se toma por operación, así que la ventana es
+     de milisegundos, pero morir dentro de ella deja el `.lock` huérfano;
+   * **el `lifespan` de FastAPI**, que hoy hace poco y mañana hará más.
 
-7. **Programar la ejecución es configuración, no código** *(decisión de dirección, 2026-08-12)*. El
+   El fallo de un cierre brusco no es la corrupción: es **un plantón de diez minutos**. Si Windows
+   recicla nuestro PID y se lo da a otro proceso, la reclamación de huérfanos ve *"el PID sigue
+   vivo"*, respeta el cerrojo, y la corrida siguiente espera a que caduque el TTL. Es la familia de
+   H-15, vista desde el lanzador.
+
+8. **El lanzador sólo apaga lo que él encendió, y para eso el PID no basta.** Si encuentra una API
+   que ya estaba corriendo —porque alguien la lanzó a mano para desarrollar—, la usa pero **no la
+   mata al terminar**. Y como Windows recicla los identificadores, la marca que deja debe registrar
+   **el PID y el instante de creación del proceso**: con el número a secas, "apago sólo lo mío"
+   puede acabar matando algo inocente que heredó el número. *(El mismo endurecimiento le falta hoy
+   a `db_lock()`, cuyo `created_at` es la fecha del cerrojo y no la del proceso.)*
+
+9. **Programar la ejecución es configuración, no código** *(decisión de dirección, 2026-08-12)*. El
    despertador se apoya en el **Programador de tareas de Windows**: sobrevive a los reinicios, no
-   deja ningún proceso residente consumiendo memoria y aporta su propio registro de ejecuciones
-   además del nuestro. Construir un servicio residente propio sería asumir la responsabilidad de
-   mantenerlo vivo a cambio de nada que el sistema operativo no dé ya hecho.
+   deja ningún proceso residente consumiendo memoria y aporta su propio registro además del
+   nuestro. Un servicio propio sería asumir la responsabilidad de mantenerlo vivo a cambio de nada
+   que el sistema operativo no dé ya hecho.
 
-8. **Ningún plazo ni puerto inventado** *(Regla 4 y lección de H-18)*. Todo parámetro operativo
-   —puerto, tope de espera, ruta del bundle, hora del despertador— vive en configuración
-   versionada. Si falta o es incoherente, el lanzador **no arranca con valores por defecto**: se
-   detiene y lo dice. Es la misma doctrina que `config/retencion.yaml`.
+10. **Ningún plazo ni puerto inventado** *(Regla 4 y lección de H-18)*. Todo parámetro operativo
+    —puerto, tope de espera, ruta del bundle, hora del despertador— vive en configuración
+    versionada. Si falta o es incoherente, el lanzador **no arranca con valores por defecto**: se
+    detiene y lo dice. Misma doctrina que `config/retencion.yaml`.
 
-9. **El código de salida es información, no un formalismo.** El Programador de tareas de Windows
-   registra si la tarea terminó bien o mal, y esa es la única señal que verá quien revise por qué
-   una noche no se prospectó. Un lanzador que siempre devuelve `0` deja ciego al programador que
-   lo invoca.
+11. **El código de salida es información, no un formalismo.** El Programador de tareas registra si
+    la tarea terminó bien o mal, y esa es la única señal que verá quien revise por qué una noche no
+    se prospectó. Un lanzador que siempre devuelve `0` deja ciego al programador que lo invoca.
 
-10. **La instalación en un equipo nuevo forma parte de la capa.** De poco sirve un doble clic si
+12. **La instalación en un equipo nuevo forma parte de la capa.** De poco sirve un doble clic si
     antes hay que adivinar cómo dejar el equipo listo. El arranque en frío —dependencias, ficheros
     de configuración, base inexistente, bundle sin compilar— se comprueba y se reporta con
     precisión *(Regla 6)*, porque **es el momento en que más falta hace un diagnóstico claro y el
     único en que no hay nadie experto delante**.
-
----
 
 ### 🧩 Artefactos que produce la capa
 
@@ -1247,6 +1277,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 | `config/lanzador.yaml` | Configuración versionada | Puerto, tope de espera, apertura del navegador y hora del despertador. Sin valores por defecto. |
 | `data/lanzador.pid` | Marca del servidor propio | Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
 | Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
+| `POST /api/v1/admin/apagar` | Apagado ordenado | Único cierre limpio posible sin consola. Sólo `127.0.0.1` y con el testigo del fichero PID. |
 
 > ⚠️ **Cambio de contrato de la Capa 7 que esta capa introduce**: al servir el Cockpit desde
 > FastAPI, la raíz `/` deja de devolver el JSON de bienvenida y pasa a servir la aplicación. El
@@ -1270,13 +1301,20 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      pipeline** (el del despertador, sin abrir nada) y **sólo Cockpit** (abrir la pantalla sin
      prospectar).
 
-2. **Paso 2 — Healthcheck de Arranque en Frío (`src/lanzador.py`)** *(Regla 6)*: 💤
+2. **Paso 2 — Healthcheck de Arranque en Frío y Canal de Fallo Fatal (`src/lanzador.py`)** *(Regla 6)*: 💤
    - Verifica intérprete y versión de Python, dependencias importables, ficheros de configuración
      legibles, base accesible y migrable, espacio libre en disco y existencia de `frontend/dist/`.
    - **Distingue tres estados del puerto**, que es donde se equivocan estos lanzadores: libre;
      ocupado por **nuestra** API viva —se reutiliza—; u ocupado por otra cosa —se detiene—.
    - Sin healthcheck satisfactorio no se arranca nada, y el diagnóstico dice **qué** falta y
      **cómo** resolverlo, no sólo que algo falló.
+   - **Aquí vive `es_sesion_interactiva()`**, la función única que decide si hay escritorio,
+     consultando el identificador de sesión del proceso. Gobierna después toda llamada a interfaz
+     gráfica en el resto de la capa.
+   - **Un fallo en esta fase se comunica con un diálogo nativo del sistema** cuando hay escritorio,
+     porque el Cockpit todavía no existe y no hay otra pantalla donde avisar. Sin escritorio
+     —Session 0—, jamás: sólo registro y código de salida, o el proceso quedaría colgado esperando
+     a un usuario inexistente.
 
 3. **Paso 3 — Configuración Versionada del Lanzador (`config/lanzador.yaml`)** *(Regla 4)*: 💤
    - Puerto, host, tope de espera a que la API responda, comportamiento ante puerto ocupado, ruta
@@ -1293,13 +1331,27 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    - Regresión obligada: que un bundle ausente dé un diagnóstico claro y no un 404 desnudo. Es el
      primer síntoma que verá quien clone el repositorio sin compilar.
 
-5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y parar sólo lo propio**: 💤
-   - Arranca `uvicorn` en segundo plano y **espera consultando `/health`** hasta el tope declarado,
-     nunca durmiendo un tiempo fijo.
-   - Escribe `data/lanzador.pid` para saber qué encendió él. Al terminar apaga **sólo eso**: una
-     API que ya estaba viva se reutiliza y se respeta.
-   - Reclama su propio PID huérfano con la misma doctrina que el cerrojo de base de datos *(Paso
-     D1)*: comprobar que el proceso existe de verdad antes de dar por buena la marca.
+5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y apagar sin matar**: 💤
+   - Arranca `uvicorn` en segundo plano con **grupo de procesos propio** y **espera consultando
+     `/health`** hasta el tope declarado, nunca durmiendo un tiempo fijo.
+   - Escribe `data/lanzador.pid` con **el PID y el instante de creación del proceso**. Con el
+     número a secas, un identificador reciclado por Windows convertiría "apago sólo lo mío" en
+     matar algo inocente.
+   - **Apagado ordenado en tres niveles, verificando en cada uno** — nunca se envía la señal y se
+     da por hecho que funcionó: se sondea hasta que el proceso desaparece o vence el plazo:
+     1. **`POST /api/v1/admin/apagar`**, que pide a uvicorn cerrarse desde dentro. Es el único
+        nivel que garantiza terminar las peticiones en curso, devolver el cerrojo y ejecutar el
+        `lifespan`. Y el único que funciona **sin consola**, que es justo el caso del `.vbs`.
+        Escucha sólo en `127.0.0.1` y **exige el testigo** que el lanzador guardó en su fichero
+        PID: sin él, cualquier página abierta en el navegador podría apagar el servidor.
+     2. **`CTRL_BREAK_EVENT`** al grupo de procesos. Ojo al emparejamiento: `CTRL_C_EVENT` queda
+        deshabilitado en un grupo creado con `CREATE_NEW_PROCESS_GROUP`, y enviarlo sin aislar el
+        grupo nos mataría también a nosotros.
+     3. **`TerminateProcess`**, sólo agotado el tiempo de gracia.
+   - **Comprobar el cerrojo después de apagar**, no suponerlo liberado. Si quedó huérfano se
+     registra: la reclamación por PID y TTL es la red que lo recoge, y conviene saber cuándo actúa.
+   - Que uvicorn atienda `SIGBREAK` en Windows con la limpieza que promete **se mide en este paso**,
+     no se da por supuesto.
 
 6. **Paso 6 — Ejecución del Pipeline Respetando el Cerrojo**: 💤
    - Antes de lanzar el pipeline comprueba el cerrojo. Si está tomado y vivo, **no arranca**,
@@ -1310,27 +1362,45 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 #### **Fase 3: Ergonomía silenciosa y despertador**
 
-7. **Paso 7 — Lanzador Silencioso VBS y Accesos Directos (`Incoop.vbs`)**: 💤
+7. **Paso 7 — Lanzador Silencioso VBS, Modo Aplicación y Accesos Directos (`Incoop.vbs`)**: 💤
    - Envoltorio de una docena de líneas que invoca el orquestador con la ventana oculta. **Toda la
      lógica se queda en Python**: VBS no se puede probar con la suite, así que sólo hace de puerta.
    - Accesos directos con icono para escritorio y menú de inicio, y ruta absoluta anclada a la raíz
      del proyecto *(lección de H-18: el directorio de trabajo de un acceso directo no es el que
      uno cree)*.
+   - **El Cockpit se abre en modo aplicación**, no como una pestaña más. Localizado el ejecutable
+     de Chrome o Edge, se lanza con `--app=http://127.0.0.1:<puerto>`: ventana limpia, sin barra de
+     direcciones ni pestañas, con aspecto de programa de escritorio. Si no aparece ninguno de los
+     dos, se cae a `webbrowser.open()` — degradar la apariencia es aceptable; no abrir nada, no.
+   - La apertura del navegador pasa por `es_sesion_interactiva()`, como cualquier otra llamada
+     gráfica.
 
 8. **Paso 8 — El Despertador: Tarea Programada de Windows**: 💤
    - Herramienta del proyecto para **registrar y dar de baja** la tarea, no configuración a mano
      por la interfaz gráfica: lo que se hace a mano no se documenta ni se reproduce.
    - Ejecuta el modo **sólo pipeline** —prospectar de madrugada no debe abrir un navegador en una
      sesión que nadie está mirando—.
+   - **La casilla *"ejecutar tanto si el usuario ha iniciado sesión como si no"* es la decisión
+     crítica del paso.** Marcarla es lo correcto para una tarea nocturna, y es a la vez lo que
+     lleva el proceso a la Session 0. La prueba que lo cierra no es que la tarea se registre, sino
+     **que una corrida en Session 0 termina sola y no deja proceso vivo**: el síntoma de un diálogo
+     esperando a nadie es exactamente un proceso que no acaba nunca.
    - Idempotente: registrarla dos veces no crea dos tareas, y darla de baja es tan sencillo como
      registrarla.
 
 9. **Paso 9 — La Voz del Proceso Silencioso**: 💤
-   - Tres canales, en orden de quién los mira: **el Cockpit** avisa en pantalla si la última corrida
-     falló o quedó degradada —ya tiene el historial de prospecciones del Paso 7 de la Capa 9, sólo
-     le falta el distintivo—; `data/lanzador.log` y los eventos `LANZADOR_*` en `pipeline.jsonl`
-     para el diagnóstico; y el **código de salida** para que el Programador de tareas registre el
-     resultado.
+   - **Cuatro canales, y cuál se usa depende de hasta dónde llegó el arranque.** Es lo que hace que
+     ninguno sobre y que ninguno se use donde haría daño:
+
+     | Cuándo falla | Canal | Por qué ése y no otro |
+     |---|---|---|
+     | Antes de servir el Cockpit, con escritorio | **Diálogo nativo** | Todavía no hay pantalla donde avisar |
+     | Antes de servir el Cockpit, en Session 0 | **Código de salida + registro** | Un diálogo aquí cuelga el proceso para siempre |
+     | Con el Cockpit ya en marcha | **Distintivo en pantalla** | Es lo que la persona está mirando |
+     | Siempre, para el diagnóstico | `LANZADOR_*` en `pipeline.jsonl` | Reconstruir después qué ocurrió |
+
+   - El distintivo del Cockpit se apoya en el historial de prospecciones que la Capa 9 ya sirve: no
+     hay que construir un canal nuevo, sólo hacer visible que la última corrida falló o se degradó.
    - Es el paso que impide que esta capa convierta el sistema en una caja negra silenciosa.
 
 #### **Fase 4: Verificación y Cierre del Ecosistema**
@@ -1338,8 +1408,9 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de la Capa 10**: 💤
     - `tests/test_capa10_lanzador.py`, con regresiones sobre lo que de verdad puede romperse: que
       un healthcheck insatisfactorio impide arrancar; que una API viva se reutiliza en vez de
-      duplicarse; que el pipeline no se lanza con el cerrojo tomado; y que el apagado no toca
-      procesos ajenos.
+      duplicarse; que el pipeline no se lanza con el cerrojo tomado; que el apagado no toca
+      procesos ajenos ni confunde un PID reciclado con el suyo; y —la que más importa— **que sin
+      sesión interactiva no se invoca ni un solo elemento de interfaz gráfica**.
     - **Verificación en vivo del doble clic**, que es la única que vale aquí *(Convención C7)*:
       ejecutar el `.vbs` de verdad, comprobar que no aparece ninguna consola, que el Cockpit abre
       con datos y que la tarea programada dispara una corrida real.
