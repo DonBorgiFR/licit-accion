@@ -153,7 +153,7 @@ valor, hubo negocio.**
 |---|---|
 | **Entrada** | Lista explícita de expedientes **y confirmación explícita**. Nunca se deduce. |
 | **Salida** | Eliminados, y —igual de importante— **los bloqueados con su motivo**. |
-| **Precondición** | Estado `ARCHIVADO`; invariante de memoria comercial superada; **copia de seguridad previa correcta**. |
+| **Precondición** | Estado `ARCHIVADO`; **cuarentena cumplida** (`eliminacion.dias_archivado_minimo`, hoy 365 días — *dirección, 2026-08-12*); invariante de memoria comercial superada; **copia de seguridad previa correcta**. |
 | **Postcondición** | Filas eliminadas en orden hoja→raíz: `documentos` → `analisis_semantico` → `lotes` → `expedientes`. Ningún huérfano. |
 | **Efectos de lado** | Borrado en 4 tablas, copia de seguridad, registro en `purgas`, eventos JSONL. |
 | **Idempotencia** | Un expediente inexistente se salta sin error. |
@@ -251,6 +251,13 @@ una regresión que lo fija con las tres grafías a la vez.
 3. 🟢 Que el rescate `ARCHIVADO → VIVO` exista pero sea siempre manual.
 4. 🟢 Que en caso de duda el Depurador no haga nada, en lugar de purgar parcialmente.
 
-**Paso 1 cerrado.** Los Pasos 2, 3 y 4 también lo están: política versionada, esquema v6 y motor de
-archivado. El estado vigente de la capa vive en [`AGENTS.md`](AGENTS.md), no aquí — este documento
-es el contrato, y sólo cambia cuando cambian sus reglas.
+**Paso 1 cerrado.** Los Pasos 2 a 6 también lo están: política versionada, esquema v6 y **las tres
+operaciones del contrato implementadas** —archivar, purgar peso documental y eliminar—. El estado
+vigente de la capa vive en [`AGENTS.md`](AGENTS.md), no aquí — este documento es el contrato, y sólo
+cambia cuando cambian sus reglas.
+
+**Añadido el 2026-08-12 al implementar el Paso 6**: la cuarentena de la Operación 3 es una regla
+nueva, no una relectura de las existentes. Un expediente archivado ayer no es eliminable hoy por
+mucho que nunca fuera negocio, porque *archivar y borrar seguido* es la secuencia con la que se
+destruye algo por error. El plazo vive en la política versionada y no en el código, de modo que
+consta bajo qué criterio se ejecutó cada eliminación.

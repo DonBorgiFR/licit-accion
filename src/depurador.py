@@ -1,6 +1,6 @@
-"""El Depurador — Capa 9: motor de archivado (Paso 4) y de purga documental (Paso 5).
+"""El Depurador — Capa 9: archivado (Paso 4), purga documental (Paso 5) y eliminación (Paso 6).
 
-Dos de las tres operaciones del contrato, en orden creciente de daño posible:
+Las tres operaciones del contrato, en orden creciente de daño posible:
 
 * **Archivar** no borra nada. Escribe `deleted_at` y `deleted_reason`, con lo que el lote sale
   del canal principal del Funnel pero sigue en la base, sigue contando en los KPIs históricos
@@ -8,31 +8,65 @@ Dos de las tres operaciones del contrato, en orden creciente de daño posible:
 * **Purgar peso documental** sí es irreversible, pero sólo sobre el peso: borra el PDF del
   disco y vacía `texto_extraido`. La fila del documento permanece con su URL, su hash y su
   rastro —se sabe qué hubo y por qué ya no está— y **ninguna fila de negocio se toca**.
-
-Falta la tercera, la eliminación física de filas, que es la única capaz de destruir memoria
-comercial y por eso exige confirmación explícita. Vive en el Paso 6.
+* **Eliminar físicamente** destruye registros y es terminal. Sólo alcanza a lo que nunca
+  llegó a ser negocio: expedientes archivados, fuera de cuarentena, cuyos lotes jamás
+  pasaron por `Presentada`, `Adjudicada`, `Perdida`, `Estudiando` ni `Descartada`. Exige
+  lista explícita, confirmación expresa y copia de seguridad previa correcta.
 
 **Lo que este motor tiene prohibido**, según `.agents/CONTRATO_CAPA_9.md`:
 
 * Escribir en `estado_operativo`. No es su columna. Un expediente adjudicado sigue adjudicado
   después de archivarse; lo que pierde es presencia en pantalla, no condición de negocio.
-* Borrar una sola fila. Purgar libera peso, no registros.
+* Borrar filas sin que una persona lo pida. La eliminación **nunca se deduce** y el pipeline
+  no la invoca: `run.py` no puede destruir un expediente ni queriendo.
+* Desactivar las claves foráneas. `PRAGMA foreign_keys=OFF` está prohibido: el `RESTRICT` es
+  la red que impide dejar huérfanos, no un obstáculo a rodear. Si bloquea, hay que pararse.
 * Desarchivar. El rescate `ARCHIVADO → VIVO` existe, pero lo pide una persona: si un criterio
   automático archivara y otro criterio automático desarchivara, el sistema oscilaría sin que
   nadie se enterase.
-* Inventarse plazos. Sin política declarada no se archiva ni se purga, y se dice en voz alta.
+* Inventarse plazos. Sin política declarada no se archiva, ni se purga, ni se elimina, y se
+  dice en voz alta.
 """
 
 import json
 import os
+import re
+import sqlite3
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
-from src import ruta_datos
-from src.memoria import Memoria
+from src import normalizar_estado_operativo, ruta_datos
+from src.memoria import MARCA_LOG_ESTADO, Memoria
 from src.retencion import PoliticaRetencion
+
+
+# =======================================================================================
+# Errores tipados del contrato (Capa 9). Ninguno se degrada a un valor por defecto
+# silencioso: un fallo de purga siempre es distinguible de una purga que no encontró nada
+# que borrar (Convención C2).
+# =======================================================================================
+
+class PurgaBloqueadaPorMemoriaComercial(Exception):
+    """Se intentó eliminar un expediente con negocio o criterio humano invertido. HTTP 409."""
+
+
+class PurgaBloqueadaPorIntegridad(Exception):
+    """Una clave foránea `RESTRICT` detuvo el borrado. HTTP 409.
+
+    **Indica un caso no previsto: es un defecto, no un uso normal.** Si la cascada
+    hoja→raíz está bien ordenada, esto no puede ocurrir; que ocurra significa que hay una
+    tabla que apunta al expediente y que nadie tuvo en cuenta.
+    """
+
+
+class CopiaSeguridadFallida(Exception):
+    """No se pudo crear la copia previa. **La eliminación no se ejecuta.** HTTP 503."""
+
+
+class ConfirmacionRequerida(Exception):
+    """Se pidió una eliminación sin confirmación explícita. HTTP 400."""
 
 #: Motivos de archivado. Se guardan en `deleted_reason` y se cuentan por separado porque
 #: responden a preguntas distintas: uno mide licitaciones caducadas con normalidad, el otro
@@ -58,6 +92,43 @@ TIPO_PURGA_DOCUMENTAL = "DOCUMENTAL"
 #: de crear la copia nueva. Comparte tipo y se distingue por este campo del detalle.
 OPERACION_DOCUMENTOS = "documentos"
 OPERACION_ROTACION_COPIAS = "rotacion_copias"
+
+#: Tipo de la Operación 3 en la tabla `purgas`, según el vocabulario declarado en el DDL.
+TIPO_ELIMINACION = "ELIMINACION"
+
+#: La invariante central de la capa. Un lote que alcanzó **alguna vez** uno de estos
+#: estados hace que su expediente sea ineliminable para siempre. No es configurable desde
+#: el fichero de política a propósito: es una regla de negocio del contrato, no un plazo.
+#:
+#: `Descartada` figura por un motivo que no es sentimental sino económico: si se borrase,
+#: el pipeline volvería a capturar la licitación y a presentarla, y el equipo comercial
+#: gastaría atención en reevaluar algo que ya rechazó *(dirección, 2026-08-07)*.
+ESTADOS_QUE_BLOQUEAN_ELIMINACION = (
+    "presentada",
+    "adjudicada",
+    "perdida",
+    "estudiando",
+    "descartada",
+)
+
+#: Campos donde se deposita el dinero y el esfuerzo. Si alguno tiene valor, hubo negocio,
+#: por mucho que el estado actual del lote diga otra cosa.
+CAMPOS_COMERCIALES = (
+    "importe_adjudicacion",
+    "dinero_en_la_mesa",
+    "horas_internas_invertidas",
+    "costes_externos",
+    "importe_garantia_retenida",
+    "empresa_adjudicataria",
+)
+
+#: Extrae los estados entrecomillados de una entrada del histórico, cuyo formato fija
+#: `entrada_log_cambio_estado()`: "... ESTADO lote 1: 'nueva' -> 'presentada'".
+_ESTADOS_EN_LOG = re.compile(r"'([^']*)'")
+
+MOTIVO_NO_ARCHIVADO = "no_archivado"
+MOTIVO_CUARENTENA = "cuarentena_no_cumplida"
+MOTIVO_MEMORIA_COMERCIAL = "memoria_comercial"
 
 
 @dataclass
@@ -92,6 +163,51 @@ class ResultadoRotacionCopias:
 
 
 @dataclass
+class ExpedienteEvaluado:
+    """Veredicto sobre un expediente concreto, con el motivo cuando se le impide borrar.
+
+    El motivo no es decoración: el contrato exige que la salida incluya "los bloqueados
+    con su motivo", **igual de importante que los eliminados**. Una purga que bloquea mucho
+    es una señal de que el histórico está vivo, no un fallo.
+    """
+
+    expediente_id: str
+    eliminable: bool
+    motivo: Optional[str] = None
+    detalle_motivo: Optional[str] = None
+    lotes: int = 0
+    documentos: int = 0
+
+
+@dataclass
+class ResultadoPrevisualizacion:
+    """Qué desaparecería si se confirmara ahora. No altera nada, pero consta quién miró."""
+
+    ejecutado: bool
+    eliminables: List[ExpedienteEvaluado] = field(default_factory=list)
+    bloqueados: List[ExpedienteEvaluado] = field(default_factory=list)
+    version_politica: Optional[str] = None
+    motivo_degradacion: Optional[str] = None
+
+
+@dataclass
+class ResultadoEliminacion:
+    """Lo que se destruyó, lo que se protegió y con qué copia de seguridad detrás."""
+
+    ejecutado: bool
+    expedientes_eliminados: int = 0
+    lotes_eliminados: int = 0
+    documentos_eliminados: int = 0
+    analisis_eliminados: int = 0
+    ficheros_borrados: int = 0
+    bytes_liberados: int = 0
+    bloqueados: List[ExpedienteEvaluado] = field(default_factory=list)
+    backup_asociado: Optional[str] = None
+    version_politica: Optional[str] = None
+    motivo_degradacion: Optional[str] = None
+
+
+@dataclass
 class ResultadoArchivado:
     """Lo que hizo —o lo que decidió no hacer— una pasada de archivado."""
 
@@ -112,10 +228,10 @@ class ResultadoArchivado:
 
 
 class Depurador:
-    """Motor de ciclo de vida del dato: archiva (Paso 4) y purga peso documental (Paso 5).
+    """Motor de ciclo de vida del dato: archiva, purga peso documental y elimina.
 
-    Le falta la tercera operación del contrato, la eliminación física de filas, que es la
-    única irreversible sobre la memoria comercial y vive en el Paso 6.
+    Las dos primeras operaciones puede dispararlas la política en cada corrida. La tercera,
+    nunca: exige que una persona la pida sobre una lista concreta y tras previsualizarla.
     """
 
     def __init__(
@@ -472,8 +588,391 @@ class Depurador:
         )
 
     # -----------------------------------------------------------------------------------
+    # Operación 3 del contrato — Eliminar físicamente
+    # -----------------------------------------------------------------------------------
+
+    def previsualizar_eliminacion(
+        self,
+        expediente_ids: Optional[Sequence[str]] = None,
+        ahora: Optional[datetime] = None,
+        solicitado_por: str = "usuario",
+    ) -> ResultadoPrevisualizacion:
+        """Qué desaparecería si se confirmara ahora. **No altera absolutamente nada.**
+
+        Existe porque el diseño de la capa prohíbe el botón que borra a ciegas: se enseña
+        exactamente qué va a desaparecer antes de que nadie confirme. Sin `expediente_ids`
+        evalúa todo lo archivado, que es la vista que necesita la pantalla de administración.
+
+        Emite `DEPURADOR_PURGA_PREVISUALIZADA`: no altera nada, **pero consta quién miró**.
+        """
+        degradacion = self._motivo_para_no_eliminar()
+        if degradacion:
+            self._registrar_evento("DEPURADOR_MODO_DEGRADADO", degradacion)
+            return ResultadoPrevisualizacion(ejecutado=False, motivo_degradacion=degradacion)
+
+        ahora = ahora or datetime.now(timezone.utc)
+        corte = self._corte_cuarentena(ahora)
+
+        with self.memoria.conectar() as conn:
+            conn.row_factory = sqlite3.Row
+            candidatos = self._candidatos(conn, expediente_ids)
+            evaluados = [self._evaluar_expediente(conn, exp_id, corte) for exp_id in candidatos]
+
+        evaluados = [e for e in evaluados if e is not None]
+        eliminables = [e for e in evaluados if e.eliminable]
+        bloqueados = [e for e in evaluados if not e.eliminable]
+
+        self._registrar_evento(
+            "DEPURADOR_PURGA_PREVISUALIZADA",
+            f"solicitada_por={solicitado_por} evaluados={len(evaluados)} "
+            f"eliminables={len(eliminables)} bloqueados={len(bloqueados)} "
+            f"cuarentena_hasta={corte} politica=v{self.politica.version}",
+        )
+        return ResultadoPrevisualizacion(
+            ejecutado=True,
+            eliminables=eliminables,
+            bloqueados=bloqueados,
+            version_politica=self.politica.version,
+        )
+
+    def eliminar_expedientes(
+        self,
+        expediente_ids: Sequence[str],
+        confirmado: bool = False,
+        ahora: Optional[datetime] = None,
+        solicitado_por: str = "usuario",
+    ) -> ResultadoEliminacion:
+        """Borra físicamente expedientes que nunca llegaron a ser negocio. **Terminal.**
+
+        Precondiciones: lista explícita, confirmación expresa, política con bloque
+        `eliminacion`, expedientes archivados y fuera de cuarentena, invariante de memoria
+        comercial superada y **copia de seguridad previa correcta**.
+        Postcondición: filas eliminadas en orden hoja→raíz sin dejar un solo huérfano.
+        Atomicidad: una única transacción. Si algo la interrumpe, se revierte entera; nunca
+        queda un expediente sin lotes ni un lote sin expediente.
+
+        Lo bloqueado **no aborta la operación**: se elimina lo eliminable y se devuelve lo
+        protegido con su motivo, que según el contrato importa tanto como lo borrado.
+        """
+        if not confirmado:
+            raise ConfirmacionRequerida(
+                "La eliminación física es irreversible y exige confirmación explícita. "
+                "Previsualice primero con `previsualizar_eliminacion()`."
+            )
+
+        degradacion = self._motivo_para_no_eliminar()
+        if degradacion:
+            self._registrar_evento("DEPURADOR_MODO_DEGRADADO", degradacion)
+            return ResultadoEliminacion(ejecutado=False, motivo_degradacion=degradacion)
+
+        if not expediente_ids:
+            return ResultadoEliminacion(ejecutado=True, version_politica=self.politica.version)
+
+        ahora = ahora or datetime.now(timezone.utc)
+        corte = self._corte_cuarentena(ahora)
+
+        # 1. Veredicto antes de tocar nada.
+        with self.memoria.conectar() as conn:
+            conn.row_factory = sqlite3.Row
+            evaluados = [
+                e for e in (
+                    self._evaluar_expediente(conn, exp_id, corte) for exp_id in expediente_ids
+                ) if e is not None
+            ]
+
+        eliminables = [e for e in evaluados if e.eliminable]
+        bloqueados = [e for e in evaluados if not e.eliminable]
+
+        for bloqueado in bloqueados:
+            self._registrar_evento(
+                "DEPURADOR_ELIMINACION_BLOQUEADA",
+                f"expediente={bloqueado.expediente_id} motivo={bloqueado.motivo} "
+                f"detalle={bloqueado.detalle_motivo}",
+            )
+
+        if not eliminables:
+            self._registrar_evento(
+                "DEPURADOR_PURGA_ABORTADA",
+                f"tipo=eliminacion causa=nada_eliminable bloqueados={len(bloqueados)} "
+                f"solicitada_por={solicitado_por}",
+            )
+            return ResultadoEliminacion(
+                ejecutado=True,
+                bloqueados=bloqueados,
+                version_politica=self.politica.version,
+            )
+
+        ids = [e.expediente_id for e in eliminables]
+        self._registrar_evento(
+            "DEPURADOR_PURGA_INICIADA",
+            f"tipo=eliminacion expedientes={len(ids)} bloqueados={len(bloqueados)} "
+            f"politica=v{self.politica.version} solicitada_por={solicitado_por}",
+        )
+
+        # 2. Copia de seguridad previa. Si falla, no se ejecuta nada (Regla 5): purgar es
+        #    irreversible y una eliminación sin red no es una degradación aceptable.
+        try:
+            backup = self.memoria.realizar_backup(run_id=self.run_id)
+        except Exception as exc:
+            motivo = f"copia_seguridad_fallida: {type(exc).__name__}: {exc}"
+            self._registrar_evento("DEPURADOR_MODO_DEGRADADO", motivo)
+            self._registrar_evento(
+                "DEPURADOR_PURGA_ABORTADA", f"tipo=eliminacion causa={motivo}"
+            )
+            raise CopiaSeguridadFallida(
+                "No se pudo crear la copia de seguridad previa, de modo que no se ha "
+                f"eliminado nada: {exc}"
+            ) from exc
+
+        self._registrar_evento(
+            "DEPURADOR_BACKUP_CREADO",
+            f"ruta={backup} bytes={os.path.getsize(backup) if os.path.exists(backup) else 0}",
+        )
+
+        # 3. Ficheros antes que filas. Al revés perderíamos las rutas al borrar `documentos`
+        #    y los PDFs quedarían en disco sin nadie que recordara de quién eran.
+        bytes_liberados, ficheros_borrados = self._borrar_ficheros_de(ids)
+
+        # 4. Cascada hoja→raíz en una única transacción, con las claves foráneas activas.
+        #    `PRAGMA foreign_keys=OFF` está prohibido en esta capa: el RESTRICT es la red
+        #    que impide dejar huérfanos, no un obstáculo a rodear.
+        marcadores = ", ".join("?" for _ in ids)
+        try:
+            with self.memoria.db_lock():
+                with self.memoria.conectar() as conn:
+                    with conn:
+                        cursor = conn.cursor()
+                        docs = cursor.execute(
+                            f"DELETE FROM documentos WHERE expediente_id IN ({marcadores});", ids
+                        ).rowcount or 0
+                        analisis = cursor.execute(
+                            f"DELETE FROM analisis_semantico WHERE expediente_id IN ({marcadores});",
+                            ids,
+                        ).rowcount or 0
+                        lotes = cursor.execute(
+                            f"DELETE FROM lotes WHERE expediente_id IN ({marcadores});", ids
+                        ).rowcount or 0
+                        expedientes = cursor.execute(
+                            f"DELETE FROM expedientes WHERE id IN ({marcadores});", ids
+                        ).rowcount or 0
+
+                        self.memoria.registrar_purga(
+                            tipo=TIPO_ELIMINACION,
+                            solicitada_por=solicitado_por,
+                            version_politica=self.politica.version,
+                            resultado="COMPLETADA",
+                            documentos_purgados=docs,
+                            bytes_liberados=bytes_liberados,
+                            expedientes_eliminados=expedientes,
+                            bloqueados=len(bloqueados),
+                            backup_asociado=backup,
+                            detalle=json.dumps(
+                                {
+                                    "expedientes": ids,
+                                    "lotes_eliminados": lotes,
+                                    "analisis_eliminados": analisis,
+                                    "ficheros_borrados": ficheros_borrados,
+                                    "bloqueados": [
+                                        {"expediente": b.expediente_id, "motivo": b.motivo}
+                                        for b in bloqueados
+                                    ],
+                                },
+                                ensure_ascii=False,
+                            ),
+                            conn=conn,
+                        )
+        except sqlite3.IntegrityError as exc:
+            # La transacción ya revirtió sola. No queda nada a medias.
+            motivo = f"integridad_referencial: {exc}"
+            self._registrar_evento("DEPURADOR_PURGA_ABORTADA", f"tipo=eliminacion causa={motivo}")
+            raise PurgaBloqueadaPorIntegridad(
+                "Una clave foránea detuvo la eliminación y se ha revertido entera. Esto "
+                f"indica una tabla que apunta al expediente y que la cascada no contempla: {exc}"
+            ) from exc
+
+        resultado = ResultadoEliminacion(
+            ejecutado=True,
+            expedientes_eliminados=expedientes,
+            lotes_eliminados=lotes,
+            documentos_eliminados=docs,
+            analisis_eliminados=analisis,
+            ficheros_borrados=ficheros_borrados,
+            bytes_liberados=bytes_liberados,
+            bloqueados=bloqueados,
+            backup_asociado=backup,
+            version_politica=self.politica.version,
+        )
+
+        self._registrar_evento(
+            "DEPURADOR_PURGA_COMPLETADA",
+            f"tipo=eliminacion expedientes={expedientes} lotes={lotes} documentos={docs} "
+            f"analisis={analisis} bytes={bytes_liberados} bloqueados={len(bloqueados)} "
+            f"backup={backup} politica=v{self.politica.version}",
+        )
+        return resultado
+
+    # -----------------------------------------------------------------------------------
+    # La invariante de memoria comercial
+    # -----------------------------------------------------------------------------------
+
+    def _evaluar_expediente(
+        self, conn, expediente_id: str, corte_cuarentena: str
+    ) -> Optional[ExpedienteEvaluado]:
+        """Decide si un expediente puede eliminarse, y si no, por qué exactamente.
+
+        Devuelve `None` si el expediente no existe: eliminar algo inexistente se salta sin
+        error (idempotencia del contrato), no es un bloqueo que reportar.
+
+        **El estado actual no basta**: un lote puede estar hoy en `Inactiva` habiendo pasado
+        por `Presentada` —lo hace `soft_delete_obsoletos()` cada vez que una licitación
+        desaparece del feed—. Por eso se miran tres fuentes, y basta una para bloquear.
+        """
+        expediente = conn.execute(
+            "SELECT deleted_at, COALESCE(log_cambios, '') AS log_cambios "
+            "FROM expedientes WHERE id = ?;",
+            (expediente_id,),
+        ).fetchone()
+        if expediente is None:
+            return None
+
+        lotes = conn.execute(
+            "SELECT lote_numero, estado_operativo, "
+            + ", ".join(CAMPOS_COMERCIALES)
+            + " FROM lotes WHERE expediente_id = ?;",
+            (expediente_id,),
+        ).fetchall()
+        documentos = conn.execute(
+            "SELECT COUNT(*) FROM documentos WHERE expediente_id = ?;", (expediente_id,)
+        ).fetchone()[0]
+
+        def veredicto(motivo, detalle):
+            return ExpedienteEvaluado(
+                expediente_id=expediente_id, eliminable=False, motivo=motivo,
+                detalle_motivo=detalle, lotes=len(lotes), documentos=documentos,
+            )
+
+        # Transición prohibida nº 1: `VIVO → ELIMINADO` directo. Hay que pasar por archivado,
+        # que impide borrar algo que está en juego ahora mismo.
+        if not expediente["deleted_at"]:
+            return veredicto(
+                MOTIVO_NO_ARCHIVADO,
+                "El expediente sigue vivo. Sólo se elimina lo que ya está archivado.",
+            )
+
+        if expediente["deleted_at"] > corte_cuarentena:
+            return veredicto(
+                MOTIVO_CUARENTENA,
+                f"Archivado el {expediente['deleted_at']}, y la política exige "
+                f"{self.politica.eliminacion.dias_archivado_minimo} días archivado antes "
+                f"de poder eliminarse (no cumple hasta pasado el corte {corte_cuarentena}).",
+            )
+
+        # Fuente 1 — el estado en que está ahora cada lote.
+        for lote in lotes:
+            estado = normalizar_estado_operativo(lote["estado_operativo"])
+            if estado in ESTADOS_QUE_BLOQUEAN_ELIMINACION:
+                return veredicto(
+                    MOTIVO_MEMORIA_COMERCIAL,
+                    f"El lote {lote['lote_numero']} está en '{estado}'.",
+                )
+
+        # Fuente 2 — el dinero y las horas, que no mienten aunque el estado haya cambiado.
+        for lote in lotes:
+            for campo in CAMPOS_COMERCIALES:
+                valor = lote[campo]
+                if valor not in (None, 0, 0.0, ""):
+                    return veredicto(
+                        MOTIVO_MEMORIA_COMERCIAL,
+                        f"El lote {lote['lote_numero']} tiene '{campo}' con valor {valor!r}.",
+                    )
+
+        # Fuente 3 — el histórico de estados (H-31). Es la única evidencia de por dónde pasó
+        # un lote que hoy figura como caducado, y sin ella un expediente con oferta
+        # presentada pero sin costes anotados sería indistinguible de una `Nueva` cualquiera.
+        estado_historico = self._estado_bloqueante_en_historico(expediente["log_cambios"])
+        if estado_historico:
+            return veredicto(
+                MOTIVO_MEMORIA_COMERCIAL,
+                f"El histórico registra que algún lote pasó por '{estado_historico}'.",
+            )
+
+        return ExpedienteEvaluado(
+            expediente_id=expediente_id, eliminable=True,
+            lotes=len(lotes), documentos=documentos,
+        )
+
+    @staticmethod
+    def _estado_bloqueante_en_historico(log_cambios: str) -> Optional[str]:
+        """Busca en el histórico del expediente cualquier paso por un estado que bloquee.
+
+        Mira los dos extremos de cada transición: haber **salido** de `Presentada` es tanta
+        prueba de que hubo oferta como haber entrado.
+        """
+        for linea in (log_cambios or "").splitlines():
+            if MARCA_LOG_ESTADO not in linea:
+                continue
+            for capturado in _ESTADOS_EN_LOG.findall(linea):
+                estado = normalizar_estado_operativo(capturado)
+                if estado in ESTADOS_QUE_BLOQUEAN_ELIMINACION:
+                    return estado
+        return None
+
+    # -----------------------------------------------------------------------------------
     # Internos
     # -----------------------------------------------------------------------------------
+
+    def _corte_cuarentena(self, ahora: datetime) -> str:
+        dias = self.politica.eliminacion.dias_archivado_minimo
+        return (ahora - timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _candidatos(self, conn, expediente_ids: Optional[Sequence[str]]) -> List[str]:
+        """Los expedientes a evaluar: los pedidos, o todo lo archivado si no se pide nada."""
+        if expediente_ids is not None:
+            return list(expediente_ids)
+        filas = conn.execute(
+            "SELECT id FROM expedientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at;"
+        ).fetchall()
+        return [fila["id"] for fila in filas]
+
+    def _borrar_ficheros_de(self, expediente_ids: Sequence[str]):
+        """Retira del disco los ficheros de los expedientes que van a desaparecer."""
+        marcadores = ", ".join("?" for _ in expediente_ids)
+        with self.memoria.conectar() as conn:
+            rutas = [
+                fila[0] for fila in conn.execute(
+                    f"SELECT local_path FROM documentos WHERE expediente_id IN ({marcadores}) "
+                    "AND local_path IS NOT NULL;",
+                    list(expediente_ids),
+                ).fetchall()
+            ]
+
+        bytes_liberados = 0
+        ficheros = 0
+        for ruta in rutas:
+            if not os.path.exists(ruta):
+                continue
+            liberado, borrado, error = self._borrar_fichero_y_sidecar(ruta)
+            bytes_liberados += liberado
+            ficheros += borrado
+            if error:
+                # No detiene la eliminación: la fila se va igual y el fichero quedaría
+                # huérfano, así que se dice en voz alta para poder recogerlo a mano.
+                print(f"  [!] [depurador] Fichero no borrado antes de eliminar '{ruta}': {error}")
+        return bytes_liberados, ficheros
+
+    def _motivo_para_no_eliminar(self) -> Optional[str]:
+        """Precondiciones de la eliminación física."""
+        if self.politica is None:
+            return (
+                "politica_retencion_ausente: no se elimina sin política declarada, y no se "
+                "aplican plazos por defecto"
+            )
+        if self.politica.eliminacion is None:
+            return (
+                "politica_sin_bloque_eliminacion: config/retencion.yaml no declara el bloque "
+                "'eliminacion', de modo que no hay criterio de cuarentena que aplicar"
+            )
+        return None
 
     def _borrar_fichero_y_sidecar(self, ruta: str):
         """Borra el PDF y su sidecar de metadatos, midiendo lo liberado **antes** de borrar.

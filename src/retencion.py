@@ -53,6 +53,18 @@ class PoliticaArchivado:
 
 
 @dataclass(frozen=True)
+class PoliticaEliminacion:
+    """Criterio de eliminación física (Capa 9, Paso 6).
+
+    Un solo parámetro, y a propósito: lo demás que gobierna la eliminación no es un plazo
+    configurable sino una invariante del contrato —qué estados bloquean— que no puede
+    relajarse desde un fichero de texto.
+    """
+
+    dias_archivado_minimo: int
+
+
+@dataclass(frozen=True)
 class PoliticaRetencion:
     """Plazos vigentes y la versión bajo la que se ejecuta una purga.
 
@@ -69,6 +81,9 @@ class PoliticaRetencion:
     documentos_dias: int
     backups_dias: int
     archivado: Optional[PoliticaArchivado] = None
+    #: Igual que `archivado`: ausente significa que esa operación no se ejecuta, nunca que
+    #: se ejecute con un plazo inventado. Sin bloque `eliminacion` no se borra nada.
+    eliminacion: Optional[PoliticaEliminacion] = None
 
 
 def _entero_positivo(datos: Dict[str, Any], clave: str) -> int:
@@ -153,6 +168,27 @@ def _leer_archivado(datos: Dict[str, Any]) -> Optional[PoliticaArchivado]:
     )
 
 
+def _leer_eliminacion(datos: Dict[str, Any]) -> Optional[PoliticaEliminacion]:
+    """Lee y valida el bloque `eliminacion`, opcional y sin aproximaciones.
+
+    Ausente → `None`, y el Depurador no elimina nada. Presente → se exige un entero
+    positivo, como cualquier otro plazo del fichero.
+    """
+    if "eliminacion" not in datos:
+        return None
+
+    bloque = datos["eliminacion"]
+    if not isinstance(bloque, dict):
+        raise PoliticaRetencionInvalida(
+            f"El bloque 'eliminacion' de {NOMBRE_FICHERO} debe ser un mapa de claves, "
+            f"y se recibió {bloque!r}."
+        )
+
+    return PoliticaEliminacion(
+        dias_archivado_minimo=_entero_positivo(bloque, "dias_archivado_minimo")
+    )
+
+
 def cargar_politica(ruta: str = None) -> PoliticaRetencion:
     """Lee y valida la política de retención.
 
@@ -201,4 +237,5 @@ def cargar_politica(ruta: str = None) -> PoliticaRetencion:
         documentos_dias=_entero_positivo(datos, "documentos_dias"),
         backups_dias=_entero_positivo(datos, "backups_dias"),
         archivado=_leer_archivado(datos),
+        eliminacion=_leer_eliminacion(datos),
     )

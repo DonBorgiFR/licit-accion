@@ -970,7 +970,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 5 cerrados**, del 6 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.1.0**.
+* **Estado actual**: 🛠️ **En curso.** Abierta el 2026-08-07; **Pasos 1 a 6 cerrados** —el motor del Depurador está completo—, del 7 al 10 pendientes. Esquema de base de datos en **v6**; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1091,8 +1091,12 @@ graph TD
    - **Cierra H-33**: el Lector escribía `TEXTO_EXTRAIDO`, un estado que no leía nadie, mientras el Analista y la purga buscaban `PROCESADO`. El Analista IA no recibía ni un pliego y la purga sólo alcanzaba documentos descargados y nunca procesados — los que no pesan. Se ejecutaba en cada corrida sin liberar un byte.
    - **Y H-34**: `rotar_backups()` no devolvía su recuento, de modo que el `if purgados > 0` del pipeline lanzaba un `TypeError` que un `except` amplio anunciaba como un fallo del backup que no había ocurrido.
    - La purga sale del Lector: **gobernar el ciclo de vida del dato es competencia exclusiva del Depurador**, que es quien audita.
-6. **Paso 6 — Motor de Eliminación Física con Orden de Integridad**: 💤
-   - Borrado de hoja a raíz respetando `ON DELETE RESTRICT`, reservado a expedientes que caducaron sin salir de `Nueva`. Copia de seguridad previa obligatoria; si falla, no se ejecuta *(Regla 5)*.
+6. **Paso 6 — Motor de Eliminación Física con Orden de Integridad**: 🟢 Completado y Validado.
+   - `previsualizar_eliminacion()` —que no altera nada pero **deja constancia de quién miró**— y `eliminar_expedientes()`, con los cuatro errores tipados del contrato: `ConfirmacionRequerida`, `CopiaSeguridadFallida`, `PurgaBloqueadaPorMemoriaComercial` y `PurgaBloqueadaPorIntegridad`.
+   - **La invariante consulta tres fuentes y basta una para bloquear**: el estado actual de cada lote, los seis campos comerciales (importe, dinero en la mesa, horas, costes, garantía y adjudicataria) y el histórico de estados del expediente. Esta tercera es la decisiva: un lote que pasó por `Presentada` y hoy figura `Inactiva` —porque desapareció del feed— sería, sin ella, indistinguible de una `Nueva` que nadie llegó a mirar.
+   - Cascada hoja→raíz en una única transacción con las claves foráneas **activas**; los ficheros del disco se borran antes que sus filas, o quedarían huérfanos sin nadie que recordara de quién eran. Las alertas del Centinela vinculadas sobreviven perdiendo el vínculo (`ON DELETE SET NULL`).
+   - **Cuarentena de 365 días archivado** antes de poder eliminar *(decisión de dirección, 2026-08-12)*, declarada en el bloque `eliminacion` de `config/retencion.yaml`: impide archivar y borrar en el mismo minuto, que es la secuencia con la que se destruye algo por error.
+   - **No se cablea al pipeline.** `run.py` no puede eliminar un expediente ni queriendo: la operación exige lista explícita y confirmación expresa, y sólo llegará por la API del Paso 8.
 
 #### **Fase 3: Exposición por la Pasarela API**
 7. **Paso 7 — Router Administrativo de Lectura (`src/api/routers/admin.py`)**: 💤
@@ -1109,9 +1113,10 @@ graph TD
 ---
 
 ### 🛠️ Herramientas y Código a Crear
-- `config/retencion.yaml`: política de retención versionada. 🟢 **Creado (Paso 2, v1.1.0)**, con el bloque `archivado` añadido en el Paso 4. Se lee desde `src/retencion.py`.
-- `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟡 **Archivado (Paso 4) y purga documental (Paso 5)**; le falta la eliminación física del Paso 6.
+- `config/retencion.yaml`: política de retención versionada. 🟢 **Creado (Paso 2)**, con el bloque `archivado` del Paso 4 y el bloque `eliminacion` del Paso 6 (**v1.2.0**). Se lee desde `src/retencion.py`.
+- `src/depurador.py`: motor de archivado, purga documental y eliminación física. 🟢 **Completo (Pasos 4, 5 y 6)**.
 - `tests/test_capa9_purga_documental.py`: regresiones de la purga documental. 🟢 **Creado (Paso 5)**, 14 pruebas.
+- `tests/test_capa9_eliminacion.py`: regresiones de la invariante de memoria comercial. 🟢 **Creado (Paso 6)**, 24 pruebas.
 - `src/api/routers/admin.py`: endpoints de administración y purga. 💤 Pasos 7 y 8.
 - `tests/test_capa9_archivado.py`: regresiones del ciclo de vida. 🟢 **Creado (Paso 4)**, 41 pruebas. La suite E2E del Paso 10 se sumará aquí.
 - `frontend/src/components/AdminPanel.tsx`: pantalla de administración y purga en dos tiempos. 💤 Paso 9.

@@ -17,7 +17,8 @@ retencion:
   # un cambio de criterio no reescriba la historia de lo ya purgado.
   #
   # 1.1.0 (2026-08-07, Paso 4): incorpora el bloque `archivado`.
-  version: "1.1.0"
+  # 1.2.0 (2026-08-12, Paso 6): incorpora el bloque `eliminacion`.
+  version: "1.2.0"
 
   # Días que se conservan los pliegos descargados y su texto extraído.
   #
@@ -75,3 +76,25 @@ retencion:
     # mientras un solo lote siga en juego, el expediente sigue en juego. Evita que un
     # expediente de cinco lotes desaparezca porque cuatro caducaron.
     archivar_expediente_con_todos_sus_lotes: true
+
+  # -----------------------------------------------------------------------------------
+  # ELIMINACIÓN FÍSICA (Capa 9, Paso 6) — decisión de dirección del 2026-08-12.
+  #
+  # La única operación capaz de destruir registros, y por tanto la más protegida. Sólo
+  # alcanza a expedientes que NUNCA llegaron a ser negocio: los que caducaron sin salir
+  # de `Nueva`, `Inactiva` o `Anulada_Administracion`, sin un solo campo comercial
+  # relleno y sin ninguna huella en el histórico de estados.
+  #
+  # Nunca se dispara sola. Exige lista explícita de expedientes, confirmación expresa y
+  # una copia de seguridad previa correcta; si la copia falla, no se ejecuta. El pipeline
+  # no la invoca jamás: `run.py` no puede borrar un expediente ni queriendo.
+  #
+  # Si este bloque falta, NO se elimina nada y se dice. Misma doctrina que el resto.
+  eliminacion:
+    # Días que un expediente debe llevar archivado antes de poder eliminarse.
+    #
+    # 365 por decisión de dirección: una cuarentena que impide archivar y borrar en el
+    # mismo minuto, que es la secuencia con la que se destruye algo por error. No hay
+    # ninguna prisa —lo elegible es, por definición, lo que nadie miró nunca— y el
+    # expediente ya llevaba 60 días archivado como mínimo antes de empezar a contar.
+    dias_archivado_minimo: 365
