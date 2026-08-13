@@ -35,6 +35,14 @@ hay que leer el bloque de la Capa 10 más abajo y el contrato en
 consola (Paso 7), la tarea programada (Paso 8), el aviso en pantalla de una corrida fallida
 (Paso 9) y el cierre con `MANUAL.md` (Paso 10).
 
+> 📋 **La Capa 11 existe en el README, y NO es una tarea.** El 2026-08-13 se anotó un apunte de
+> alcance sobre el despliegue en servidor —VPS, Docker, `cron` y Basic Auth— para pasar de una
+> instalación por PC a un sistema compartido. **No está diseñada ni pautada, y no se abre hasta
+> cerrar la Capa 10** (Regla 11). Lo que sí conviene leer antes de tocar nada de la 10 son los
+> **cuatro compromisos que esa capa obligaría a revisar** —la seguridad basada en `127.0.0.1`, las
+> rutas absolutas de los documentos, el alcance del cerrojo y por qué `es_sesion_interactiva()` ya
+> está preparada—, porque afectan a decisiones que se están tomando ahora.
+
 ---
 
 ## 📍 Dónde estamos

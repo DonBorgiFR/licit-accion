@@ -1,9 +1,12 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
-> **Estado del producto: Beta 0.3 (2026-08-12).** **Las Capas 1 a 9 están completadas y
-> validadas**, y la Capa 10 —el lanzador silencioso— es la activa. El 2026-08-12 se ejecutó la
-> **primera corrida real del pipeline completo**: 12 expedientes captados, 88 documentos
-> detectados, 63 pliegos descargados y leídos, 10 análisis semánticos del LLM y 0 errores.
+> **Estado del producto: Beta 0.3 (2026-08-13).** **Las Capas 1 a 9 están completadas y
+> validadas**, y la Capa 10 —el lanzador silencioso— es la activa, con sus **Pasos 1 a 5
+> cerrados**: el Cockpit ya se sirve desde FastAPI sin Node.js y el servidor se arranca y se apaga
+> solo. La **Capa 11** —despliegue en servidor— está **anotada como alcance, no diseñada**. El
+> 2026-08-12 se ejecutó la **primera corrida real del pipeline completo**: 12 expedientes captados,
+> 88 documentos detectados, 63 pliegos descargados y leídos, 10 análisis semánticos del LLM y 0
+> errores.
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
@@ -230,9 +233,11 @@ graph TD
     C85 --> B2[Bloque 2: Coherencia de Negocio LCSP<br/>Escala única, cláusulas y estado por lote]
     B2 --> C9[Capa 9: El Histórico y Depurador<br/>Archivo y Purga de Datos]
     C9 --> C10[Capa 10: El Lanzador y Despertador<br/>Silent Launcher VBS y Tarea Programada]
+    C10 -.-> C11[Capa 11: Despliegue en Servidor LAN/Cloud<br/>VPS y contenedores · apunte de alcance]
 
     style C9 fill:#2d6a4f,stroke:#1b4332,color:#d8f3dc
     style C10 fill:#7f5539,stroke:#4a2f1f,color:#f3e5d8
+    style C11 fill:#33415c,stroke:#1b263b,color:#dbe4f0,stroke-dasharray: 5 5
 ```
 
 > **¿Por qué esta secuencia ampliada?** 
@@ -242,6 +247,7 @@ graph TD
 > 4. **El Cockpit (Capa 8)** proporciona la cara humana del sistema mediante una SPA local-first premium (React + Vite + Tailwind + TanStack).
 > 5. **El Histórico e Historial (Capa 9)** nos permite depurar el sistema, agrupar ejecuciones anteriores y dotar a la cooperativa del botón de "Borrar/Purgar" para limpiar registros antiguos sin comprometer la integridad.
 > 6. **El Lanzador Silencioso (Capa 10)** elimina la necesidad de consolas o comandos: un script VBS silencioso al hacer doble clic, y una tarea programada de Windows que prospecta sola cada mañana. **No incluye avisos activos** *(decisión de dirección, 2026-08-12)*: el canal por el que el sistema habla es el Cockpit, que ya existe.
+> 7. **El Despliegue en Servidor (Capa 11)** está **anotado como alcance, no diseñado** *(2026-08-13)*. Resolvería el paso de una instalación por PC a un sistema compartido por las 3-4 personas de la cooperativa, que es un problema de **verdad única** —hoy cada equipo tendría su propia base y su propio histórico— y no de rendimiento. Su detalle vive al final del documento, con los compromisos anteriores que obligaría a revisar.
 
 ---
 
@@ -1523,6 +1529,97 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
 - `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
 - `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 56 regresiones de los Pasos 2 a 5.
+
+---
+
+## 🌐 Capa 11: Despliegue en Servidor LAN/Cloud (VPS y Contenedores)
+
+* **Estado actual**: 📋 **Apunte de alcance, anotado el 2026-08-13.** No está diseñada ni pautada,
+  y **no se abre hasta cerrar la Capa 10**.
+
+> ⚠️ **Qué es y qué no es esta sección.** La Regla 11 prohíbe diseñar capas futuras o pedir
+> decisiones sobre ellas, y esto no la incumple porque **no decide nada**: registra la dirección
+> hacia la que apunta el proyecto y —lo que de verdad importa— **qué compromisos de las capas
+> anteriores tendrían que revisarse**, para que no se descubran el día que se abra. Cuando llegue
+> su momento empezará como todas: por un contrato de servicio y una máquina de estados *(Reglas 1
+> y 2)*.
+
+### 🎯 Objetivo
+
+Pasar de una instalación local por PC a **un único sistema compartido por las 3 o 4 personas** que
+lo usan en la cooperativa. Hoy cada equipo que ejecute el pipeline tiene su propia base, sus
+propios pliegos y su propio criterio: dos personas mirando el Funnel no ven necesariamente lo
+mismo, y la memoria comercial —win-rate, CAC, histórico de adjudicaciones— se fragmenta en tantas
+copias como ordenadores. **El problema que resuelve esta capa no es de rendimiento, es de verdad
+única.**
+
+### 🧱 Lo que se conserva intacto
+
+El diseño central no cambia. Se empaqueta, no se reescribe:
+
+| Pieza | Qué pasa con ella |
+|---|---|
+| **FastAPI + Cockpit** | Ya se sirven desde un solo proceso (Capa 10, Paso 4). Es lo que hace esto viable sin tocar nada. |
+| **SQLite en modo WAL** | Se conserva. WAL, `busy_timeout` de 30 s y el cerrojo con PID y TTL son del Bloque 1, y se hicieron precisamente pensando en la concurrencia. |
+| **Pipeline, Filtro, Analista, Depurador** | Sin cambios: el contenedor es una forma de entregarlos, no de rehacerlos. |
+| **`config/*.yaml`** | Siguen gobernando el comportamiento. La contenerización no puede convertirse en una vía para inventar valores por defecto. |
+
+### 🔧 Lo que cambia
+
+1. **Empaquetado con Docker y Docker Compose.** Una imagen que lleve Python, FastAPI y
+   **Tesseract OCR**. Este último es el que más justifica el contenedor: hoy su ausencia degrada la
+   Capa 4 a OCR diferido en cada máquina donde nadie lo instaló, y una imagen lo resuelve de una vez
+   para todas.
+2. **Volúmenes persistentes obligatorios.** `data/` —la base SQLite, los PDFs descargados, los
+   registros y las copias— vive en un volumen que sobrevive a cualquier reinicio o reconstrucción de
+   la imagen. Un contenedor sin volumen borraría la memoria comercial al primer `docker compose up`,
+   y sería el error más caro posible en un sistema cuyo valor es justamente el histórico.
+3. **El despertador pasa de Windows a `cron`.** La Tarea Programada de la Capa 10 se sustituye por
+   un `cron` de Linux en el VPS —por ejemplo, una `e2-micro` de Google Cloud—. La decisión de fondo
+   se mantiene y viaja bien: **programar es configuración, no código**.
+4. **Seguridad perimetral ligera con HTTP Basic Auth** en FastAPI. Es el cambio de premisa más
+   importante de la capa, y por eso tiene recuadro propio.
+
+### 🔑 Los cuatro compromisos anteriores que esta capa obliga a revisar
+
+Esto es lo que hace útil el apunte. Ninguno es un problema hoy; los cuatro lo serían el día que se
+abra la capa, y **es mucho más barato saberlo ahora**:
+
+1. **La seguridad del sistema descansa hoy en `127.0.0.1`, no en credenciales.** El Cockpit no tiene
+   autenticación, y por eso `config/lanzador.yaml` declara `host: "127.0.0.1"` con un comentario
+   explícito: exponerlo a la red dejaría la memoria comercial al alcance de cualquiera con un
+   navegador. El endpoint `POST /api/v1/admin/apagar` se apoya en la misma premisa. **Basic Auth no
+   es una mejora opcional: es el requisito que sustituye a esa frontera**, y hasta que exista no
+   procede escuchar en `0.0.0.0`.
+2. **Las rutas de los documentos se guardan absolutas en la base.** `documentos.local_path` contiene
+   rutas del sistema donde se descargó el pliego. Migrar de `C:\...\data\documents` a
+   `/app/data/documents` invalidaría todas las existentes, y el guardián `_fichero_es_mio()` del
+   Depurador —el que cerró H-36— rechazaría esos ficheros por caer fuera de su directorio
+   documental. **Habrá que decidir si se migran las rutas o se relativizan**, y es una decisión de
+   datos, no de infraestructura.
+3. **El cerrojo de fichero protege procesos, no usuarios.** `db_lock()` impide dos corridas
+   simultáneas del pipeline, que es lo que la Capa 9 necesita porque el pipeline **borra ficheros**.
+   Pero tres personas editando lotes a la vez desde el Cockpit es un escenario distinto que hoy
+   nadie ha ejercitado: las mutaciones son transaccionales, y aun así **procede medirlo antes de
+   afirmarlo**, no darlo por bueno porque el diseño lo permita.
+4. **`es_sesion_interactiva()` ya está preparada, y conviene no "arreglarla".** En un contenedor
+   nunca hay escritorio, así que devolverá siempre `False` — que es exactamente su comportamiento
+   correcto y seguro: sin sesión gráfica, los canales son el código de salida y el registro. La
+   invariante de la Capa 10 sobrevive a la contenerización **sin tocar una línea**, y quien la vea
+   devolver siempre `False` en el servidor no debe interpretarlo como un defecto.
+
+### 📋 Preguntas abiertas, a resolver cuando la capa se abra
+
+*No se responden aquí. Se registran para que la discusión empiece con ellas sobre la mesa.*
+
+* ¿SQLite compartido basta para 3-4 usuarios concurrentes, o el salto real es a PostgreSQL? *(La
+  respuesta honesta exige medirlo, no estimarlo.)*
+* ¿El VPS ejecuta el pipeline, o sigue habiendo un equipo que prospecta y sincroniza?
+* ¿Basic Auth con usuarios compartidos, o identidad por persona? Afecta al rastro de auditoría:
+  hoy `updated_by` y `solicitado_por` registran quién decidió, y con una credencial única dejarían
+  de distinguirlo.
+* ¿Qué pasa con las claves del LLM —`GEMINI_API_KEY`— cuando el sistema deja de correr en el
+  ordenador de una persona?
 
 ---
 
