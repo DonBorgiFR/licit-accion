@@ -260,7 +260,7 @@ una regresión que lo fija con las tres grafías a la vez.
 
 **Paso 1 cerrado.** Los Pasos 2 a 6 también lo están: política versionada, esquema v6 y **las tres
 operaciones del contrato implementadas** —archivar, purgar peso documental y eliminar—. El estado
-vigente de la capa vive en [`AGENTS.md`](AGENTS.md), no aquí — este documento es el contrato, y sólo
+vigente de la capa vive en [`ESTADO.md`](ESTADO.md), no aquí — este documento es el contrato, y sólo
 cambia cuando cambian sus reglas.
 
 **Añadido el 2026-08-12 al implementar el Paso 6**: la cuarentena de la Operación 3 es una regla

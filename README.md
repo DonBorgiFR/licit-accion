@@ -16,7 +16,7 @@
 > `purgas`, pero conviene saberlo antes de automatizar su ejecución.
 >
 > **Repositorio**: https://github.com/DonBorgiFR/licit-accion · **Estado detallado por capas,
-> hallazgos y decisiones**: [`.agents/`](.agents/) — `AGENTS.md` es el punto de entrada.
+> hallazgos y decisiones**: [`.agents/`](.agents/) — `ESTADO.md` dice dónde estamos y `AGENTS.md` cómo se trabaja.
 
 ## 🎯 Objetivo del Proyecto
 
@@ -1278,6 +1278,17 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 | `data/lanzador.pid` | Marca del servidor propio | Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
 | Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
 | `POST /api/v1/admin/apagar` | Apagado ordenado | Único cierre limpio posible sin consola. Sólo `127.0.0.1` y con el testigo del fichero PID. |
+| `MANUAL.md` | Manual de operación | **El primer documento del proyecto escrito para quien usa el sistema, no para quien lo construye.** Se redacta en el Paso 10. |
+
+> 📘 **Por qué el manual es un artefacto de esta capa y no de otra** *(decisión de dirección,
+> 2026-08-13)*. Hasta ahora toda la documentación se dirige a quien construye: el README es diseño,
+> `.agents/AGENTS.md` son reglas, `.agents/ESTADO.md` es el estado y la auditoría son defectos. Es
+> coherente, porque hasta ahora el sistema sólo lo arrancaba quien lo estaba escribiendo. **Esta
+> capa cambia justo eso**: al terminar, el usuario será alguien que hace doble clic en un icono y
+> que necesitará saber qué significa el diálogo que le ha salido, cómo dejar un PC nuevo listo o
+> cómo cambiar la hora del despertador — y no va a leer un dosier de auditoría para averiguarlo. La
+> Consideración 12 ya declara que la instalación en un equipo nuevo forma parte de la capa; el
+> manual es dónde vive esa respuesta.
 
 > ⚠️ **Cambio de contrato de la Capa 7 que esta capa introduce**: al servir el Cockpit desde
 > FastAPI, la raíz `/` deja de devolver el JSON de bienvenida y pasa a servir la aplicación. El
@@ -1459,6 +1470,10 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
     - **Verificación en vivo del doble clic**, que es la única que vale aquí *(Convención C7)*:
       ejecutar el `.vbs` de verdad, comprobar que no aparece ninguna consola, que el Cockpit abre
       con datos y que la tarea programada dispara una corrida real.
+    - **`MANUAL.md`, el manual de operación**: instalación en un equipo nuevo, qué hace el doble
+      clic, qué significa cada código de salida y cada diálogo, cómo dar de alta y de baja el
+      despertador y qué mirar cuando una noche no se prospectó. Escrito para quien **usa** el
+      sistema, que es el lector para el que este proyecto todavía no ha escrito nada.
     - **Cierre del ecosistema completo**: con esta capa se cierra el recorrido de la Capa 1 a la 10.
 
 ---
@@ -1471,6 +1486,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 💤
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
+- `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
 - `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 36 regresiones de los Pasos 2 y 3.
 
 ---

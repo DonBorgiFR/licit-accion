@@ -3,7 +3,7 @@
 **Fecha**: 2026-07-27 · **Alcance**: Capas 1 a 8 · **Estado del sistema al iniciar**: 130/134 pruebas en verde
 
 > Este documento registra **hallazgos con evidencia reproducible**. No repite lo que ya está en
-> el `README.md` (diseño) ni en `AGENTS.md` (reglas y estado). Su función es que ningún agente ni
+> el `README.md` (diseño), en `AGENTS.md` (reglas) ni en `ESTADO.md` (estado). Su función es que ningún agente ni
 > persona tenga que volver a descubrir estos problemas desde cero.
 >
 > **Convención**: cada hallazgo indica cómo se reprodujo. Si un hallazgo se marca como cerrado,
@@ -777,7 +777,7 @@ ningún fixture—; y `autoinicializar_proveedor=False` en las dos instancias qu
 ## Hallazgo de la revisión de cobertura CPV — 2026-08-07
 
 > Salió de retomar la pregunta aplazada el 31-07-2026 sobre el solapamiento entre el perfil de CPVs
-> de Incoop y los CPVs realmente capturados. La pregunta de cobertura se resolvió (ver `AGENTS.md`);
+> de Incoop y los CPVs realmente capturados. La pregunta de cobertura se resolvió (ver `ESTADO.md`);
 > por el camino apareció este defecto, que no tiene que ver con la cobertura sino con el reparto por
 > sectores.
 
