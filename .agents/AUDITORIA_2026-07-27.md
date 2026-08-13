@@ -1310,6 +1310,50 @@ de verdad. Estaban ejercitando una disposición que en producción no ocurre. Co
 
 ---
 
+### H-37 · `setup_db()` usa un cerrojo propio que no sabe reclamar huérfanos 🔴 ABIERTO (Capa 10, Paso 2)
+
+**Detectado el 2026-08-13 al redactar el contrato de la Capa 10**, revisando qué le ocurre al
+cerrojo cuando el lanzador mata un proceso.
+
+Hay **dos cerrojos distintos sobre el mismo fichero `.lock`**:
+
+| Implementación | Ubicación | TTL | Verifica PID | Reclama huérfanos |
+|---|---|---|---|---|
+| `db_lock()` | `src/memoria.py:644` | 600 s | Sí | **Sí** — todo el endurecimiento del Paso D1 |
+| `setup_db()` | `src/memoria.py:759` | **No** | **No** | **No** — 5 intentos de 1 s y `RuntimeError` |
+
+Y `setup_db()` es **lo primero que hace `main()`** (`src/main.py:89`), de modo que en el arranque
+del pipeline quien pregunta por el cerrojo es siempre la implementación que no sabe reclamarlo.
+
+**Cómo se reproduce** (medido el 2026-08-13 sobre una base temporal aislada): sembrar un
+`licitaciones.db.lock` con el payload de un PID que ya no existe —o un fichero de 0 bytes, que es lo
+que deja un proceso muerto entre crear el cerrojo y escribir su contenido— e invocar las dos
+implementaciones contra **el mismo fichero**:
+
+| Caso | Implementación | Resultado medido |
+|---|---|---|
+| Cerrojo con PID muerto | `setup_db()` | ❌ `RuntimeError` **tras 5,0 s** |
+| **El mismo cerrojo** | `db_lock(timeout=10)` | ✅ **Reclamado en 0,0 s** |
+| Cerrojo de 0 bytes | `setup_db()` | ❌ `RuntimeError` **tras 5,0 s** |
+
+La protección existe, funciona y está a un método de distancia: simplemente no la usa quien pregunta
+primero.
+
+**Por qué es la Capa 10 quien lo activa, y no quien lo introduce**: el apagado ordenado de nivel 3
+es `TerminateProcess`. Si mata al proceso dentro de la ventana del cerrojo, deja un `.lock`
+huérfano. A las 3 de la madrugada el despertador arranca, `setup_db()` lo encuentra, espera cinco
+segundos, lanza `RuntimeError` y el pipeline sale con código `1` **sin consola donde verlo**. La
+protección del Paso D1 existe y no llega a actuar.
+
+Es la misma familia que H-15: una protección correcta que no cubre la ruta por la que se pasa de
+verdad. Y el mismo patrón que la Convención C4 combate — la ruta reparada tiene pruebas, la ruta
+real no la ejercita.
+
+**Reparación prevista**: Paso 2 de la Capa 10, donde vive el healthcheck de arranque en frío, que es
+literalmente el sitio donde se comprueba que la base es accesible y migrable.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -1340,3 +1384,7 @@ de verdad. Estaban ejercitando una disposición que en producción no ocurre. Co
 | 2026-08-12 | **La Capa 10 arranca, no avisa** | El nombre "Despertador" y el diagrama del roadmap sugerían alertas activas, pero el canal por el que el sistema habla ya existe y es el Cockpit: KPIs, Funnel, Centinela e historial de prospecciones. Añadir notificaciones de escritorio abriría una pregunta que hoy nadie ha respondido —qué merece interrumpir a una persona— y competiría con la pantalla que ya se mira. La capa queda acotada a lanzar y programar, que es lo que falta para que lo construido se use. |
 | 2026-08-12 | **La ejecución automática se apoya en el Programador de tareas de Windows** | Sobrevive a los reinicios, no deja proceso residente consumiendo memoria y aporta su propio registro además del JSONL. Un servicio propio significaría asumir la responsabilidad de mantenerlo vivo a cambio de nada que el sistema operativo no dé ya hecho. Programar pasa a ser configuración, no código. |
 | 2026-08-12 | **La máquina de destino sólo necesitará Python: FastAPI sirve el Cockpit** | Ver el Cockpit exige hoy Node.js y un segundo servidor (`npm run dev`). Como `frontend/dist/` ya se compila y la API ya está en marcha, servir el bundle como estáticos elimina una dependencia por cada PC de la cooperativa, un proceso que arrancar y un puerto que vigilar. Node sigue haciendo falta para desarrollar, no para usar. Implica un cambio de contrato de la Capa 7: la raíz `/` deja de devolver el JSON de bienvenida, que se traslada a `/api/v1/`. |
+| 2026-08-13 | **El lanzador traduce los códigos de salida del pipeline; no los modifica** | Hoy `src/main.py` devuelve `1` para todo fallo, de modo que "no prospecté porque había un cerrojo vivo" y "reventé" son indistinguibles para el Programador de tareas. Se resuelve **envolviendo**: el lanzador comprueba el cerrojo antes de invocar y emite su propio código. Cambiar los códigos de `main.py` sería modificar desde la Capa 10 una capa cerrada y validada, que es lo que la Regla 14 prohíbe. |
+| 2026-08-13 | **Si el pipeline falla pero la API está sana, el Cockpit se abre igual** | Con el distintivo del Paso 9 avisando de que la última corrida falló. Negarle a alguien los datos de ayer porque la prospección de hoy falló convierte un fallo parcial en una avería total: el Cockpit sigue siendo útil sin la corrida del día, y quien haga doble clic necesita ver **por qué** falló, no una pantalla que no abre. |
+| 2026-08-13 | **H-37 se repara dentro del Paso 2 de la Capa 10, no antes** | El healthcheck de arranque en frío es literalmente el sitio donde se comprueba que la base es accesible y migrable. Repararlo suelto por adelantado sería tocar la Capa 9 ya cerrada sin el contrato que lo justifique. |
+| 2026-08-13 | **El `created_at` de `db_lock()` se declara pero no se repara en esta capa** | El cerrojo guarda la fecha del cerrojo, no la del proceso propietario, de modo que un PID reciclado por Windows puede hacerle ver "vivo" a un dueño que ya murió. Queda enunciado en el contrato de la Capa 10 (sección E). Tocar el cerrojo de la Capa 9 desde la 10 sin un defecto reproducible que lo exija es lo que la Regla 14 prohíbe; si el Paso 5 produce esa evidencia, se abre como hallazgo propio. |

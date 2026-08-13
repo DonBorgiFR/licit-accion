@@ -1149,7 +1149,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12**, redactada y pendiente de desarrollo. Empieza por su contrato de servicio y su máquina de estados *(Reglas 1 y 2)*, como todas las anteriores.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** El **Paso 1 quedó validado el 2026-08-13** y vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 2**. Los ocho restantes, sin empezar.
 
 ### 🎯 Objetivo
 
@@ -1290,18 +1290,28 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 #### **Fase 1: Contrato y comprobación previa**
 
-1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Lanzador** *(Reglas 1 y 2)*: 💤
+1. **Paso 1 — Contrato de Servicio y Máquina de Estados del Lanzador** *(Reglas 1 y 2)*: 🟢 **Completado y validado el 2026-08-13.** Vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md) y **rige todo lo que venga después**.
    - Estados `DETENIDO → COMPROBANDO → ARRANCANDO → OPERATIVO → DETENIENDO → DETENIDO`, con
      `DEGRADADO` como salida honesta desde cualquiera de ellos.
-   - **Transiciones prohibidas**, que son la parte sustantiva: arrancar sin healthcheck
-     satisfactorio; lanzar un pipeline con el cerrojo tomado y vivo; apagar un proceso que el
-     lanzador no encendió; y terminar en `DEGRADADO` sin dejar rastro ni código de salida distinto
-     de cero.
+   - **Seis transiciones prohibidas**, que son la parte sustantiva: arrancar sin healthcheck
+     satisfactorio; lanzar un pipeline con el cerrojo tomado y vivo; **forzar un cerrojo huérfano
+     por cuenta propia**; apagar un proceso que el lanzador no encendió; terminar en `DEGRADADO`
+     con código de salida cero; y **cualquier llamada gráfica que no pase por
+     `es_sesion_interactiva()`**.
    - Modos de invocación declarados: **completo** (servidor + pipeline + navegador), **sólo
-     pipeline** (el del despertador, sin abrir nada) y **sólo Cockpit** (abrir la pantalla sin
-     prospectar).
+     pipeline** (el del despertador, que **no levanta servidor y no ejecuta una sola llamada
+     gráfica**) y **sólo Cockpit** (abrir la pantalla sin prospectar).
+   - **Mapa de códigos de salida** que distingue *omisión deliberada* de *avería*: el `30` —pipeline
+     omitido por cerrojo vivo— no es un fallo, pero tampoco puede ser un `0`, o el Programador de
+     tareas registraría una noche sana en la que no se prospectó nada. El `1` queda reservado a lo
+     que este contrato no previó.
+   - **Detectó H-37** al preguntarse qué le ocurre al cerrojo cuando el lanzador mata un proceso.
 
 2. **Paso 2 — Healthcheck de Arranque en Frío y Canal de Fallo Fatal (`src/lanzador.py`)** *(Regla 6)*: 💤
+   - **Cierra H-37**: `setup_db()` usa un cerrojo propio, sin TTL ni verificación de PID, sobre el
+     mismo fichero que `db_lock()`. Es lo primero que hace el pipeline, así que un `.lock` huérfano
+     —justo lo que deja el apagado de nivel 3— tumba la corrida nocturna con un `RuntimeError` y sin
+     consola donde verlo. La protección del Paso D1 existe y no llega a actuar.
    - Verifica intérprete y versión de Python, dependencias importables, ficheros de configuración
      legibles, base accesible y migrable, espacio libre en disco y existencia de `frontend/dist/`.
    - **Distingue tres estados del puerto**, que es donde se equivocan estos lanzadores: libre;
@@ -1359,6 +1369,11 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    - Si el cerrojo está huérfano **no lo borra por su cuenta**: deja que lo reclame la lógica que
      ya existe y sabe hacerlo bien. Un lanzador que fuerce cerrojos anula la protección que la
      Capa 9 necesita.
+   - **El lanzador traduce los códigos de salida del pipeline; no los modifica** *(decisión de
+     dirección, 2026-08-13)*. Hoy `main.py` devuelve `1` para todo fallo. La capa lo resuelve
+     envolviendo —comprobar el cerrojo antes de invocar y emitir su propio código—, dejando la
+     Capa 9 intacta: cambiar `main.py` desde aquí sería modificar una capa cerrada, que es lo que
+     la Regla 14 prohíbe.
 
 #### **Fase 3: Ergonomía silenciosa y despertador**
 
@@ -1401,6 +1416,9 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
    - El distintivo del Cockpit se apoya en el historial de prospecciones que la Capa 9 ya sirve: no
      hay que construir un canal nuevo, sólo hacer visible que la última corrida falló o se degradó.
+   - **Si el pipeline falla pero la API está sana, el Cockpit se abre igual** *(decisión de
+     dirección, 2026-08-13)*, con este distintivo avisando. Negarle a alguien los datos de ayer
+     porque la prospección de hoy falló convierte un fallo parcial en una avería total.
    - Es el paso que impide que esta capa convierta el sistema en una caja negra silenciosa.
 
 #### **Fase 4: Verificación y Cierre del Ecosistema**

@@ -14,7 +14,7 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **334/334**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 36 hallazgos catalogados, los 36 están cerrados. **La capa activa es la 10**, el Lanzador.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **334/334**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 37 hallazgos catalogados, 36 están cerrados y **H-37 queda abierto**, para repararse en el Paso 2 de la Capa 10. **La capa activa es la 10**, el Lanzador: su **Paso 1 está redactado el 2026-08-13** y pendiente de validación.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -30,7 +30,9 @@ python -m pytest tests/ -q          # debe dar 334/334
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla para abrir la 10.
 
-**La Capa 10 ya está redactada y pautada en el `README.md`**, sección *"🚀 Capa 10: El Lanzador y Despertador"*: objetivo, diez consideraciones de diseño, los artefactos que produce y **los 10 pasos atómicos en cuatro fases**. No hay que rediseñarla: **empieza por su Paso 1**, el contrato de servicio y la máquina de estados (Reglas 1 y 2).
+**La Capa 10 ya está redactada y pautada en el `README.md`**, sección *"🚀 Capa 10: El Lanzador y Despertador"*: objetivo, doce consideraciones de diseño, los artefactos que produce y **los 10 pasos atómicos en cuatro fases**. No hay que rediseñarla.
+
+**El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13**. **La tarea activa es el Paso 2**, el healthcheck de arranque en frío, que además **cierra H-37**.
 
 **Tres decisiones de dirección ya tomadas el 2026-08-12** que la redacción respeta y que no hay que volver a plantear:
 * **La capa arranca, no avisa.** Nada de notificaciones activas: el canal por el que el sistema habla es el Cockpit, que ya existe. El nombre "Despertador" se refiere a despertar el ecosistema, no a avisar a una persona.
@@ -40,6 +42,10 @@ python -m pytest tests/ -q          # debe dar 334/334
 > 🔑 **La restricción transversal de la capa, y la que más fácil sería pasar por alto**: ocultar la consola obliga a avisar de los fallos fatales con un diálogo nativo del sistema, porque un healthcheck que falla ocurre **antes** de que exista el Cockpit donde avisar. Pero ese mismo diálogo, lanzado desde la tarea programada nocturna, corre en la **Session 0** —sin escritorio— y deja un proceso colgado esperando a un usuario que no existe. **La solución de un problema es la causa del otro.** Por eso una única función, `es_sesion_interactiva()`, decide consultando el identificador de sesión del proceso —no el modo de invocación, que es una intención y puede venir equivocada—, y **toda** llamada a interfaz gráfica pasa por ella. La prueba que lo cierra no es que la tarea se registre, sino que una corrida sin escritorio **termina sola y no deja proceso vivo**.
 
 > ⚠️ **Lo que la Capa 9 deja avisado para la 10**: el pipeline ya no es sólo prospección. Cada corrida **archiva y purga** —`main.ejecutar_fase_depurador()`—, es decir, **borra ficheros del disco**. Un lanzador que ejecute el pipeline dos veces a la vez, o que lo mate a mitad, opera sobre un proceso que destruye peso documental. El cerrojo de fichero con TTL y verificación de PID (Paso D1) es ahora una pieza crítica, no una precaución.
+
+### 📕 Historia cerrada de la Capa 9 (referencia, no tarea)
+
+> Todo lo que sigue hasta el final de esta sección describe la **Capa 9, ya cerrada**. Se conserva porque sus lecciones y decisiones rigen lo que venga después, pero **ninguno de estos pasos es la tarea activa**: la tarea activa es el Paso 1 de la Capa 10, arriba.
 
 * **Paso 1** 🟢 — contrato de servicio y máquina de estados, validado por dirección. Vive en [`CONTRATO_CAPA_9.md`](CONTRATO_CAPA_9.md) y **rige todo lo que venga después**: léelo antes de tocar el Depurador.
 * **Paso 2** 🟢 — política de retención versionada en `config/retencion.yaml`, leída por `src/retencion.py`. Hoy en **v1.2.0**, con los bloques `archivado` (Paso 4) y `eliminacion` (Paso 6).
@@ -68,7 +74,7 @@ python -m pytest tests/ -q          # debe dar 334/334
 
 Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados. El detalle está más abajo, en "Pasos completados"; el contrato del Bloque 2 vive en [`CONTRATO_BLOQUE_2.md`](CONTRATO_BLOQUE_2.md).
 
-**Nada bloquea la Capa 9.** Node.js 24.19.0 LTS quedó instalado el 2026-08-06 y `npm run build` se ejecuta limpio, con `tsc -b` en modo estricto sin errores.
+**Node.js sigue haciendo falta para desarrollar, no para usar.** La versión 24.19.0 LTS quedó instalada el 2026-08-06 y `npm run build` se ejecuta limpio, con `tsc -b` en modo estricto sin errores. La Capa 10 se apoya en esto: el bundle compilado es lo que FastAPI servirá, de modo que la máquina de destino no necesitará Node.
 
 **Aviso para no repetir un diagnóstico equivocado**: durante un tiempo se dio por hecho que `frontend/dist/` estaba desfasado, deduciéndolo de su fecha de modificación. Era falso. Al recompilar, Vite generó **exactamente los mismos nombres de fichero** (`index-B6BIdKdG.js`, `index-BKUbaev-.css`), y esos nombres son un hash del contenido: el bundle ya estaba al día. El proyecto vive en OneDrive, así que lo más probable es que se compilara en otra máquina. **La fecha de un artefacto no dice de qué fuente salió: compruébese el contenido.**
 
@@ -76,11 +82,7 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-Nada pendiente. H-32 quedó cerrado el 2026-08-07 dentro del Paso 4.
-
-Queda **una cuestión de diseño abierta, sin urgencia**: el Cockpit no muestra el sector en ninguna
-pantalla —`sector` sólo existe en `frontend/src/types/api.ts`, sin componente que lo pinte—. El
-dato se calcula, se persiste y se sirve, pero nadie lo ve.
+Nada pendiente. El contrato del Paso 1 de la Capa 10 quedó **validado el 2026-08-13**.
 
 ~~Y una **inconsistencia latente, hoy inocua**~~ **— cerrada el 2026-08-12 dentro del Paso 8.** `Memoria.actualizar_estado_lote()` guardaba el estado
 en minúsculas, mientras el selector del Cockpit ofrece los valores capitalizados del enum. Un lote
@@ -382,7 +384,7 @@ cd frontend && npm run dev          # http://localhost:5173
 
   > ⚠️ **Este recuadro decía que el Paso 5 era "consolidar, no escribir", porque las dos piezas de purga "ya funcionaban y sólo les faltaba gobierno". Era falso, y se conserva como advertencia.** `lector.ejecutar_purga_obsoletos()` no alcanzaba ningún documento con peso (H-33) y `memoria.rotar_backups()` devolvía `None`, haciendo que el pipeline anunciase un fallo de backup inexistente (H-34). Las dos se ejecutaban en cada corrida sin fallar nunca. **Que un módulo se ejecute no prueba que haga algo: hay que medir su efecto sobre una base sembrada antes de darlo por bueno.**
 
-* **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Servicio Local): 💤
+* **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada): 🛠️ **Capa activa desde el 2026-08-12.** Redactada y pautada en el `README.md`; ningún paso implementado todavía. Empieza por el Paso 1, el contrato de servicio y la máquina de estados.
 
 ---
 
@@ -390,7 +392,7 @@ cd frontend && npm run dev          # http://localhost:5173
 
 > Auditoría integral realizada el **2026-07-27** sobre las Capas 1 a 8. Antes de abrir la Capa 9 se cierran los defectos bloqueantes detectados. Cada paso se valida con el usuario y se verifica con la suite completa antes de avanzar.
 >
-> 📄 **Evidencia y detalle de cada hallazgo: [`.agents/AUDITORIA_2026-07-27.md`](AUDITORIA_2026-07-27.md)** — la auditoría original catalogó 14 (H-01 a H-14); el dosier recoge hoy **los 32**, incluidos los que fueron apareciendo después al reparar y al arrancar la aplicación. Cada uno con la forma de reproducirlo y la prueba de regresión que impide que vuelva. Consúltalo antes de rediagnosticar nada.
+> 📄 **Evidencia y detalle de cada hallazgo: [`.agents/AUDITORIA_2026-07-27.md`](AUDITORIA_2026-07-27.md)** — la auditoría original catalogó 14 (H-01 a H-14); el dosier recoge hoy **los 36**, incluidos los que fueron apareciendo después al reparar, al arrancar la aplicación y al abrir la Capa 9. Cada uno con la forma de reproducirlo y la prueba de regresión que impide que vuelva. Consúltalo antes de rediagnosticar nada.
 
 ### Pasos completados
 
@@ -444,7 +446,9 @@ cd frontend && npm run dev          # http://localhost:5173
 
 ### Pasos pendientes
 
-Ninguno. **34 hallazgos catalogados, 34 cerrados** con prueba de regresión o verificación reproducible. Los ocho últimos (H-27 a H-34) no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 2, 3, 4 y 5.
+De la remediación, ninguno. **37 hallazgos catalogados, 36 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10.
+
+**Queda abierto H-37**, detectado el 2026-08-13 al redactar el contrato de la Capa 10: `setup_db()` usa un cerrojo propio sin TTL ni verificación de PID sobre el mismo fichero que `db_lock()`, y es lo primero que hace el pipeline. **Se repara en el Paso 2 de la Capa 10** *(decisión de dirección)*.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 
