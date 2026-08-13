@@ -598,6 +598,135 @@ def test_sin_bundle_el_diagnostico_dice_que_compilar(monkeypatch):
 
 
 # ==============================================================================
+# 8. Supervisor del servidor (Paso 5) — sólo se apaga lo que se encendió
+# ==============================================================================
+
+def test_la_identidad_de_un_proceso_no_es_su_numero():
+    """Windows recicla los PID. El instante de creación no, así que el par (pid, instante)
+    es lo que identifica — y es lo que impide que "apago sólo lo mío" mate algo inocente que
+    heredó el número."""
+    from src.lanzador import es_nuestro_proceso, instante_creacion_proceso
+
+    mio = os.getpid()
+    instante = instante_creacion_proceso(mio)
+
+    assert instante is not None
+    assert instante_creacion_proceso(mio) == instante, "debe ser estable entre consultas"
+    assert instante_creacion_proceso(PID_MUERTO) is None
+    assert es_nuestro_proceso(mio, instante) is True
+
+
+def test_un_pid_reciclado_no_se_confunde_con_el_nuestro():
+    """**El defecto que este paso existe para evitar.** Mismo número, proceso distinto: la
+    respuesta correcta es "no es el mío", y por tanto no se toca."""
+    from src.lanzador import es_nuestro_proceso
+
+    instante_falso = 1  # un instante que no puede ser el de ningún proceso vivo
+    assert es_nuestro_proceso(os.getpid(), instante_falso) is False
+
+
+def test_sin_instante_anotado_no_se_mata_nada():
+    """Ante la duda, no. Misma asimetría que gobierna `es_sesion_interactiva()`: no apagar
+    deja un proceso de más, visible y molesto; apagar el que no era tumba el trabajo de
+    alguien."""
+    from src.lanzador import es_nuestro_proceso
+
+    assert es_nuestro_proceso(os.getpid(), None) is False
+
+
+def test_el_apagado_no_toca_un_servidor_que_el_lanzador_no_encendio(tmp_path):
+    """**Transición prohibida nº 4 del contrato.** Si alguien levantó la API a mano para
+    desarrollar, se usa pero no se mata al terminar."""
+    from src.lanzador import apagar_servidor, cargar_configuracion
+
+    config = cargar_configuracion(_escribir_config(tmp_path))
+    # No hay marca: no consta que hayamos arrancado nada.
+    assert apagar_servidor(config, db_path=str(tmp_path / "x.db")) == "sin_marca"
+
+
+def test_una_marca_de_un_proceso_ajeno_no_dispara_ningun_apagado(tmp_path):
+    """La marca existe pero señala a un proceso que ya no es el nuestro —murió, y su número
+    lo heredó otro—. Se retira la marca y no se mata a nadie."""
+    from src.lanzador import (MarcaServidor, apagar_servidor, cargar_configuracion,
+                              escribir_marca_servidor, ruta_marca_servidor)
+
+    db_path = str(tmp_path / "x.db")
+    config = cargar_configuracion(_escribir_config(tmp_path))
+    escribir_marca_servidor(
+        MarcaServidor(pid=os.getpid(), instante_creacion=1, host="127.0.0.1",
+                      puerto=8000, testigo="t", iniciado_at="2026-08-13T00:00:00Z"),
+        db_path=db_path,
+    )
+
+    assert apagar_servidor(config, db_path=db_path) == "ya_no_estaba"
+    assert not os.path.exists(ruta_marca_servidor(db_path)), "la marca caduca debe retirarse"
+
+
+def test_una_marca_ilegible_se_trata_como_ausente(tmp_path):
+    """No es un error: significa que no consta que hayamos arrancado nada, y la conducta
+    correcta ante eso es no apagar nada."""
+    from src.lanzador import leer_marca_servidor, ruta_marca_servidor
+
+    db_path = str(tmp_path / "x.db")
+    ruta = ruta_marca_servidor(db_path)
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as fichero:
+        fichero.write("{esto no es json")
+
+    assert leer_marca_servidor(db_path) is None
+
+
+def test_esperar_api_se_rinde_y_lo_dice(tmp_path):
+    """Se espera consultando, no durmiendo; y si no contesta se informa en vez de abrir un
+    navegador sobre nada."""
+    from src.lanzador import esperar_api
+
+    assert esperar_api("127.0.0.1", _puerto_libre(), tope_segundos=1) is None
+
+
+def test_el_endpoint_de_apagado_rechaza_lo_que_no_venga_de_la_maquina():
+    """El Cockpit no tiene autenticación: si el apagado aceptara peticiones de la red, quien
+    llegara al puerto podría tumbar el sistema."""
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    cliente = TestClient(app, client=("192.168.1.50", 50000))
+    respuesta = cliente.post("/api/v1/admin/apagar", json={"testigo": "loquesea"})
+
+    assert respuesta.status_code == 403
+
+
+def test_el_endpoint_de_apagado_exige_marca_y_testigo(tmp_path, monkeypatch):
+    """Sin marca no se apaga —este servidor no lo arrancó el lanzador— y con marca, el
+    testigo tiene que coincidir: sin él, cualquier página abierta en el navegador podría
+    apagar el servidor con un formulario."""
+    from fastapi.testclient import TestClient
+    import src.api.routers.admin as admin_router
+    from src.lanzador import MarcaServidor
+    from src.api.main import app
+
+    cliente = TestClient(app, client=("127.0.0.1", 50000))
+
+    monkeypatch.setattr(admin_router, "leer_marca_servidor", lambda *a, **k: None)
+    assert cliente.post("/api/v1/admin/apagar", json={"testigo": "x"}).status_code == 409
+
+    marca = MarcaServidor(pid=os.getpid(), instante_creacion=1, host="127.0.0.1",
+                          puerto=8000, testigo="el-bueno", iniciado_at="")
+    monkeypatch.setattr(admin_router, "leer_marca_servidor", lambda *a, **k: marca)
+    assert cliente.post("/api/v1/admin/apagar", json={"testigo": "el-malo"}).status_code == 403
+
+
+def test_el_testigo_no_tiene_valor_por_defecto():
+    """Mismo criterio que la confirmación de purga del Paso 8 de la Capa 9: un campo con
+    valor por defecto convierte "se me olvidó enviarlo" en "sí, adelante"."""
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+
+    cliente = TestClient(app, client=("127.0.0.1", 50000))
+    assert cliente.post("/api/v1/admin/apagar", json={}).status_code == 422
+
+
+# ==============================================================================
 # Utilidades
 # ==============================================================================
 

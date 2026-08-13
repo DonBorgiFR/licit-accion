@@ -1151,7 +1151,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 4 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). **El Cockpit ya se sirve desde FastAPI: la máquina de destino sólo necesita Python.** La tarea activa es el **Paso 5**, el supervisor del servidor. Suite: **380/380**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 5 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). **El Cockpit ya se sirve desde FastAPI y el servidor se arranca y se apaga solo.** La tarea activa es el **Paso 6**, la ejecución del pipeline respetando el cerrojo. Suite: **390/390**.
 
 ### 🎯 Objetivo
 
@@ -1277,9 +1277,9 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 | `Incoop.vbs` | Envoltorio silencioso de Windows | Ejecuta el orquestador con la ventana oculta. Es el fichero del doble clic. |
 | `src/lanzador.py` | Orquestador real | Toda la lógica vive en Python y es comprobable; el VBS sólo lo invoca sin consola. |
 | `config/lanzador.yaml` | Configuración versionada | Puerto, tope de espera, apertura del navegador y hora del despertador. Sin valores por defecto. |
-| `data/lanzador.pid` | Marca del servidor propio | Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
+| `data/lanzador.pid` | Marca del servidor propio | 🟢 Paso 5. Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
 | Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
-| `POST /api/v1/admin/apagar` | Apagado ordenado | Único cierre limpio posible sin consola. Sólo `127.0.0.1` y con el testigo del fichero PID. |
+| `POST /api/v1/admin/apagar` | Apagado ordenado | 🟢 Paso 5. Único cierre limpio posible sin consola. Sólo `127.0.0.1` y con el testigo del fichero PID. |
 | `MANUAL.md` | Manual de operación | **El primer documento del proyecto escrito para quien usa el sistema, no para quien lo construye.** Se redacta en el Paso 10. |
 
 > 📘 **Por qué el manual es un artefacto de esta capa y no de otra** *(decisión de dirección,
@@ -1396,7 +1396,25 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      desde el 8000, con el Cockpit pintando los 12 expedientes y 4.468.260 € reales, `/docs` viva y
      0 errores de consola.
 
-5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y apagar sin matar**: 💤
+5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y apagar sin matar**: 🟢 **Completado el 2026-08-13.** Suite: **390/390**.
+   - **Medido, no supuesto** *(lo que el propio paso exigía comprobar)*: `CTRL_BREAK_EVENT` apaga
+     uvicorn en **0,3 s**; `TerminateProcess`, en **0,1 s**; y **`CTRL_C_EVENT` no hace nada** —
+     queda deshabilitado en un grupo creado con `CREATE_NEW_PROCESS_GROUP`, tal como el contrato
+     advertía. Deja de ser una precaución escrita y pasa a ser un hecho.
+   - **Verificado de extremo a extremo con un servidor real**: arranque respondiendo en 1,41 s,
+     reconocido como API propia, **apagado por el nivel 1 —el endpoint— en 0,65 s**, proceso
+     muerto, marca retirada y puerto libre. Que el nivel 1 funcione es lo que impide que el
+     apagado ordenado sea decorativo y se acabe cayendo siempre al hachazo.
+   - `POST /api/v1/admin/apagar` con **dos cerrojos independientes**: sólo `127.0.0.1`, y testigo
+     de 43 caracteres generado en cada arranque. El testigo **no tiene valor por defecto** y se
+     compara en tiempo constante. **Sin fichero de marca no apaga nada**: una API levantada a mano
+     no la arrancó el lanzador, que es justo el caso donde el contrato prohíbe apagar.
+   - **La identidad de un proceso no es su número.** `data/lanzador.pid` guarda PID **e instante de
+     creación**, leído con `GetProcessTimes` vía `ctypes` y sin dependencias nuevas. Ante un PID
+     reciclado, o sin instante anotado, la respuesta es *"no es el mío"* y no se toca nada.
+   - **Destapó H-39**: `pipeline.jsonl` mezcla dos esquemas de evento incompatibles desde la Capa 7
+     —`action` frente a `tipo_evento`—. Inocuo mientras nadie leía el fichero con un programa; deja
+     de serlo en el Paso 9, que lo declara canal de diagnóstico. **Se repara allí.**
    - Arranca `uvicorn` en segundo plano con **grupo de procesos propio** y **espera consultando
      `/health`** hasta el tope declarado, nunca durmiendo un tiempo fijo.
    - Escribe `data/lanzador.pid` con **el PID y el instante de creación del proceso**. Con el
@@ -1497,14 +1515,14 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ### 🛠️ Herramientas y Código a Crear
 
-- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()`, estados del puerto y lector de configuración hechos (Pasos 2 y 3); faltan supervisor y orquestador.
+- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()`, estados del puerto, configuración y supervisor hechos (Pasos 2, 3 y 5); falta el orquestador.
 - `config/lanzador.yaml`: configuración versionada del lanzador. 🟢 v1.0.0 (Paso 3).
 - `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 🟢 Paso 4.
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
 - `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 46 regresiones de los Pasos 2 a 4.
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 56 regresiones de los Pasos 2 a 5.
 
 ---
 

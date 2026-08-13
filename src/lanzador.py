@@ -34,10 +34,14 @@ puede ejercitar sin fichero (Convención C4) y ningún paso queda a medias.
 import json
 import os
 import re
+import secrets
 import shutil
+import signal
 import socket
 import sqlite3
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -785,6 +789,327 @@ def comprobar_arranque(
         ),
     )
     return config, diagnostico
+
+
+# ==============================================================================
+# Supervisor del servidor (Capa 10, Paso 5)
+# ==============================================================================
+#
+# La pieza más delicada de la capa, porque es la única que **mata procesos**. Todo lo que
+# hay aquí gira en torno a una sola idea: el lanzador sólo apaga lo que él encendió, y para
+# saberlo el número de proceso no basta.
+
+NOMBRE_FICHERO_PID = "lanzador.pid"
+
+#: `PROCESS_QUERY_LIMITED_INFORMATION`. Basta para preguntar cuándo nació un proceso y no
+#: pide privilegios: se consulta la identidad de procesos ajenos, no se toca ninguno.
+_ACCESO_CONSULTA = 0x1000
+
+
+def instante_creacion_proceso(pid: int) -> Optional[int]:
+    """Instante de creación del proceso, o `None` si no existe.
+
+    **Es la mitad que le falta al PID para ser una identidad.** Windows recicla los
+    identificadores: un proceso que muere deja su número libre y el sistema se lo puede dar
+    a otro cualquiera. Con el número a secas, *"apago sólo lo mío"* puede acabar matando algo
+    inocente que heredó el número, y la reclamación de cerrojos huérfanos puede ver "el PID
+    sigue vivo" sobre un dueño que ya murió — que es el plantón de diez minutos de H-15.
+
+    El instante de creación no se recicla, así que el par (pid, instante) sí identifica.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        manejador = kernel32.OpenProcess(_ACCESO_CONSULTA, False, pid)
+        if not manejador:
+            return None
+        try:
+            creacion, salida = wintypes.FILETIME(), wintypes.FILETIME()
+            nucleo, usuario = wintypes.FILETIME(), wintypes.FILETIME()
+            ok = kernel32.GetProcessTimes(
+                manejador, ctypes.byref(creacion), ctypes.byref(salida),
+                ctypes.byref(nucleo), ctypes.byref(usuario),
+            )
+            if not ok:
+                return None
+            return (creacion.dwHighDateTime << 32) | creacion.dwLowDateTime
+        finally:
+            kernel32.CloseHandle(manejador)
+    except Exception:
+        return None
+
+
+def es_nuestro_proceso(pid: int, instante_creacion: Optional[int]) -> bool:
+    """¿Sigue vivo **el mismo** proceso que anotamos, y no otro que heredó su número?
+
+    Sin `instante_creacion` anotado se responde `False`: ante la duda no se mata nada. Es la
+    misma asimetría que gobierna `es_sesion_interactiva()` — no apagar deja un proceso de
+    más, que es visible y molesto; apagar el que no era puede tumbar el trabajo de alguien.
+    """
+    if instante_creacion is None:
+        return False
+    return instante_creacion_proceso(pid) == instante_creacion
+
+
+@dataclass(frozen=True)
+class MarcaServidor:
+    """Lo que el lanzador anota del servidor que arrancó él.
+
+    `testigo` es el secreto que exige `POST /api/v1/admin/apagar`. Vive aquí y no en la
+    configuración a propósito: se genera en cada arranque y muere con él, de modo que quien
+    puede apagar el servidor es quien tiene acceso al fichero, no quien leyó un `.yaml`
+    versionado en Git.
+    """
+
+    pid: int
+    instante_creacion: Optional[int]
+    host: str
+    puerto: int
+    testigo: str
+    iniciado_at: str
+
+
+def ruta_marca_servidor(db_path: Optional[str] = None) -> str:
+    directorio = os.path.dirname(_ruta_base(db_path)) or ruta_datos()
+    return os.path.join(directorio, NOMBRE_FICHERO_PID)
+
+
+def escribir_marca_servidor(marca: MarcaServidor, db_path: Optional[str] = None) -> str:
+    ruta = ruta_marca_servidor(db_path)
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as fichero:
+        json.dump({
+            "pid": marca.pid,
+            "instante_creacion": marca.instante_creacion,
+            "host": marca.host,
+            "puerto": marca.puerto,
+            "testigo": marca.testigo,
+            "iniciado_at": marca.iniciado_at,
+        }, fichero)
+    return ruta
+
+
+def leer_marca_servidor(db_path: Optional[str] = None) -> Optional[MarcaServidor]:
+    """Devuelve la marca, o `None` si no hay o está ilegible.
+
+    Una marca ilegible se trata como ausente y **no** como un error: significa que no consta
+    que hayamos arrancado nada, y la conducta correcta ante eso es no apagar nada.
+    """
+    ruta = ruta_marca_servidor(db_path)
+    try:
+        with open(ruta, "r", encoding="utf-8") as fichero:
+            datos = json.load(fichero)
+        return MarcaServidor(
+            pid=int(datos["pid"]),
+            instante_creacion=datos.get("instante_creacion"),
+            host=datos.get("host", "127.0.0.1"),
+            puerto=int(datos["puerto"]),
+            testigo=datos["testigo"],
+            iniciado_at=datos.get("iniciado_at", ""),
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def borrar_marca_servidor(db_path: Optional[str] = None) -> None:
+    try:
+        os.remove(ruta_marca_servidor(db_path))
+    except OSError:
+        pass
+
+
+def esperar_api(host: str, puerto: int, tope_segundos: int, intervalo: float = 0.25) -> Optional[float]:
+    """Espera **consultando** `/health` hasta que conteste. Devuelve lo que tardó, o `None`.
+
+    Nunca se duerme un tiempo fijo: el error clásico de estos lanzadores es `sleep 5` y abrir
+    el navegador, que en un equipo lento saca una pantalla en blanco y parece que el sistema
+    no funciona; y en uno rápido regala cinco segundos a cada arranque.
+    """
+    inicio = time.monotonic()
+    while time.monotonic() - inicio < tope_segundos:
+        estado, _ = estado_del_puerto(host, puerto, timeout=1.0)
+        if estado is EstadoPuerto.NUESTRA_API:
+            return time.monotonic() - inicio
+        time.sleep(intervalo)
+    return None
+
+
+def arrancar_servidor(
+    config: ConfiguracionLanzador,
+    db_path: Optional[str] = None,
+) -> Tuple[Optional[MarcaServidor], float]:
+    """Arranca `uvicorn` en un grupo de procesos propio y espera a que conteste.
+
+    Devuelve la marca y los segundos que tardó. Lanza `ServidorNoRespondio` si vence el tope.
+
+    **El grupo propio no es un detalle**: sin `CREATE_NEW_PROCESS_GROUP`, el `CTRL_BREAK_EVENT`
+    del nivel 2 de apagado nos mataría también a nosotros, porque iría al grupo que
+    compartimos con el hijo.
+    """
+    creacion_grupo_propio = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    proceso = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "src.api.main:app",
+         "--host", config.servidor.host, "--port", str(config.servidor.puerto)],
+        cwd=str(PROJECT_ROOT),
+        creationflags=creacion_grupo_propio,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    tardanza = esperar_api(config.servidor.host, config.servidor.puerto,
+                           config.servidor.espera_api_segundos)
+    if tardanza is None:
+        # No dejamos huérfano lo que no llegó a servir: si no responde, no queda vivo.
+        try:
+            proceso.kill()
+        except Exception:
+            pass
+        registrar_evento_lanzador(
+            "LANZADOR_SERVIDOR_NO_RESPONDE",
+            motivo=f"{config.servidor.host}:{config.servidor.puerto} no contestó en "
+                   f"{config.servidor.espera_api_segundos}s",
+            db_path=db_path,
+        )
+        raise ServidorNoRespondio(
+            f"La API no respondió en {config.servidor.espera_api_segundos}s."
+        )
+
+    marca = MarcaServidor(
+        pid=proceso.pid,
+        instante_creacion=instante_creacion_proceso(proceso.pid),
+        host=config.servidor.host,
+        puerto=config.servidor.puerto,
+        testigo=secrets.token_urlsafe(32),
+        iniciado_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    escribir_marca_servidor(marca, db_path)
+    registrar_evento_lanzador(
+        "LANZADOR_SERVIDOR_ARRANCADO",
+        motivo=f"pid {marca.pid} respondiendo en {tardanza:.1f}s",
+        db_path=db_path,
+    )
+    return marca, tardanza
+
+
+def _sigue_vivo(marca: MarcaServidor, plazo: float) -> bool:
+    """Sondea hasta que el proceso desaparece o vence el plazo. `True` si sigue vivo.
+
+    **Se verifica en cada nivel**: nunca se envía la señal y se da por hecho que funcionó.
+    """
+    inicio = time.monotonic()
+    while time.monotonic() - inicio < plazo:
+        if not es_nuestro_proceso(marca.pid, marca.instante_creacion):
+            return False
+        time.sleep(0.1)
+    return es_nuestro_proceso(marca.pid, marca.instante_creacion)
+
+
+def apagar_servidor(
+    config: ConfiguracionLanzador,
+    db_path: Optional[str] = None,
+) -> str:
+    """Apagado ordenado en tres niveles, verificando cada uno. Devuelve el nivel alcanzado.
+
+    **Sólo apaga lo que el lanzador encendió.** Si no hay marca, o el proceso que la marca
+    señala ya no es el nuestro, no se toca nada: puede ser una API que alguien levantó a
+    mano para desarrollar, o un proceso inocente que heredó el número.
+    """
+    marca = leer_marca_servidor(db_path)
+    if marca is None:
+        return "sin_marca"
+
+    if not es_nuestro_proceso(marca.pid, marca.instante_creacion):
+        # El proceso murió por su cuenta, o su número lo heredó otro. En ambos casos aquí no
+        # hay nada nuestro que apagar; lo único pendiente es retirar la marca.
+        borrar_marca_servidor(db_path)
+        return "ya_no_estaba"
+
+    nivel = _apagar_por_niveles(marca, config)
+
+    if nivel == "no_murio":
+        registrar_evento_lanzador(
+            "LANZADOR_APAGADO_INCOMPLETO",
+            motivo=f"pid {marca.pid} sigue vivo tras los tres niveles",
+            db_path=db_path,
+        )
+        raise ApagadoIncompleto(f"El servidor (pid {marca.pid}) sigue vivo tras los tres niveles.")
+
+    borrar_marca_servidor(db_path)
+    registrar_evento_lanzador("LANZADOR_APAGADO", motivo=f"nivel alcanzado: {nivel}", db_path=db_path)
+    _avisar_si_quedo_cerrojo(db_path)
+    return nivel
+
+
+def _apagar_por_niveles(marca: MarcaServidor, config: ConfiguracionLanzador) -> str:
+    # Nivel 1 — pedirle a uvicorn que se cierre desde dentro. Es el único que termina las
+    # peticiones en curso, devuelve el cerrojo y ejecuta el `lifespan`. Y el único que
+    # funciona **sin consola**, que es justo el caso del `.vbs`.
+    if _pedir_apagado_por_http(marca):
+        if not _sigue_vivo(marca, config.apagado.gracia_endpoint_segundos):
+            return "endpoint"
+
+    # Nivel 2 — CTRL_BREAK_EVENT al grupo. Medido el 2026-08-13: apaga uvicorn en 0,3 s.
+    # `CTRL_C_EVENT` **no** sirve: queda deshabilitado en un grupo creado con
+    # CREATE_NEW_PROCESS_GROUP, comprobado el mismo día.
+    try:
+        os.kill(marca.pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+        if not _sigue_vivo(marca, config.apagado.gracia_senal_segundos):
+            return "senal"
+    except (OSError, AttributeError, ValueError):
+        pass
+
+    # Nivel 3 — TerminateProcess. No corrompe la base —SQLite en WAL sobrevive igual que a
+    # un corte de luz—, pero pierde la escritura en vuelo y puede dejar el cerrojo huérfano.
+    try:
+        import ctypes
+
+        manejador = ctypes.windll.kernel32.OpenProcess(0x0001, False, marca.pid)  # PROCESS_TERMINATE
+        if manejador:
+            try:
+                ctypes.windll.kernel32.TerminateProcess(manejador, 1)
+            finally:
+                ctypes.windll.kernel32.CloseHandle(manejador)
+        if not _sigue_vivo(marca, 5.0):
+            return "terminate"
+    except Exception:
+        pass
+
+    return "no_murio"
+
+
+def _pedir_apagado_por_http(marca: MarcaServidor) -> bool:
+    """Nivel 1. Devuelve si la petición se aceptó (no si el proceso ya murió: eso se sondea)."""
+    try:
+        import urllib.request
+
+        peticion = urllib.request.Request(
+            f"http://{marca.host}:{marca.puerto}/api/v1/admin/apagar",
+            data=json.dumps({"testigo": marca.testigo}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(peticion, timeout=5.0) as respuesta:
+            return respuesta.status < 400
+    except Exception:
+        return False
+
+
+def _avisar_si_quedo_cerrojo(db_path: Optional[str] = None) -> None:
+    """El cerrojo se comprueba **después** de apagar; no se supone liberado.
+
+    La reclamación por PID y TTL es la red que lo recoge, pero conviene saber cuándo actúa:
+    un cerrojo huérfano tras cada apagado señalaría que el nivel 1 no está funcionando y que
+    siempre estamos cayendo al hachazo.
+    """
+    cerrojo = _ruta_base(db_path) + ".lock"
+    if os.path.exists(cerrojo):
+        registrar_evento_lanzador(
+            "LANZADOR_CERROJO_HUERFANO_TRAS_APAGADO",
+            motivo=f"{cerrojo} sigue presente tras el apagado",
+            db_path=db_path,
+        )
 
 
 # ==============================================================================

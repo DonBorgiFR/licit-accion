@@ -1426,6 +1426,44 @@ arreglado con `dist/` sin recompilar.
 
 ---
 
+### H-39 · `pipeline.jsonl` mezcla dos esquemas de evento incompatibles 🔴 ABIERTO (Capa 10, Paso 9)
+
+**Detectado el 2026-08-13**, verificando en vivo el supervisor del Paso 5: el script que leía
+los eventos del arranque reventó con `KeyError: 'action'`.
+
+El registro de auditoría del proyecto recibe eventos de **dos productores con vocabularios
+distintos**, y ninguno sabe del otro:
+
+| Productor | Vía | Forma |
+|---|---|---|
+| Pipeline y Lanzador | `Memoria.registrar_log_json()` | `{timestamp, run_id, action, updated_by, reason}` |
+| Pasarela API | `trazabilidad_api.registrar_evento()` | `{timestamp, modulo, tipo_evento, estado, payload}` |
+
+Medido sobre una corrida real de arranque y apagado: **6 entradas con la forma de la API y 2
+con la del lanzador, en el mismo fichero.** Ni siquiera el nombre del campo que dice *qué
+ocurrió* coincide — `action` frente a `tipo_evento`.
+
+**Es previo a esta capa**: nace en la Capa 7, cuando la API estrenó su propio gestor de
+trazabilidad apuntando al mismo `data/pipeline.jsonl`. Hasta ahora no ha molestado porque
+nadie leía el fichero con un programa; se abría con un editor y se interpretaba a ojo.
+
+**Por qué deja de ser inocuo ahora.** El Paso 9 de esta capa —*La Voz del Proceso
+Silencioso*— declara `pipeline.jsonl` como el canal que sirve «siempre, para el diagnóstico:
+reconstruir después qué ocurrió». Un fichero con dos gramáticas no se reconstruye: quien lo
+lea con una de ellas o revienta —lo que pasó— o, peor, **descarta en silencio la mitad de las
+entradas** y presenta un relato incompleto como si fuera completo. Es la familia de defectos
+que este proyecto persigue desde H-21: no rompe, miente por omisión.
+
+**Reparación prevista**: Paso 9 de la Capa 10, que es donde se define qué canal dice qué y
+con qué forma. Procede unificar la lectura —y probablemente la escritura— antes de apoyar
+ningún diagnóstico en este fichero.
+
+**No se repara en el Paso 5** porque tocar el gestor de trazabilidad de la Capa 7 desde el
+supervisor sería arreglar una capa cerrada desde un paso que no la tiene en su alcance, y
+porque la decisión de qué esquema gana es de diseño, no de implementación.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |

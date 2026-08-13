@@ -11,12 +11,18 @@ miró: en una operación irreversible, saber quién la estudió y cuándo forma 
 """
 
 import os
+import secrets
+import signal
 import sqlite3
+import threading
+import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 
 from src import normalizar_estado_operativo
+from src.lanzador import leer_marca_servidor
 from src.api.dependencies import get_db, trazabilidad_api
 from src.api.schemas import (
     AlmacenamientoSchema,
@@ -372,3 +378,92 @@ def post_rescatar(solicitud: SolicitudRescateSchema):
         estado="INFO",
     )
     return {"rescatados": rescatados, "expedientes": solicitud.expedientes}
+
+
+# ==============================================================================
+# Apagado ordenado (Capa 10, Paso 5)
+# ==============================================================================
+#
+# El **nivel 1** de los tres del contrato, y el único que garantiza terminar las peticiones
+# en curso, devolver el cerrojo y ejecutar el `lifespan`. También el único que funciona
+# **sin consola**, que es justo el caso del lanzador silencioso: sin ventana no hay a quién
+# enviarle un CTRL_BREAK desde fuera del grupo.
+#
+# Dos cerrojos lo protegen, y ninguno sobra:
+#
+#   1. **Sólo escucha en la máquina.** Una petición que no venga de 127.0.0.1 se rechaza.
+#   2. **Exige el testigo** que el lanzador generó al arrancar y guardó en `data/lanzador.pid`.
+#      Sin él, cualquier página abierta en el navegador podría apagar el servidor con un
+#      formulario: el Cockpit no tiene autenticación, así que la única credencial posible es
+#      algo que viva en el disco de quien lo lanzó.
+#
+# **Si no hay fichero de marca, el endpoint no apaga nada.** Una API levantada a mano para
+# desarrollar no la arrancó el lanzador, así que nadie tiene su testigo — y ese es
+# exactamente el caso en que el contrato prohíbe apagar (transición prohibida nº 4).
+
+class SolicitudApagado(BaseModel):
+    """El testigo viaja en el cuerpo y **no tiene valor por defecto**.
+
+    Mismo criterio que la confirmación de la purga del Paso 8 de la Capa 9: un campo con
+    valor por defecto convierte "se me olvidó enviarlo" en "sí, adelante".
+    """
+
+    testigo: str = Field(..., min_length=1, description="El que el lanzador guardó en data/lanzador.pid")
+
+
+def _detener_servidor_desde_dentro():
+    """Pide a uvicorn que se cierre por su propio manejador de señal.
+
+    Se hace en un hilo con un respiro para que la respuesta HTTP llegue a salir: si se
+    levantara la señal dentro del manejador, quien pidió el apagado recibiría una conexión
+    cortada y no podría distinguir "se está apagando" de "no me ha hecho caso".
+    """
+    def _senal():
+        time.sleep(0.3)
+        signal.raise_signal(signal.SIGINT)
+
+    threading.Thread(target=_senal, daemon=True).start()
+
+
+@router.post(
+    "/apagar",
+    summary="Apagado ordenado del servidor (sólo local y con testigo)",
+    responses={
+        403: {"model": APIErrorResponse, "description": "Petición no local, o testigo ausente/incorrecto"},
+        409: {"model": APIErrorResponse, "description": "Este servidor no lo arrancó el lanzador"},
+    },
+)
+def post_apagar(solicitud: SolicitudApagado, request: Request):
+    if request.client is None or request.client.host not in ("127.0.0.1", "::1", "localhost"):
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_APAGADO_RECHAZADO",
+            {"motivo": "origen_no_local", "origen": getattr(request.client, "host", "?")},
+            estado="ERROR",
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="El apagado sólo se acepta desde la propia máquina.")
+
+    marca = leer_marca_servidor()
+    if marca is None:
+        # Sin marca no consta que este servidor lo arrancara el lanzador. Es un 409 y no un
+        # 403 a propósito: no es que la credencial esté mal, es que aquí no hay nada que
+        # apagar de forma ordenada — quien lo levantó a mano lo cierra con Ctrl-C.
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_APAGADO_RECHAZADO", {"motivo": "sin_marca_de_lanzador"}, estado="ERROR"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este servidor no lo arrancó el lanzador: no hay data/lanzador.pid.",
+        )
+
+    if not secrets.compare_digest(solicitud.testigo, marca.testigo):
+        # Comparación en tiempo constante: es una credencial, y compararla con `==` filtra
+        # por el tiempo de respuesta cuántos caracteres iniciales se acertaron.
+        trazabilidad_api.registrar_evento(
+            "API_ADMIN_APAGADO_RECHAZADO", {"motivo": "testigo_incorrecto"}, estado="ERROR"
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Testigo incorrecto.")
+
+    trazabilidad_api.registrar_evento("API_ADMIN_APAGADO", {"pid": marca.pid}, estado="INFO")
+    _detener_servidor_desde_dentro()
+    return {"apagando": True, "pid": marca.pid}

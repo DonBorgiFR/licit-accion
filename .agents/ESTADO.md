@@ -16,19 +16,19 @@
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **380/380**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 38 hallazgos catalogados, **los 38 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 4 cerrados el 2026-08-13**, tarea activa el **Paso 5**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **390/390**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 39 hallazgos catalogados, 38 están cerrados y **H-39 queda abierto**, para repararse en el Paso 9 de esta capa. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13**, tarea activa el **Paso 6**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 380/380
+python -m pytest tests/ -q          # debe dar 390/390
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 5
+### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 6
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
@@ -40,9 +40,11 @@ python -m pytest tests/ -q          # debe dar 380/380
 * **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. Verificado contra el entorno real y contra la API de verdad levantada.
 * **Paso 3** 🟢 — `config/lanzador.yaml` **v1.0.0** y su lector estricto en `src/lanzador.py`, sin valores por defecto (código de salida 11, distinto del 10 del entorno). **Cierra H-38.** Verificado en vivo con la API y el Cockpit levantados.
 
-* **Paso 4** 🟢 — el Cockpit servido por FastAPI. **La raíz `/` sirve la aplicación y el JSON de bienvenida vive ahora en `/api/v1/`**: es el cambio de contrato de la Capa 7 que el Paso 1 declaró por adelantado. **La máquina de destino ya sólo necesita Python.** Verificado en vivo con un solo proceso y sin Node: HTML, assets y llamadas de datos desde el 8000, 12 expedientes en pantalla, `/docs` viva y 0 errores de consola. **46 regresiones acumuladas** de la capa en `tests/test_capa10_lanzador.py`.
+* **Paso 4** 🟢 — el Cockpit servido por FastAPI. **La raíz `/` sirve la aplicación y el JSON de bienvenida vive ahora en `/api/v1/`**: es el cambio de contrato de la Capa 7 que el Paso 1 declaró por adelantado. **La máquina de destino ya sólo necesita Python.** Verificado en vivo con un solo proceso y sin Node: HTML, assets y llamadas de datos desde el 8000, 12 expedientes en pantalla, `/docs` viva y 0 errores de consola. **56 regresiones acumuladas** de la capa en `tests/test_capa10_lanzador.py`.
 
-**La tarea activa es el Paso 5**: el supervisor del servidor —arrancar `uvicorn` en grupo de procesos propio, esperar consultando `/health` hasta el tope declarado, escribir `data/lanzador.pid` con **PID e instante de creación**, y el apagado ordenado en tres niveles verificando cada uno. Ahí se mide —no se supone— si uvicorn atiende `SIGBREAK` en Windows con la limpieza que promete.
+* **Paso 5** 🟢 — supervisor del servidor en `src/lanzador.py` y `POST /api/v1/admin/apagar`. **Medido, no supuesto**: `CTRL_BREAK_EVENT` apaga uvicorn en 0,3 s, `TerminateProcess` en 0,1 s y **`CTRL_C_EVENT` no hace nada** en un grupo `CREATE_NEW_PROCESS_GROUP`. Verificado de extremo a extremo con un servidor real: arranque en 1,41 s y **apagado por el nivel 1 en 0,65 s**. **Destapó H-39.**
+
+**La tarea activa es el Paso 6**: ejecutar el pipeline respetando el cerrojo. Si está tomado y vivo, **no arranca**, registra `LANZADOR_PIPELINE_OMITIDO` y devuelve el código 30; si está huérfano, **no lo borra por su cuenta** — deja que lo reclame `db_lock()`, que sabe hacerlo bien desde el Paso 2.
 
 > 🔑 **Lo que el Paso 3 decidió y no hay que volver a plantear.** *(1)* **Qué hacer ante un puerto ocupado por un tercero no es configurable**: el contrato ya lo fijó —detenerse—, y dejar que un fichero de texto autorizara lo contrario sería relajar una invariante desde configuración. Tampoco lo es si reutilizar nuestra propia API viva, porque la alternativa a reutilizarla no es arrancar otra: es no arrancar. *(2)* **Con varios fallos a la vez manda el del entorno, no el del puerto**: el código 20 sólo significa algo cuando el puerto es el único problema; el resumen, en cambio, no esconde ninguno.
 
@@ -310,6 +312,6 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-Ninguno. **38 hallazgos catalogados, 38 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2; **H-38**, de escribir su configuración, y se cerró en el Paso 3.
+De la remediación, ninguno. **39 hallazgos catalogados, 38 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2; **H-38**, de escribir su configuración, y se cerró en el Paso 3.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
