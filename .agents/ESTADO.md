@@ -14,6 +14,29 @@
 
 ---
 
+## ▶️ Para retomar (sesión del 2026-08-13)
+
+**Todo lo hecho está en GitHub y el árbol de trabajo está limpio.** No hay nada a medias, ni
+código sin registrar, ni decisiones pendientes de tomar.
+
+La sesión cerró **cinco pasos de la Capa 10** (1 a 5) más la separación de este fichero
+respecto de `AGENTS.md`. **La tarea siguiente es el Paso 6**, y arranca sin deuda previa: sólo
+hay que leer el bloque de la Capa 10 más abajo y el contrato en
+[`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
+
+**Lo que ya se puede hacer con el sistema, y antes no:**
+
+* Servir el Cockpit **sin Node.js** — un solo proceso de Python lo sirve todo.
+* Arrancar el servidor y **apagarlo de forma ordenada**, sin matar nada ajeno.
+* Detenerse con un diagnóstico claro si el entorno no está listo, en vez de fallar de forma
+  confusa diez segundos después.
+
+**Lo que todavía no**: ejecutar el pipeline desde el lanzador (Paso 6), el doble clic sin
+consola (Paso 7), la tarea programada (Paso 8), el aviso en pantalla de una corrida fallida
+(Paso 9) y el cierre con `MANUAL.md` (Paso 10).
+
+---
+
 ## 📍 Dónde estamos
 
 **Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **390/390**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 39 hallazgos catalogados, 38 están cerrados y **H-39 queda abierto**, para repararse en el Paso 9 de esta capa. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13**, tarea activa el **Paso 6**.
@@ -102,7 +125,13 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-Nada pendiente. El contrato del Paso 1 de la Capa 10 quedó **validado el 2026-08-13**.
+**Nada que requiera decisión.** El contrato del Paso 1 de la Capa 10 quedó **validado el
+2026-08-13**, y con él las decisiones de los Pasos 3 y 5.
+
+**Un hallazgo abierto, con sitio y fecha asignados: H-39.** `data/pipeline.jsonl` mezcla dos
+esquemas de evento incompatibles desde la Capa 7 —el pipeline y el lanzador escriben `action`,
+la API escribe `tipo_evento`—. **No bloquea el Paso 6**, y se repara en el **Paso 9**, que es
+donde se decide qué canal dice qué. No hace falta adelantarlo.
 
 ~~Y una **inconsistencia latente, hoy inocua**~~ **— cerrada el 2026-08-12 dentro del Paso 8.** `Memoria.actualizar_estado_lote()` guardaba el estado
 en minúsculas, mientras el selector del Cockpit ofrece los valores capitalizados del enum. Un lote
