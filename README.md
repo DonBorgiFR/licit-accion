@@ -803,6 +803,8 @@ graph TD
 2. **Paso 2 — Modelado de Esquemas Base con Pydantic v2 (`src/api/schemas.py`)**: 🟢 Completado y Validado.
    - Definición inmutable de los DTOs de lectura (`LicitacionSchema`, `AlertaBoletinSchema`, `KPISummarySchema`), mutación (`TransicionEstadoSchema`) y errores (`APIErrorResponse`).
 3. **Paso 3 — Endpoint de Autodiagnóstico y Salud (`/api/v1/health`)**: 🟢 Completado y Validado.
+
+> ⚠️ **Contrato modificado el 2026-08-13 por la Capa 10, Paso 4**: la raíz `/` ya **no** devuelve el JSON de bienvenida, sino el Cockpit. El JSON se conserva íntegro en **`/api/v1/`**. El cambio se declaró por adelantado en el contrato de la Capa 10 en vez de descubrirse, porque es visible para cualquier cliente de la API.
    - Router inicial `src/api/routers/health.py` para validar conectividad, versión del esquema v5 y lectura/escritura en SQLite WAL.
 
 #### **Fase 2: Construcción de Motores de Lectura (Queries)**
@@ -1149,7 +1151,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1, 2 y 3 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 4**, el Cockpit servido por FastAPI. Suite: **370/370**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 4 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). **El Cockpit ya se sirve desde FastAPI: la máquina de destino sólo necesita Python.** La tarea activa es el **Paso 5**, el supervisor del servidor. Suite: **380/380**.
 
 ### 🎯 Objetivo
 
@@ -1372,12 +1374,27 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 #### **Fase 2: Un solo proceso que lo sirve todo**
 
-4. **Paso 4 — El Cockpit servido por FastAPI: se acaba la dependencia de Node**: 💤
-   - `frontend/dist/` montado como ficheros estáticos con reenvío a `index.html` para las rutas de
-     la SPA, **sin pisar** `/api/v1/*`, `/docs` ni `/openapi.json`.
+4. **Paso 4 — El Cockpit servido por FastAPI: se acaba la dependencia de Node**: 🟢 **Completado el 2026-08-13.** Suite: **380/380**.
+   - `frontend/dist/` montado como ficheros estáticos con reenvío a `index.html`, **sin pisar**
+     `/api/v1/*`, `/docs` ni `/openapi.json`.
    - La raíz `/` pasa a servir el Cockpit y el JSON de bienvenida se traslada a `/api/v1/`.
+   - **El montaje se registra el último, y ese orden ES la protección**: Starlette resuelve por
+     orden de registro, así que montar los estáticos antes que los routers se tragaría la API
+     entera sin avisar. Comprobado empíricamente —montado antes, `/api/v1/health` da 404; montado
+     después, 200— y sujeto con una regresión, porque nada en el código impide que alguien mueva
+     esas líneas veinte más arriba.
+   - **El reenvío al Cockpit va acotado, no en bloque.** Uno ciego convertiría una errata como
+     `/api/v1/licitacionse` en un **200 con HTML** en vez de un 404: la aplicación contestaría que
+     todo va bien mientras el cliente no recibe ni un dato. Es la familia de H-21, H-22 y H-23.
    - Regresión obligada: que un bundle ausente dé un diagnóstico claro y no un 404 desnudo. Es el
-     primer síntoma que verá quien clone el repositorio sin compilar.
+     primer síntoma que verá quien clone el repositorio sin compilar. Devuelve **503** con la orden
+     exacta a ejecutar.
+   - De paso, el `index.html` declaraba `<title>frontend</title>` y `lang="en"`, los valores por
+     defecto de Vite. Daba igual mientras lo servía un servidor de desarrollo; desde que FastAPI lo
+     sirve como la aplicación de verdad, es lo que pone en la pestaña del navegador.
+   - **Verificado en vivo con un solo proceso y sin Node**: HTML, assets y llamadas de datos, todo
+     desde el 8000, con el Cockpit pintando los 12 expedientes y 4.468.260 € reales, `/docs` viva y
+     0 errores de consola.
 
 5. **Paso 5 — Supervisor del Servidor: arrancar, reutilizar y apagar sin matar**: 💤
    - Arranca `uvicorn` en segundo plano con **grupo de procesos propio** y **espera consultando
@@ -1484,10 +1501,10 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `config/lanzador.yaml`: configuración versionada del lanzador. 🟢 v1.0.0 (Paso 3).
 - `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
-- `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 💤
+- `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 🟢 Paso 4.
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
 - `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 36 regresiones de los Pasos 2 y 3.
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 46 regresiones de los Pasos 2 a 4.
 
 ---
 

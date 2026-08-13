@@ -35,8 +35,14 @@ def client():
 
 
 def test_read_root(client):
-    """Verifica el endpoint raíz / de bienvenida."""
-    response = client.get("/")
+    """Verifica el endpoint de bienvenida de la API.
+
+    **Vivía en `/` hasta el 2026-08-13.** La Capa 10 Paso 4 le da esa raíz al Cockpit —servir
+    el bundle desde FastAPI elimina Node.js y un segundo servidor de cada PC de la
+    cooperativa— y traslada el JSON, íntegro, a `/api/v1/`. El cambio se declaró por
+    adelantado en el contrato de la Capa 10; esta prueba es donde se ve.
+    """
+    response = client.get("/api/v1/")
     assert response.status_code == 200
     data = response.json()
     assert data["app"] == "Incoop Licitaciones API"

@@ -16,19 +16,19 @@
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **370/370**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 38 hallazgos catalogados, **los 38 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1, 2 y 3 cerrados el 2026-08-13**, tarea activa el **Paso 4**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **380/380**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 38 hallazgos catalogados, **los 38 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 4 cerrados el 2026-08-13**, tarea activa el **Paso 5**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 370/370
+python -m pytest tests/ -q          # debe dar 380/380
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 4
+### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 5
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
@@ -38,9 +38,11 @@ python -m pytest tests/ -q          # debe dar 370/370
 
 * **Paso 1** 🟢 — contrato y máquina de estados, validado el 2026-08-13. Vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
 * **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. Verificado contra el entorno real y contra la API de verdad levantada.
-* **Paso 3** 🟢 — `config/lanzador.yaml` **v1.0.0** y su lector estricto en `src/lanzador.py`, sin valores por defecto (código de salida 11, distinto del 10 del entorno). **Cierra H-38.** 36 regresiones acumuladas en `tests/test_capa10_lanzador.py`. Verificado en vivo con la API y el Cockpit levantados.
+* **Paso 3** 🟢 — `config/lanzador.yaml` **v1.0.0** y su lector estricto en `src/lanzador.py`, sin valores por defecto (código de salida 11, distinto del 10 del entorno). **Cierra H-38.** Verificado en vivo con la API y el Cockpit levantados.
 
-**La tarea activa es el Paso 4**: montar `frontend/dist/` como estáticos en FastAPI, con reenvío a `index.html` para las rutas de la SPA y **sin pisar** `/api/v1/*`, `/docs` ni `/openapi.json`; y trasladar el JSON de bienvenida de `/` a `/api/v1/`. **La mitad del trabajo ya está hecha**: el cliente del Cockpit usa desde el Paso 3 una URL relativa al propio origen, que es justo lo que el mismo origen necesita.
+* **Paso 4** 🟢 — el Cockpit servido por FastAPI. **La raíz `/` sirve la aplicación y el JSON de bienvenida vive ahora en `/api/v1/`**: es el cambio de contrato de la Capa 7 que el Paso 1 declaró por adelantado. **La máquina de destino ya sólo necesita Python.** Verificado en vivo con un solo proceso y sin Node: HTML, assets y llamadas de datos desde el 8000, 12 expedientes en pantalla, `/docs` viva y 0 errores de consola. **46 regresiones acumuladas** de la capa en `tests/test_capa10_lanzador.py`.
+
+**La tarea activa es el Paso 5**: el supervisor del servidor —arrancar `uvicorn` en grupo de procesos propio, esperar consultando `/health` hasta el tope declarado, escribir `data/lanzador.pid` con **PID e instante de creación**, y el apagado ordenado en tres niveles verificando cada uno. Ahí se mide —no se supone— si uvicorn atiende `SIGBREAK` en Windows con la limpieza que promete.
 
 > 🔑 **Lo que el Paso 3 decidió y no hay que volver a plantear.** *(1)* **Qué hacer ante un puerto ocupado por un tercero no es configurable**: el contrato ya lo fijó —detenerse—, y dejar que un fichero de texto autorizara lo contrario sería relajar una invariante desde configuración. Tampoco lo es si reutilizar nuestra propia API viva, porque la alternativa a reutilizarla no es arrancar otra: es no arrancar. *(2)* **Con varios fallos a la vez manda el del entorno, no el del puerto**: el código 20 sólo significa algo cuando el puerto es el único problema; el resumen, en cambio, no esconde ninguno.
 
@@ -53,7 +55,7 @@ python -m pytest tests/ -q          # debe dar 370/370
 **Tres decisiones de dirección ya tomadas el 2026-08-12** que la redacción respeta y que no hay que volver a plantear:
 * **La capa arranca, no avisa.** Nada de notificaciones activas: el canal por el que el sistema habla es el Cockpit, que ya existe. El nombre "Despertador" se refiere a despertar el ecosistema, no a avisar a una persona.
 * **La ejecución automática se apoya en el Programador de tareas de Windows**, no en un servicio residente propio. Programar es configuración, no código.
-* **La máquina de destino sólo necesitará Python**: FastAPI servirá `frontend/dist/` como estáticos. Ojo, **esto cambia el contrato de la Capa 7**: la raíz `/` deja de devolver el JSON de bienvenida y pasa a servir el Cockpit; el JSON se traslada a `/api/v1/`.
+* **La máquina de destino sólo necesita Python** — ✅ **hecho en el Paso 4**: FastAPI sirve `frontend/dist/` como estáticos. Cambió el contrato de la Capa 7, como estaba previsto: la raíz `/` ya no devuelve el JSON de bienvenida sino el Cockpit, y el JSON vive en `/api/v1/`.
 
 > 🔑 **La restricción transversal de la capa, y la que más fácil sería pasar por alto**: ocultar la consola obliga a avisar de los fallos fatales con un diálogo nativo del sistema, porque un healthcheck que falla ocurre **antes** de que exista el Cockpit donde avisar. Pero ese mismo diálogo, lanzado desde la tarea programada nocturna, corre en la **Session 0** —sin escritorio— y deja un proceso colgado esperando a un usuario que no existe. **La solución de un problema es la causa del otro.** Por eso una única función, `es_sesion_interactiva()`, decide consultando el identificador de sesión del proceso —no el modo de invocación, que es una intención y puede venir equivocada—, y **toda** llamada a interfaz gráfica pasa por ella. La prueba que lo cierra no es que la tarea se registre, sino que una corrida sin escritorio **termina sola y no deja proceso vivo**.
 

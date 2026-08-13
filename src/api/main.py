@@ -12,12 +12,15 @@ try:
 except ImportError:
     pass
 
+import os
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.staticfiles import StaticFiles
 
 from fastapi.middleware.cors import CORSMiddleware
+from src import ruta_proyecto
 from src.api.schemas import APIErrorResponse
 from src.api.dependencies import APIDependencyError, trazabilidad_api
 from src.api.middleware import TrazabilidadMiddleware
@@ -126,10 +129,19 @@ app.include_router(admin.router, prefix="/api/v1")
 
 
 # ==============================================================================
-# Endpoint Raíz de Bienvenida
+# Endpoint de Bienvenida de la API
 # ==============================================================================
+#
+# ⚠️ CAMBIO DE CONTRATO DE LA CAPA 7, introducido por la Capa 10 Paso 4 (2026-08-13).
+#
+# Este JSON vivía en la raíz `/`. Ahora la raíz sirve el Cockpit, porque servir el bundle
+# desde FastAPI elimina Node.js y un segundo servidor de cada PC de la cooperativa. El JSON
+# se conserva íntegro aquí, bajo el prefijo que le corresponde.
+#
+# Se declaró por adelantado en `.agents/CONTRATO_CAPA_10.md` en vez de descubrirse: es un
+# cambio visible para cualquier cliente de la API.
 
-@app.get("/", tags=["General"], summary="Información del Servidor API")
+@app.get("/api/v1/", tags=["General"], summary="Información del Servidor API")
 def read_root():
     """Retorna información básica de bienvenida y enlace a la documentación Swagger."""
     return {
@@ -139,3 +151,67 @@ def read_root():
         "docs_url": "/docs",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+# ==============================================================================
+# El Cockpit servido por FastAPI (Capa 10, Paso 4)
+# ==============================================================================
+#
+# Se registra AL FINAL del fichero a propósito, y no es un detalle de estilo: Starlette
+# resuelve las rutas por orden de registro, así que montar los estáticos en `/` antes de
+# los routers se tragaría `/api/v1/*`, `/docs` y `/openapi.json` sin avisar. El orden ES
+# la protección, y por eso la regresión que lo cubre no comprueba que el Cockpit se sirva,
+# sino que la documentación de la API sigue viva después de montarlo.
+
+#: Prefijos que NUNCA se reenvían al Cockpit. Un reenvío en bloque convertiría una errata
+#: como `/api/v1/licitacionse` en un **200 con HTML** en lugar de un 404: la aplicación
+#: contestaría que todo va bien mientras el cliente no recibe ni un dato. Es la familia de
+#: H-21, H-22 y H-23 —no rompe, miente— y la razón de que el reenvío vaya acotado.
+PREFIJOS_RESERVADOS = ("api/", "docs", "redoc", "openapi.json", "favicon.ico")
+
+
+def _directorio_bundle() -> str:
+    """Ruta del Cockpit compilado, anclada a la raíz del proyecto (lección de H-18)."""
+    return ruta_proyecto(os.path.join("frontend", "dist"))
+
+
+def _hay_bundle() -> bool:
+    return os.path.isfile(os.path.join(_directorio_bundle(), "index.html"))
+
+
+#: Diagnóstico único para el bundle ausente. Es el primer síntoma que verá quien clone el
+#: repositorio sin compilar, y merece decir qué hacer en vez de un 404 desnudo.
+DIAGNOSTICO_SIN_BUNDLE = {
+    "error_code": "COCKPIT_NO_COMPILADO",
+    "message": (
+        "El Cockpit no está compilado: falta frontend/dist/index.html. "
+        "Ejecutar «npm install && npm run build» dentro de frontend/. "
+        "Node.js hace falta para compilar, no para usar el sistema."
+    ),
+    "details": {"ruta_esperada": os.path.join("frontend", "dist", "index.html")},
+}
+
+
+@app.get("/", include_in_schema=False)
+def servir_cockpit():
+    """La raíz sirve el Cockpit. El JSON de bienvenida vive ahora en `/api/v1/`."""
+    if not _hay_bundle():
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            content=DIAGNOSTICO_SIN_BUNDLE)
+    return FileResponse(os.path.join(_directorio_bundle(), "index.html"))
+
+
+if _hay_bundle():
+    # `html=True` resuelve `index.html` en las peticiones de directorio. El montaje sólo
+    # se hace si el bundle existe: `StaticFiles` con `check_dir=True` reventaría al
+    # importar el módulo, convirtiendo "falta compilar" en "la API no arranca".
+    app.mount("/", StaticFiles(directory=_directorio_bundle(), html=True), name="cockpit")
+else:
+    @app.get("/{ruta_spa:path}", include_in_schema=False)
+    def cockpit_no_compilado(ruta_spa: str):
+        """Sin bundle, cualquier ruta del Cockpit explica qué falta — salvo las de la API,
+        que siguen contestando su propio 404 y no un diagnóstico de compilación."""
+        if ruta_spa.startswith(PREFIJOS_RESERVADOS):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso no encontrado")
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            content=DIAGNOSTICO_SIN_BUNDLE)

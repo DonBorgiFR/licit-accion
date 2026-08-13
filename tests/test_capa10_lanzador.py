@@ -504,6 +504,100 @@ def test_h38_el_bundle_compilado_tampoco_lo_lleva():
 
 
 # ==============================================================================
+# 7. El Cockpit servido por FastAPI (Paso 4)
+# ==============================================================================
+
+@pytest.fixture
+def cliente_api():
+    from fastapi.testclient import TestClient
+    from src.api.main import app
+    return TestClient(app)
+
+
+def test_la_raiz_sirve_el_cockpit_y_ya_no_el_json(cliente_api):
+    """**El cambio de contrato de la Capa 7**, declarado por adelantado en el contrato de la
+    Capa 10 en vez de descubrirse."""
+    respuesta = cliente_api.get("/")
+
+    assert respuesta.status_code == 200
+    assert "text/html" in respuesta.headers["content-type"]
+    assert "<div id=\"root\">" in respuesta.text
+
+
+def test_el_json_de_bienvenida_sigue_existiendo_bajo_api(cliente_api):
+    """Trasladado, no eliminado: un cliente que lo usara debe poder seguir usándolo."""
+    respuesta = cliente_api.get("/api/v1/")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["app"] == "Incoop Licitaciones API"
+
+
+@pytest.mark.parametrize("ruta", ["/docs", "/openapi.json", "/redoc", "/api/v1/health"])
+def test_montar_el_cockpit_no_se_traga_la_api(cliente_api, ruta):
+    """**La regresión que de verdad importa de este paso.**
+
+    Starlette resuelve las rutas por orden de registro, así que montar los estáticos en `/`
+    antes que los routers se tragaría la API entera sin avisar. El orden es la protección, y
+    una protección que depende del orden de las líneas de un fichero necesita una prueba que
+    lo sujete: nada en el código impide que alguien mueva el montaje veinte líneas arriba.
+    """
+    respuesta = cliente_api.get(ruta)
+    assert respuesta.status_code != 404, f"{ruta} ha quedado tapada por los estáticos"
+
+
+def test_una_ruta_inexistente_de_la_api_da_404_y_no_html(cliente_api):
+    """Un reenvío en bloque al Cockpit convertiría una errata en un 200 con HTML: la
+    aplicación contestaría que todo va bien mientras el cliente no recibe ni un dato. Es la
+    familia de H-21, H-22 y H-23 — no rompe, miente."""
+    respuesta = cliente_api.get("/api/v1/licitacionse")
+
+    assert respuesta.status_code == 404
+    assert "text/html" not in respuesta.headers.get("content-type", "")
+
+
+def test_los_assets_del_cockpit_se_sirven(cliente_api):
+    """Sin esto la raíz devolvería el HTML y la pantalla saldría en blanco: el `index.html`
+    referencia `/assets/...` de forma absoluta."""
+    import glob
+    from src import ruta_proyecto
+
+    activos = glob.glob(ruta_proyecto(os.path.join("frontend", "dist", "assets", "*.js")))
+    if not activos:
+        pytest.skip("no hay bundle compilado; ejecutar «npm run build» dentro de frontend/")
+
+    respuesta = cliente_api.get(f"/assets/{os.path.basename(activos[0])}")
+    assert respuesta.status_code == 200
+
+
+def test_el_cockpit_servido_no_se_llama_frontend(cliente_api):
+    """El `index.html` declaraba `<title>frontend</title>`, el título por defecto de Vite.
+    Daba igual mientras lo servía un servidor de desarrollo; desde que FastAPI lo sirve como
+    la aplicación de verdad, es lo que pone en la pestaña del navegador de la cooperativa."""
+    respuesta = cliente_api.get("/")
+
+    assert "<title>frontend</title>" not in respuesta.text
+    assert "Incoop" in respuesta.text
+    assert 'lang="es"' in respuesta.text
+
+
+def test_sin_bundle_el_diagnostico_dice_que_compilar(monkeypatch):
+    """Regresión pedida por el README: un bundle ausente debe dar un diagnóstico claro y no
+    un 404 desnudo. Es el primer síntoma que verá quien clone el repositorio sin compilar."""
+    import src.api.main as api_main
+
+    monkeypatch.setattr(api_main, "_hay_bundle", lambda: False)
+    from fastapi.testclient import TestClient
+
+    with TestClient(api_main.app) as cliente:
+        respuesta = cliente.get("/")
+
+    assert respuesta.status_code == 503
+    cuerpo = respuesta.json()
+    assert cuerpo["error_code"] == "COCKPIT_NO_COMPILADO"
+    assert "npm run build" in cuerpo["message"]
+
+
+# ==============================================================================
 # Utilidades
 # ==============================================================================
 
