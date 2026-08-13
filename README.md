@@ -1149,7 +1149,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** El **Paso 1 quedó validado el 2026-08-13** y vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 2**. Los ocho restantes, sin empezar.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 y 2 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 3**, la configuración versionada. Suite: **351/351**.
 
 ### 🎯 Objetivo
 
@@ -1307,11 +1307,25 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      que este contrato no previó.
    - **Detectó H-37** al preguntarse qué le ocurre al cerrojo cuando el lanzador mata un proceso.
 
-2. **Paso 2 — Healthcheck de Arranque en Frío y Canal de Fallo Fatal (`src/lanzador.py`)** *(Regla 6)*: 💤
-   - **Cierra H-37**: `setup_db()` usa un cerrojo propio, sin TTL ni verificación de PID, sobre el
-     mismo fichero que `db_lock()`. Es lo primero que hace el pipeline, así que un `.lock` huérfano
-     —justo lo que deja el apagado de nivel 3— tumba la corrida nocturna con un `RuntimeError` y sin
-     consola donde verlo. La protección del Paso D1 existe y no llega a actuar.
+2. **Paso 2 — Healthcheck de Arranque en Frío y Canal de Fallo Fatal (`src/lanzador.py`)** *(Regla 6)*: 🟢 **Completado el 2026-08-13.** Suite: **351/351**.
+   - **Cierra H-37**: `setup_db()` pasa a usar `db_lock()` — un solo cerrojo, el que sabe reclamar
+     huérfanos. Antes tenía el suyo, sin TTL ni verificación de PID, sobre el mismo fichero; y como
+     es lo primero que hace el pipeline, un `.lock` abandonado —justo lo que deja el apagado de
+     nivel 3— tumbaba la corrida nocturna con un `RuntimeError` y sin consola donde verlo.
+   - **`es_sesion_interactiva()` decide ante la duda que NO hay escritorio**, porque el riesgo es
+     asimétrico: equivocarse hacia "sí" cuelga la tarea nocturna para siempre y de forma invisible;
+     equivocarse hacia "no" sólo pierde un diálogo y deja intactos el registro y el código de salida.
+   - **El healthcheck no modifica nada, ni siquiera el registro.** Instanciar `Memoria()` crea el
+     directorio de datos (reparación de H-24), así que la comprobación lee la versión de esquema
+     con SQLite en `mode=ro` y sin instanciarla. Emitir el evento es cosa del llamador.
+   - **Una base inexistente no es un fallo**, es una instalación nueva: se informa de que se creará
+     al arrancar. Confundir "no está" con "está roto" es el diagnóstico confuso que esta capa existe
+     para evitar.
+   - **Nuestra API degradada sigue siendo nuestra**: `/health` contesta 503 cuando el diagnóstico
+     falla, de modo que decidir por el código de estado la daría por ajena y el lanzador levantaría
+     una segunda instancia contra la misma base. Se comprueba la **forma** de la respuesta.
+   - Verificado contra el entorno real —esquema v7, bundle presente, puerto libre— y contra la API
+     de verdad levantada, que se reconoce como reutilizable.
    - Verifica intérprete y versión de Python, dependencias importables, ficheros de configuración
      legibles, base accesible y migrable, espacio libre en disco y existencia de `frontend/dist/`.
    - **Distingue tres estados del puerto**, que es donde se equivocan estos lanzadores: libre;
@@ -1438,13 +1452,13 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ### 🛠️ Herramientas y Código a Crear
 
-- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 💤
+- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()` y estados del puerto hechos (Paso 2); faltan supervisor y orquestador.
 - `config/lanzador.yaml`: configuración versionada del lanzador. 💤
 - `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 💤
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 💤
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 17 regresiones del Paso 2.
 
 ---
 

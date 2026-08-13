@@ -14,7 +14,7 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **334/334**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 37 hallazgos catalogados, 36 están cerrados y **H-37 queda abierto**, para repararse en el Paso 2 de la Capa 10. **La capa activa es la 10**, el Lanzador: su **Paso 1 está redactado el 2026-08-13** y pendiente de validación.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **351/351**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 37 hallazgos catalogados, **los 37 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1 y 2 cerrados el 2026-08-13**, tarea activa el **Paso 3**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -32,7 +32,16 @@ python -m pytest tests/ -q          # debe dar 334/334
 
 **La Capa 10 ya está redactada y pautada en el `README.md`**, sección *"🚀 Capa 10: El Lanzador y Despertador"*: objetivo, doce consideraciones de diseño, los artefactos que produce y **los 10 pasos atómicos en cuatro fases**. No hay que rediseñarla.
 
-**El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13**. **La tarea activa es el Paso 2**, el healthcheck de arranque en frío, que además **cierra H-37**.
+**El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13**.
+
+* **Paso 1** 🟢 — contrato y máquina de estados, validado el 2026-08-13. Vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
+* **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. 17 regresiones en `tests/test_capa10_lanzador.py`. Verificado contra el entorno real y contra la API de verdad levantada.
+
+**La tarea activa es el Paso 3**: `config/lanzador.yaml` y su lector estricto, sin valores por defecto. El healthcheck del Paso 2 **recibe la configuración inyectada** a propósito, para poder ejercitarse sin fichero (C4); el Paso 3 crea el fichero, su lector y añade "configuración del lanzador legible" como comprobación.
+
+> 🔑 **Las dos decisiones del Paso 2 que rigen el resto de la capa.** La primera: **`es_sesion_interactiva()` contesta `False` ante la duda**, porque el daño es asimétrico —un diálogo de más cuelga la tarea nocturna para siempre y de forma invisible; uno de menos sólo pierde el aviso gráfico, y quedan el registro y el código de salida—. La segunda: **comprobar no modifica nada, ni siquiera el registro**. Instanciar `Memoria()` crea el directorio de datos (H-24) y escribir en `pipeline.jsonl` también, así que el healthcheck es puro y quien decide dejar rastro es el llamador. Crear cosas es competencia de `ARRANCANDO`, no de `COMPROBANDO`.
+
+> ⚠️ **Lección de método del Paso 2, barata de aprender aquí y cara más adelante**: la evidencia inicial de H-37 incluía un tercer caso —cerrojo de 0 bytes recién creado— que **no era un defecto**, aunque diera el mismo síntoma. Respetarlo es correcto: puede pertenecer a un proceso vivo que aún no ha escrito su payload. La medición confirmaba la conclusión pero no el razonamiento, porque el resultado era el mismo por dos motivos distintos y sólo uno era un fallo. **Medir el efecto no basta si no se comprueba también la causa.**
 
 **Tres decisiones de dirección ya tomadas el 2026-08-12** que la redacción respeta y que no hay que volver a plantear:
 * **La capa arranca, no avisa.** Nada de notificaciones activas: el canal por el que el sistema habla es el Cockpit, que ya existe. El nombre "Despertador" se refiere a despertar el ecosistema, no a avisar a una persona.
@@ -446,9 +455,7 @@ cd frontend && npm run dev          # http://localhost:5173
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **37 hallazgos catalogados, 36 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10.
-
-**Queda abierto H-37**, detectado el 2026-08-13 al redactar el contrato de la Capa 10: `setup_db()` usa un cerrojo propio sin TTL ni verificación de PID sobre el mismo fichero que `db_lock()`, y es lo primero que hace el pipeline. **Se repara en el Paso 2 de la Capa 10** *(decisión de dirección)*.
+Ninguno. **37 hallazgos catalogados, 37 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 

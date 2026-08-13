@@ -1310,7 +1310,7 @@ de verdad. Estaban ejercitando una disposición que en producción no ocurre. Co
 
 ---
 
-### H-37 · `setup_db()` usa un cerrojo propio que no sabe reclamar huérfanos 🔴 ABIERTO (Capa 10, Paso 2)
+### H-37 · `setup_db()` usa un cerrojo propio que no sabe reclamar huérfanos 🟢 CERRADO (Capa 10, Paso 2)
 
 **Detectado el 2026-08-13 al redactar el contrato de la Capa 10**, revisando qué le ocurre al
 cerrojo cuando el lanzador mata un proceso.
@@ -1334,10 +1334,38 @@ implementaciones contra **el mismo fichero**:
 |---|---|---|
 | Cerrojo con PID muerto | `setup_db()` | ❌ `RuntimeError` **tras 5,0 s** |
 | **El mismo cerrojo** | `db_lock(timeout=10)` | ✅ **Reclamado en 0,0 s** |
-| Cerrojo de 0 bytes | `setup_db()` | ❌ `RuntimeError` **tras 5,0 s** |
 
 La protección existe, funciona y está a un método de distancia: simplemente no la usa quien pregunta
 primero.
+
+**Cerrado el 2026-08-13**: `setup_db()` pasa a usar `db_lock()`. Un solo cerrojo sobre el fichero,
+el que sabe reclamar huérfanos. Verificado antes de tocar nada que el cuerpo del método sólo usa
+`conectar()` y los ayudantes de backup —ninguno toma `db_lock()`—, de modo que no hay reentrada
+sobre `db_write_lock`, que es un `threading.Lock` **no reentrante**; y que ninguna prueba dependía
+del mensaje del `RuntimeError` anterior. Nuevo parámetro `timeout_cerrojo` (30 s por defecto) para
+que las regresiones puedan ejercitar el rechazo sin tardar medio minuto.
+
+**Matriz de comportamiento tras la reparación**, medida sobre base temporal aislada:
+
+| Estado del cerrojo | Resultado | Por qué es el correcto |
+|---|---|---|
+| PID muerto, recién creado | ✅ Adquirido en 0,1 s | Es un huérfano: su dueño no existe |
+| PID vivo, recién creado | ❌ Rechazado | **Hay una corrida de verdad**: la protección debe seguir bloqueando |
+| PID vivo, TTL superado | ✅ Adquirido en 0,2 s | Un proceso que lleva más de 600 s con el cerrojo se dio por colgado |
+| 0 bytes, recién creado | ❌ Rechazado | **No es huérfano por ser ilegible**: puede pertenecer a un proceso que aún no ha escrito su payload |
+| 0 bytes, más viejo que el TTL | ✅ Adquirido en 0,1 s | Caduca por su fecha de modificación (Paso D1) |
+
+> ⚠️ **Corrección de la evidencia inicial de este hallazgo.** Al catalogarlo se presentó el cerrojo
+> de 0 bytes recién creado como un tercer caso de huérfano no reclamado. **No lo es**: respetarlo es
+> el comportamiento correcto, porque un fichero vacío recién creado puede ser el de un proceso vivo
+> que todavía no ha escrito su contenido. Sólo caduca por antigüedad. El defecto real era el primer
+> caso, y ése sí se reproducía. *Que una medición confirme la conclusión no significa que confirme
+> el razonamiento: aquí el resultado era el mismo por dos motivos distintos, y sólo uno era un
+> defecto.*
+
+**Regresiones**: `tests/test_capa10_lanzador.py::test_h37_un_cerrojo_huerfano_ya_no_tumba_el_arranque`,
+`::test_h37_un_cerrojo_de_proceso_vivo_sigue_bloqueando` y `::test_h37_un_cerrojo_ilegible_caduca_por_su_fecha`.
+Las tres juntas, porque reparar sólo la primera mitad convertiría la protección en un adorno.
 
 **Por qué es la Capa 10 quien lo activa, y no quien lo introduce**: el apagado ordenado de nivel 3
 es `TerminateProcess`. Si mata al proceso dentro de la ventana del cerrojo, deja un `.lock`

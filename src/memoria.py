@@ -750,32 +750,30 @@ class Memoria:
         except Exception:
             pass
 
-    def setup_db(self) -> None:
+    def setup_db(self, timeout_cerrojo: float = 30.0) -> None:
         """
         Inicializa la base de datos si no existe, o verifica/migra el esquema de forma idempotente
         y segura si ya existe (realizando un backup antes). Recrea las vistas analíticas.
         Utiliza un lock físico de exclusión mutua para evitar colisiones de concurrencia en la migración.
-        """
-        lock_path = self.db_path + ".lock"
-        adquirido = False
-        fd = None
-        
-        # Intentar adquirir lock
-        for intencion in range(5):
-            try:
-                fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                adquirido = True
-                break
-            except FileExistsError:
-                time.sleep(1.0)
-                
-        if not adquirido:
-            raise RuntimeError(
-                "No se pudo adquirir el lock de migración de base de datos. "
-                "Hay otro proceso ejecutando setup_db() de forma concurrente."
-            )
 
-        try:
+        **H-37 (cerrado el 2026-08-13, Capa 10 Paso 2)**: este método se fabricaba su propio
+        cerrojo sobre el mismo fichero `.lock` que `db_lock()` —cinco intentos de un segundo y un
+        `RuntimeError`—, pero sin TTL, sin verificar el PID del propietario y sin reclamar
+        huérfanos. Como `setup_db()` es lo primero que hace `main()`, quien preguntaba por el
+        cerrojo en el arranque del pipeline era siempre la implementación que no sabía reclamarlo:
+        un `.lock` abandonado por un proceso muerto tumbaba la corrida a los 5 s pese a que
+        `db_lock()` lo habría reclamado en 0,0 s. Toda la protección del Paso D1 existía y no
+        llegaba a actuar.
+
+        Ahora hay **un solo cerrojo**. Verificado que el cuerpo de este método sólo usa
+        `conectar()` y los ayudantes de backup —ninguno toma `db_lock()`—, de modo que no hay
+        reentrada sobre `db_write_lock`, que es un `threading.Lock` no reentrante.
+
+        `timeout_cerrojo` es el margen de espera **para adquirir** el cerrojo, no para migrar.
+        Existe como parámetro para que las regresiones puedan ejercitar el rechazo ante un
+        cerrojo legítimamente vivo sin tardar medio minuto en cada prueba.
+        """
+        with self.db_lock(timeout=timeout_cerrojo):
             # Si no existe base de datos física, la creamos limpia en v5
             if not os.path.exists(self.db_path):
                 with self.conectar() as conn:
@@ -977,17 +975,6 @@ class Memoria:
                                     if not _columna_existe_conn("documentos", "last_attempt_at"):
                                         conn_check.execute("ALTER TABLE documentos ADD COLUMN last_attempt_at TEXT;")
                             print("[+] La base de datos está actualizada a la versión esperada.")
-        finally:
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-            if adquirido:
-                try:
-                    os.remove(lock_path)
-                except Exception:
-                    pass
 
         # --- NORMALIZACIÓN DEL VOCABULARIO DE ESTADOS DOCUMENTALES (H-33) ---
         #
