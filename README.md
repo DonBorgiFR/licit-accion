@@ -1149,7 +1149,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 y 2 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 3**, la configuración versionada. Suite: **351/351**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1, 2 y 3 están cerrados** (2026-08-13); el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). La tarea activa es el **Paso 4**, el Cockpit servido por FastAPI. Suite: **370/370**.
 
 ### 🎯 Objetivo
 
@@ -1340,11 +1340,24 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      —Session 0—, jamás: sólo registro y código de salida, o el proceso quedaría colgado esperando
      a un usuario inexistente.
 
-3. **Paso 3 — Configuración Versionada del Lanzador (`config/lanzador.yaml`)** *(Regla 4)*: 💤
-   - Puerto, host, tope de espera a que la API responda, comportamiento ante puerto ocupado, ruta
-     del bundle y hora del despertador.
+3. **Paso 3 — Configuración Versionada del Lanzador (`config/lanzador.yaml`)** *(Regla 4)*: 🟢 **Completado el 2026-08-13.** Suite: **370/370**.
+   - Puerto, host, tope de espera a que la API responda, mínimo de disco, ruta del bundle,
+     apertura del navegador, plazos de gracia del apagado y hora del despertador. Política **v1.0.0**.
    - **No aplica valores por defecto**: fichero ausente o incoherente significa no arrancar, igual
-     que `src/retencion.py` decidió para la purga.
+     que `src/retencion.py` decidió para la purga. Código de salida **11**, distinto del 10 del
+     entorno: *"no he podido leer el criterio"* y *"el entorno no cumple"* no pueden confundirse.
+   - **El comportamiento ante un puerto ocupado por un tercero NO es configurable** *(decisión de
+     dirección, 2026-08-13)*. El contrato ya lo fijó —detenerse—, y dejar que un fichero de texto
+     autorizara lo contrario sería relajar una invariante desde configuración: misma doctrina por
+     la que `retencion.yaml` rechaza `Presentada` aunque se declare. El fichero explica la ausencia,
+     porque un parámetro que falta sin motivo se acaba añadiendo.
+   - **Cierra H-38**, que este mismo paso destapaba: el Cockpit compilado llevaba
+     `http://127.0.0.1:8000/api/v1` incrustado, de modo que declarar otro puerto habría servido las
+     pantallas correctamente mientras todas las llamadas de datos iban al 8000 — el sistema parece
+     vivo y no hay ni un dato. La URL base pasa a ser relativa al propio origen, que funciona tanto
+     con el proxy de Vite en desarrollo como con FastAPI sirviéndolo todo en producción.
+   - **Con varios fallos a la vez manda el del entorno, no el del puerto**: el `20` sólo aparece
+     cuando el puerto es el único problema. El resumen, en cambio, no esconde ninguno.
 
 #### **Fase 2: Un solo proceso que lo sirve todo**
 
@@ -1452,13 +1465,13 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ### 🛠️ Herramientas y Código a Crear
 
-- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()` y estados del puerto hechos (Paso 2); faltan supervisor y orquestador.
-- `config/lanzador.yaml`: configuración versionada del lanzador. 💤
+- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()`, estados del puerto y lector de configuración hechos (Pasos 2 y 3); faltan supervisor y orquestador.
+- `config/lanzador.yaml`: configuración versionada del lanzador. 🟢 v1.0.0 (Paso 3).
 - `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 💤
 - `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 17 regresiones del Paso 2.
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 36 regresiones de los Pasos 2 y 3.
 
 ---
 

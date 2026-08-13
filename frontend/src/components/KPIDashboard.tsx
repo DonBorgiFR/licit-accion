@@ -60,7 +60,7 @@ export const KPIDashboard: React.FC = () => {
               Error de Conexión con la Pasarela API
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              No se han podido cargar las métricas en tiempo real. Verifica que el servidor FastAPI está en ejecución en http://127.0.0.1:8000.
+              No se han podido cargar las métricas en tiempo real. Verifica que el servidor FastAPI está en ejecución.
             </p>
           </div>
           <Button variant="danger" size="sm" onClick={() => refetch()} isLoading={isFetching}>

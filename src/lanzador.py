@@ -33,6 +33,7 @@ puede ejercitar sin fichero (Convención C4) y ningún paso queda a medias.
 
 import json
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -40,7 +41,9 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
 
 from src import PROJECT_ROOT, ruta_datos, ruta_proyecto
 
@@ -115,6 +118,215 @@ class ApagadoIncompleto(ErrorLanzador):
     """Agotados los tres niveles de apagado, el proceso sigue vivo."""
 
     codigo_salida = APAGADO_INCOMPLETO
+
+
+# ==============================================================================
+# Configuración versionada (Regla 4) — Capa 10, Paso 3
+# ==============================================================================
+#
+# Ningún plazo ni puerto inventado. Este lector **no aplica valores por defecto**: si el
+# fichero falta, no se puede leer o declara algo incoherente, lanza
+# `ConfiguracionLanzadorInvalida` y el lanzador no arranca. Misma doctrina que
+# `src/retencion.py`, y por la misma razón (H-18).
+
+NOMBRE_FICHERO_CONFIG = "lanzador.yaml"
+
+#: `HH:MM` en 24 h. Se valida con expresión regular **y** con rangos, porque `"25:70"`
+#: encaja en un patrón laxo y no es una hora.
+PATRON_HORA = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+@dataclass(frozen=True)
+class ConfiguracionServidor:
+    host: str
+    puerto: int
+    espera_api_segundos: int
+    espacio_minimo_mb: int
+
+
+@dataclass(frozen=True)
+class ConfiguracionCockpit:
+    ruta_bundle: str
+    abrir_navegador: bool
+
+
+@dataclass(frozen=True)
+class ConfiguracionApagado:
+    gracia_endpoint_segundos: int
+    gracia_senal_segundos: int
+
+
+@dataclass(frozen=True)
+class ConfiguracionDespertador:
+    hora: str
+    ejecutar_si_se_perdio: bool
+
+
+@dataclass(frozen=True)
+class ConfiguracionLanzador:
+    """Parámetros de arranque vigentes y la versión bajo la que se ejecutó.
+
+    Inmutable a propósito, igual que `PoliticaRetencion`: se lee una vez y no puede
+    alterarse a mitad de un arranque, de modo que lo registrado y lo realmente hecho
+    siempre concuerdan.
+
+    **Ningún bloque es opcional.** Es la diferencia con `retencion.yaml`, donde un bloque
+    ausente significa "no ejecutes esa operación" —una degradación segura para algo
+    irreversible—. Aquí no hay equivalente: un lanzador sin puerto no puede hacer la mitad
+    de su trabajo, simplemente no puede arrancar.
+    """
+
+    version: str
+    servidor: ConfiguracionServidor
+    cockpit: ConfiguracionCockpit
+    apagado: ConfiguracionApagado
+    despertador: ConfiguracionDespertador
+
+    def ruta_bundle_absoluta(self) -> str:
+        """Ancla la ruta del bundle a la raíz del proyecto, nunca al directorio de trabajo.
+
+        Lección de H-18, y la razón de que el acceso directo del Paso 7 no necesite fijar
+        el directorio de trabajo: el de un acceso directo no es el que uno cree.
+        """
+        ruta = self.cockpit.ruta_bundle
+        return ruta if os.path.isabs(ruta) else ruta_proyecto(ruta)
+
+
+def _exigir_mapa(datos: Any, nombre: str) -> Dict[str, Any]:
+    if not isinstance(datos, dict):
+        raise ConfiguracionLanzadorInvalida(
+            f"El bloque '{nombre}' de {NOMBRE_FICHERO_CONFIG} debe ser un mapa de claves, "
+            f"y se recibió {datos!r}."
+        )
+    return datos
+
+
+def _entero_en_rango(datos: Dict[str, Any], clave: str, minimo: int, maximo: int, bloque: str) -> int:
+    """Exige un entero dentro de rango, rechazando lo que YAML acepta y aquí no."""
+    if clave not in datos:
+        raise ConfiguracionLanzadorInvalida(
+            f"Falta '{clave}' en el bloque '{bloque}' de {NOMBRE_FICHERO_CONFIG}. "
+            "Sin ese valor el lanzador no puede decidir, y no se inventa."
+        )
+    valor = datos[clave]
+    # `bool` es subclase de `int` en Python: `True` colaría como el puerto 1.
+    if isinstance(valor, bool) or not isinstance(valor, int):
+        raise ConfiguracionLanzadorInvalida(
+            f"'{clave}' debe ser un número entero, y se recibió {valor!r}."
+        )
+    if not (minimo <= valor <= maximo):
+        raise ConfiguracionLanzadorInvalida(
+            f"'{clave}' debe estar entre {minimo} y {maximo}, y se recibió {valor}."
+        )
+    return valor
+
+
+def _booleano_explicito(datos: Dict[str, Any], clave: str, bloque: str) -> bool:
+    """Exige `true` o `false` literales.
+
+    No se acepta `"si"`, `1` ni la ausencia de la clave: un booleano deducido es una
+    decisión que nadie declaró, y aquí gobiernan si se abre una ventana en la cara de
+    alguien y si una tarea perdida se recupera.
+    """
+    if clave not in datos:
+        raise ConfiguracionLanzadorInvalida(
+            f"Falta '{clave}' en el bloque '{bloque}' de {NOMBRE_FICHERO_CONFIG}."
+        )
+    valor = datos[clave]
+    if not isinstance(valor, bool):
+        raise ConfiguracionLanzadorInvalida(
+            f"'{clave}' debe ser true o false de forma explícita, y se recibió {valor!r}."
+        )
+    return valor
+
+
+def _texto_no_vacio(datos: Dict[str, Any], clave: str, bloque: str) -> str:
+    valor = datos.get(clave)
+    if not isinstance(valor, str) or not valor.strip():
+        raise ConfiguracionLanzadorInvalida(
+            f"'{clave}' del bloque '{bloque}' debe ser un texto no vacío, y se recibió {valor!r}."
+        )
+    return valor.strip()
+
+
+def cargar_configuracion(ruta: Optional[str] = None) -> ConfiguracionLanzador:
+    """Lee y valida `config/lanzador.yaml`. **No aplica valores por defecto.**
+
+    `ruta` permite inyectar un fichero alternativo en las pruebas. Una ruta absoluta se
+    respeta intacta; una relativa se ancla a la raíz del proyecto, nunca al directorio de
+    trabajo (Convención C1 y Paso D3).
+
+    Lanza `ConfiguracionLanzadorInvalida` —código de salida 11— si falta, no es legible, no
+    es un mapa YAML o declara algo fuera de rango.
+    """
+    if ruta is None:
+        ruta = ruta_proyecto(os.path.join("config", NOMBRE_FICHERO_CONFIG))
+    elif not os.path.isabs(ruta):
+        ruta = ruta_proyecto(ruta)
+
+    if not os.path.exists(ruta):
+        raise ConfiguracionLanzadorInvalida(
+            f"No se encuentra la configuración del lanzador en '{ruta}'. "
+            "Sin ella no se arranca: no se inventan puerto ni plazos."
+        )
+
+    try:
+        with open(ruta, "r", encoding="utf-8") as fichero:
+            crudo = yaml.safe_load(fichero)
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfiguracionLanzadorInvalida(
+            f"No se pudo leer la configuración del lanzador en '{ruta}': {exc}"
+        ) from exc
+
+    if not isinstance(crudo, dict) or "lanzador" not in crudo:
+        raise ConfiguracionLanzadorInvalida(
+            f"'{ruta}' no contiene un bloque 'lanzador' válido."
+        )
+
+    datos = _exigir_mapa(crudo["lanzador"], "lanzador")
+
+    version = datos.get("version")
+    if not isinstance(version, str) or not version.strip():
+        raise ConfiguracionLanzadorInvalida(
+            "La configuración debe declarar una 'version' no vacía: cada arranque registra "
+            "bajo qué versión se ejecutó, y sin ella el rastro no es reconstruible."
+        )
+
+    servidor = _exigir_mapa(datos.get("servidor"), "servidor")
+    cockpit = _exigir_mapa(datos.get("cockpit"), "cockpit")
+    apagado = _exigir_mapa(datos.get("apagado"), "apagado")
+    despertador = _exigir_mapa(datos.get("despertador"), "despertador")
+
+    hora = _texto_no_vacio(despertador, "hora", "despertador")
+    if not PATRON_HORA.match(hora):
+        raise ConfiguracionLanzadorInvalida(
+            f"'hora' debe tener el formato 24 h HH:MM, y se recibió '{hora}'. "
+            "Una hora inválida registraría la tarea programada en un momento que nadie "
+            "eligió, o no la registraría en absoluto."
+        )
+
+    return ConfiguracionLanzador(
+        version=version.strip(),
+        servidor=ConfiguracionServidor(
+            host=_texto_no_vacio(servidor, "host", "servidor"),
+            # Por debajo de 1024 son puertos privilegiados; por encima de 65535 no existen.
+            puerto=_entero_en_rango(servidor, "puerto", 1024, 65535, "servidor"),
+            espera_api_segundos=_entero_en_rango(servidor, "espera_api_segundos", 1, 600, "servidor"),
+            espacio_minimo_mb=_entero_en_rango(servidor, "espacio_minimo_mb", 1, 10 ** 7, "servidor"),
+        ),
+        cockpit=ConfiguracionCockpit(
+            ruta_bundle=_texto_no_vacio(cockpit, "ruta_bundle", "cockpit"),
+            abrir_navegador=_booleano_explicito(cockpit, "abrir_navegador", "cockpit"),
+        ),
+        apagado=ConfiguracionApagado(
+            gracia_endpoint_segundos=_entero_en_rango(apagado, "gracia_endpoint_segundos", 1, 300, "apagado"),
+            gracia_senal_segundos=_entero_en_rango(apagado, "gracia_senal_segundos", 1, 300, "apagado"),
+        ),
+        despertador=ConfiguracionDespertador(
+            hora=hora,
+            ejecutar_si_se_perdio=_booleano_explicito(despertador, "ejecutar_si_se_perdio", "despertador"),
+        ),
+    )
 
 
 # ==============================================================================
@@ -269,6 +481,11 @@ class Comprobacion:
     remedio: Optional[str] = None
     #: Una comprobación informativa no impide arrancar (p. ej. "la base no existe todavía").
     critica: bool = True
+    #: Cada fallo lleva **su** código de salida, en vez de decidirlo el llamador con una
+    #: cadena de casos especiales. Quien revise por qué no arrancó una noche distingue
+    #: "me falta una dependencia" (10) de "alguien ocupa mi puerto" (20) sin abrir el
+    #: registro, que es justo para lo que sirve un código de salida.
+    codigo_salida: int = HEALTHCHECK_INSATISFACTORIO
 
 
 @dataclass
@@ -279,6 +496,23 @@ class DiagnosticoArranque:
     @property
     def fallos(self) -> List[Comprobacion]:
         return [c for c in self.comprobaciones if not c.ok and c.critica]
+
+    @property
+    def codigo_salida(self) -> int:
+        """El del **primer** fallo en el orden en que se comprueba. Si todo va bien, `EXITO`.
+
+        Con varios fallos a la vez, un único código es por fuerza una simplificación, así
+        que lo que importa es que el orden de comprobación signifique algo. Es: configuración
+        (11) → entorno (10) → puerto (20).
+
+        De ahí sale la semántica útil: **el 20 sólo aparece cuando el puerto es el único
+        problema** —"todo está listo salvo que alguien ocupa mi sitio"—, mientras que si
+        además falta el bundle o una dependencia manda el 10, que es la verdad: el entorno
+        no está preparado, y arreglar el puerto no lo arreglaría. El detalle completo de
+        todos los fallos viaja en `resumen()`, que es lo que se muestra y se registra.
+        """
+        fallos = self.fallos
+        return fallos[0].codigo_salida if fallos else EXITO
 
     @property
     def satisfactorio(self) -> bool:
@@ -500,9 +734,57 @@ def _comprobar_puerto(host: str, puerto: int, timeout: float) -> Tuple[Comprobac
             "Puerto", False,
             detalle or f"el puerto {puerto} está ocupado por otro proceso",
             remedio=f"Cerrar el programa que ocupa el puerto {puerto}, o cambiar el puerto en config/lanzador.yaml.",
+            codigo_salida=PUERTO_OCUPADO_AJENO,
         ),
         estado,
     )
+
+
+def comprobar_arranque(
+    ruta_config: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> Tuple[Optional[ConfiguracionLanzador], DiagnosticoArranque]:
+    """Punto de entrada del estado `COMPROBANDO`: carga la configuración y comprueba con ella.
+
+    Devuelve la configuración —o `None` si no se pudo leer— y el diagnóstico. **Sigue sin
+    modificar nada**: leer un YAML y consultar el sistema no deja rastro en disco.
+
+    La configuración se carga **antes** del resto porque de ella salen el puerto, la ruta
+    del bundle y el mínimo de disco: comprobar el puerto 8000 porque es el de siempre,
+    cuando el fichero declara otro, sería diagnosticar un sistema distinto del que se va a
+    arrancar.
+    """
+    try:
+        config = cargar_configuracion(ruta_config)
+    except ConfiguracionLanzadorInvalida as exc:
+        diagnostico = DiagnosticoArranque()
+        diagnostico.comprobaciones.append(
+            Comprobacion(
+                "Configuración del lanzador", False, str(exc),
+                remedio=f"Revisar config/{NOMBRE_FICHERO_CONFIG}. "
+                        "No se arranca con valores por defecto: un puerto o un plazo inventados "
+                        "harían que el sistema se comportara distinto de lo que nadie declaró.",
+                codigo_salida=CONFIGURACION_INVALIDA,
+            )
+        )
+        return None, diagnostico
+
+    diagnostico = ejecutar_healthcheck(
+        host=config.servidor.host,
+        puerto=config.servidor.puerto,
+        ruta_bundle=config.ruta_bundle_absoluta(),
+        espacio_minimo_mb=config.servidor.espacio_minimo_mb,
+        db_path=db_path,
+    )
+    diagnostico.comprobaciones.insert(
+        0,
+        Comprobacion(
+            "Configuración del lanzador", True,
+            f"v{config.version}, puerto {config.servidor.puerto}, "
+            f"despertador a las {config.despertador.hora}",
+        ),
+    )
+    return config, diagnostico
 
 
 # ==============================================================================
@@ -556,6 +838,16 @@ def comunicar_fallo_fatal(diagnostico: DiagnosticoArranque, titulo: str = "Ecosi
     salió ningún diálogo en Session 0" es indistinguible de "no hubo ningún fallo del que
     avisar".
     """
+    if diagnostico.satisfactorio:
+        # Llamar aquí con un diagnóstico correcto no debería ocurrir nunca. Devolver el 0
+        # que arrojaría `codigo_salida` convertiría un fallo en un éxito silencioso, que es
+        # la transición prohibida nº 5 del contrato. Se sale por el código de lo no previsto.
+        registrar_evento_lanzador(
+            "LANZADOR_DEGRADADO",
+            motivo="se pidió comunicar un fallo fatal con un diagnóstico satisfactorio",
+        )
+        return ERROR_NO_PREVISTO
+
     resumen = diagnostico.resumen()
     print(resumen, file=sys.stderr)
     registrar_evento_lanzador("LANZADOR_HEALTHCHECK_FALLIDO", motivo=resumen.replace("\n", " | "))
@@ -566,6 +858,4 @@ def comunicar_fallo_fatal(diagnostico: DiagnosticoArranque, titulo: str = "Ecosi
             motivo="sin sesión interactiva: el aviso viaja por código de salida y registro",
         )
 
-    if diagnostico.estado_puerto is EstadoPuerto.AJENO:
-        return PUERTO_OCUPADO_AJENO
-    return HEALTHCHECK_INSATISFACTORIO
+    return diagnostico.codigo_salida

@@ -27,8 +27,21 @@ import type {
   Ejecucion,
 } from '../types/api';
 
+// URL **relativa al propio origen**, no absoluta a 127.0.0.1:8000 (H-38).
+//
+// Con la URL absoluta incrustada, el puerto quedaba fijado en el bundle compilado: desde
+// que `config/lanzador.yaml` permite declarar el puerto (Capa 10, Paso 3), arrancar en
+// cualquier otro habría servido el Cockpit correctamente y dejado que **todas** sus
+// llamadas de datos fueran al 8000. El fallo más incómodo posible: las pantallas cargan,
+// el sistema parece vivo y no hay ni un dato.
+//
+// Relativa funciona en los dos modos y sin configurar nada:
+//   · desarrollo — `npm run dev` en el 5173, con el proxy `/api` de vite.config.ts.
+//   · producción — FastAPI sirve el bundle y la API desde el mismo origen (Paso 4).
+//
+// `VITE_API_BASE_URL` se conserva para apuntar a un backend en otra máquina.
 const BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
+  (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
 // ==============================================================================
 // Excepción Personalizada de Error del Cliente API

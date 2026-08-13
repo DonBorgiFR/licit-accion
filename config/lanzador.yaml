@@ -1,0 +1,104 @@
+# Configuración del Lanzador y Despertador — Capa 10
+#
+# Todo parámetro operativo del arranque vive aquí y sólo aquí: puerto, topes de espera,
+# ruta del bundle y hora del despertador. Ver `.agents/CONTRATO_CAPA_10.md`.
+#
+# ESTE FICHERO NO TIENE VALORES POR DEFECTO. Si falta, no se puede leer o declara algo
+# incoherente, el lanzador NO arranca: se detiene y lo dice, con código de salida 11.
+# Misma doctrina que `config/retencion.yaml`, y por la misma razón —H-18—: cuando
+# `config/perfil_incoop.yaml` no se encontraba, el perfil comercial se cargaba vacío y el
+# sistema seguía en silencio con otros criterios. La misma licitación puntuaba 71 desde la
+# raíz y 47 desde otra carpeta, con el umbral de recomendación en 65. Un fichero de
+# configuración ausente no puede degradarse a un comportamiento distinto que nadie ha
+# pedido.
+#
+# QUÉ NO SE CONFIGURA AQUÍ, Y POR QUÉ (decisión de dirección, 2026-08-13):
+#
+#   · Qué hacer si el puerto lo ocupa OTRO programa. El contrato ya lo fijó: detenerse.
+#     Ni pelearse por el puerto ni saltar a otro en silencio, porque un lanzador que
+#     arranca a ciegas acaba dejando instancias duplicadas que se pisan en la misma base.
+#     Dejar que un fichero de texto autorizara lo contrario sería relajar una invariante
+#     del contrato desde configuración: la misma doctrina por la que `retencion.yaml`
+#     rechaza `Presentada` en `estados_archivables` aunque se declare.
+#
+#   · Si reutilizar nuestra propia API cuando ya está viva. Tampoco es una opción: el
+#     puerto está ocupado, así que la alternativa a reutilizarla no es arrancar otra, es
+#     no arrancar. Un parámetro que sólo admite un valor no es configuración, es ruido.
+
+lanzador:
+  # Versión de la configuración. Cada arranque la registra, para que un cambio de puerto
+  # o de plazos no reescriba la historia de lo ya ejecutado (Regla 4).
+  #
+  # 1.0.0 (2026-08-13, Paso 3): versión inicial.
+  version: "1.0.0"
+
+  servidor:
+    # Interfaz en la que escucha la API. `127.0.0.1` a propósito y no `0.0.0.0`: el
+    # Cockpit no tiene autenticación, así que exponerlo a la red local dejaría la memoria
+    # comercial de la cooperativa al alcance de cualquiera con un navegador.
+    host: "127.0.0.1"
+
+    # Puerto de la API, que sirve también el Cockpit desde el Paso 4.
+    #
+    # Cambiarlo es seguro desde el 2026-08-13: hasta entonces el Cockpit compilado llevaba
+    # `http://127.0.0.1:8000` incrustado, de modo que arrancar en otro puerto habría
+    # servido las pantallas correctamente mientras todas sus llamadas de datos iban al
+    # 8000 (H-38). Ahora el bundle usa una URL relativa a su propio origen.
+    puerto: 8000
+
+    # Segundos que se espera a que `/api/v1/health` conteste tras arrancar el servidor.
+    #
+    # Se espera CONSULTANDO, no durmiendo: el error clásico de estos lanzadores es
+    # `sleep 5` y abrir el navegador, que en un equipo lento saca una pantalla en blanco y
+    # parece que el sistema no funciona. Este número es sólo el tope; en un equipo rápido
+    # se sigue adelante en cuanto responde.
+    espera_api_segundos: 30
+
+    # Mínimo de disco libre para considerar el arranque viable.
+    #
+    # El pipeline descarga pliegos y crea una copia de la base antes de purgar. Sin margen,
+    # esa copia falla y —por la Regla 5 de la Capa 9— la purga no se ejecuta: el disco
+    # lleno se manifestaría como un sistema que deja de limpiarse, justo lo contrario de lo
+    # que uno esperaría, y por eso conviene detectarlo antes y no después.
+    espacio_minimo_mb: 200
+
+  cockpit:
+    # Ruta del bundle compilado, relativa a la raíz del proyecto (nunca al directorio de
+    # trabajo: lección de H-18, y por eso el acceso directo del Paso 7 no necesita fijarlo).
+    ruta_bundle: "frontend/dist"
+
+    # Si el modo completo abre el navegador al terminar de arrancar.
+    #
+    # `false` es útil en un equipo que sólo prospecta y se consulta desde otro sitio. No
+    # afecta al modo «sólo pipeline», que NO abre navegador jamás por contrato: esa
+    # decisión no depende de este fichero sino de si hay sesión interactiva, porque una
+    # intención declarada puede llegar equivocada y el identificador de sesión no.
+    abrir_navegador: true
+
+  apagado:
+    # Los tres niveles del apagado ordenado, en segundos. Se VERIFICA en cada uno —se
+    # sondea hasta que el proceso desaparece— en vez de enviar la señal y darla por buena.
+    #
+    # Nivel 1, `POST /api/v1/admin/apagar`: el único que termina las peticiones en curso,
+    # devuelve el cerrojo y ejecuta el `lifespan`. Y el único que funciona sin consola,
+    # que es justo el caso del `.vbs`.
+    gracia_endpoint_segundos: 10
+
+    # Nivel 2, `CTRL_BREAK_EVENT` al grupo de procesos. Agotado esto, va `TerminateProcess`.
+    #
+    # Matar el proceso no corrompe la base —SQLite en WAL sobrevive igual que a un corte de
+    # luz—, pero pierde la escritura en vuelo y puede dejar el cerrojo huérfano.
+    gracia_senal_segundos: 10
+
+  despertador:
+    # Hora a la que la tarea programada de Windows ejecuta el modo «sólo pipeline».
+    #
+    # De madrugada porque la prospección tarda y descarga decenas de pliegos; y porque a
+    # esa hora nadie está usando el Cockpit, de modo que el cerrojo de la base no compite
+    # con nadie. Formato 24 h "HH:MM".
+    hora: "06:30"
+
+    # Si la tarea se ejecuta también cuando el equipo está apagado a esa hora, en cuanto
+    # arranque. Sin esto, un fin de semana con el ordenador apagado significa un lunes sin
+    # las oportunidades del viernes.
+    ejecutar_si_se_perdio: true

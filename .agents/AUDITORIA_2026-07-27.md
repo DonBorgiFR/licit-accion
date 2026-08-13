@@ -1382,6 +1382,50 @@ literalmente el sitio donde se comprueba que la base es accesible y migrable.
 
 ---
 
+### H-38 · El Cockpit compilado llevaba el puerto incrustado 🟢 CERRADO (Capa 10, Paso 3)
+
+**Detectado el 2026-08-13 al escribir `config/lanzador.yaml`**, comprobando qué pasaría si
+alguien cambiase el puerto declarado.
+
+`frontend/src/lib/api-client.ts` fijaba `BASE_URL` como `http://127.0.0.1:8000/api/v1`, una URL
+**absoluta**, y ese literal viajaba dentro del bundle compilado:
+
+```
+$ grep -o "127\.0\.0\.1:8000[^\"']*" frontend/dist/assets/*.js
+127.0.0.1:8000/api/v1
+```
+
+**Por qué es la Capa 10 quien lo activa, y por qué es el defecto más incómodo de su familia**:
+mientras el puerto era 8000 para todo el mundo, la URL absoluta funcionaba por casualidad. Desde
+el momento en que el Paso 3 permite declararlo, arrancar en cualquier otro puerto habría servido
+el Cockpit **correctamente** —las pantallas cargan, la aplicación arranca, no hay error de
+consola en el arranque— mientras **todas** sus llamadas de datos seguían yendo al 8000. El
+sistema parece vivo y no hay ni un dato. Es la misma familia que H-21, H-22 y H-23: no rompe
+nada, miente en pantalla.
+
+**Cerrado el mismo día, dentro del Paso 3** *(decisión de dirección: arreglarlo ya en vez de
+diferirlo al Paso 4)*. `BASE_URL` pasa a ser `/api/v1`, relativa al propio origen, que funciona
+en los dos modos sin configurar nada:
+
+* **desarrollo** — `npm run dev` en el 5173, con el proxy `/api` que **ya existía** en
+  `vite.config.ts` y que la URL absoluta dejaba sin usar;
+* **producción** — FastAPI sirve bundle y API desde el mismo origen (Paso 4).
+
+Retirado además el puerto del mensaje de error de `KPIDashboard.tsx`, que decía *"verifica que el
+servidor está en ejecución en http://127.0.0.1:8000"* y habría mentido en cualquier otro puerto.
+
+**Verificado sobre el bundle recompilado**, no sólo sobre el fuente: `tsc -b` limpio, `npm run
+build` correcto, y ninguna aparición de `127.0.0.1:8000` en `frontend/dist/assets/*.js`. Y
+comprobado en vivo con la API y el Cockpit levantados: las peticiones salen a
+`localhost:5173/api/v1/...` con 200, sin errores de consola, y la pantalla pinta los datos reales
+—12 expedientes, 4.468.260 € de PBL acumulado—.
+
+**Regresión**: `tests/test_capa10_lanzador.py::test_h38_el_cockpit_compilado_no_lleva_ningun_puerto_incrustado`,
+que mira **el bundle compilado y no el fuente**, porque es lo que se sirve y el fuente puede estar
+arreglado con `dist/` sin recompilar.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -1415,4 +1459,6 @@ literalmente el sitio donde se comprueba que la base es accesible y migrable.
 | 2026-08-13 | **El lanzador traduce los códigos de salida del pipeline; no los modifica** | Hoy `src/main.py` devuelve `1` para todo fallo, de modo que "no prospecté porque había un cerrojo vivo" y "reventé" son indistinguibles para el Programador de tareas. Se resuelve **envolviendo**: el lanzador comprueba el cerrojo antes de invocar y emite su propio código. Cambiar los códigos de `main.py` sería modificar desde la Capa 10 una capa cerrada y validada, que es lo que la Regla 14 prohíbe. |
 | 2026-08-13 | **Si el pipeline falla pero la API está sana, el Cockpit se abre igual** | Con el distintivo del Paso 9 avisando de que la última corrida falló. Negarle a alguien los datos de ayer porque la prospección de hoy falló convierte un fallo parcial en una avería total: el Cockpit sigue siendo útil sin la corrida del día, y quien haga doble clic necesita ver **por qué** falló, no una pantalla que no abre. |
 | 2026-08-13 | **H-37 se repara dentro del Paso 2 de la Capa 10, no antes** | El healthcheck de arranque en frío es literalmente el sitio donde se comprueba que la base es accesible y migrable. Repararlo suelto por adelantado sería tocar la Capa 9 ya cerrada sin el contrato que lo justifique. |
+| 2026-08-13 | **Qué hacer con un puerto ocupado por un tercero no es configurable** | El contrato ya lo fijó: detenerse. Ni pelearse por el puerto ni saltar a otro en silencio, porque un lanzador que arranca a ciegas acaba dejando instancias duplicadas que se pisan en la misma base. Dejar que un fichero de texto autorizara lo contrario sería relajar una invariante del contrato desde configuración — la misma doctrina por la que `retencion.yaml` rechaza `Presentada` en `estados_archivables` aunque se declare. Tampoco es configurable si reutilizar nuestra propia API viva: el puerto está ocupado, así que la alternativa no es arrancar otra, es no arrancar. |
+| 2026-08-13 | **H-38 se repara dentro del Paso 3, no se difiere al 4** | Es el Paso 3 el que introduce el puerto configurable, así que dejar el acoplamiento vivo aunque fuera un solo paso habría significado publicar una configuración cuyo parámetro más visible rompe el sistema en silencio si alguien lo toca. Un fichero que invita a cambiar algo que no se puede cambiar todavía es peor que no tener el fichero. |
 | 2026-08-13 | **El `created_at` de `db_lock()` se declara pero no se repara en esta capa** | El cerrojo guarda la fecha del cerrojo, no la del proceso propietario, de modo que un PID reciclado por Windows puede hacerle ver "vivo" a un dueño que ya murió. Queda enunciado en el contrato de la Capa 10 (sección E). Tocar el cerrojo de la Capa 9 desde la 10 sin un defecto reproducible que lo exija es lo que la Regla 14 prohíbe; si el Paso 5 produce esa evidencia, se abre como hallazgo propio. |

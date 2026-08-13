@@ -14,14 +14,14 @@ Este archivo define las directrices obligatorias de colaboración y desarrollo p
 2. **`.agents/AUDITORIA_2026-07-27.md`** — hallazgos con evidencia reproducible. **No vuelvas a diagnosticar lo que ya está ahí**: cada hallazgo indica cómo se reprodujo y si está abierto o cerrado.
 3. **`README.md`** — diseño funcional, marco LCSP y detalle de cada capa.
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **351/351**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 37 hallazgos catalogados, **los 37 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1 y 2 cerrados el 2026-08-13**, tarea activa el **Paso 3**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **370/370**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 38 hallazgos catalogados, **los 38 están cerrados**. **La capa activa es la 10**, el Lanzador: **Pasos 1, 2 y 3 cerrados el 2026-08-13**, tarea activa el **Paso 4**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 334/334
+python -m pytest tests/ -q          # debe dar 370/370
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -35,9 +35,14 @@ python -m pytest tests/ -q          # debe dar 334/334
 **El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13**.
 
 * **Paso 1** 🟢 — contrato y máquina de estados, validado el 2026-08-13. Vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
-* **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. 17 regresiones en `tests/test_capa10_lanzador.py`. Verificado contra el entorno real y contra la API de verdad levantada.
+* **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. Verificado contra el entorno real y contra la API de verdad levantada.
+* **Paso 3** 🟢 — `config/lanzador.yaml` **v1.0.0** y su lector estricto en `src/lanzador.py`, sin valores por defecto (código de salida 11, distinto del 10 del entorno). **Cierra H-38.** 36 regresiones acumuladas en `tests/test_capa10_lanzador.py`. Verificado en vivo con la API y el Cockpit levantados.
 
-**La tarea activa es el Paso 3**: `config/lanzador.yaml` y su lector estricto, sin valores por defecto. El healthcheck del Paso 2 **recibe la configuración inyectada** a propósito, para poder ejercitarse sin fichero (C4); el Paso 3 crea el fichero, su lector y añade "configuración del lanzador legible" como comprobación.
+**La tarea activa es el Paso 4**: montar `frontend/dist/` como estáticos en FastAPI, con reenvío a `index.html` para las rutas de la SPA y **sin pisar** `/api/v1/*`, `/docs` ni `/openapi.json`; y trasladar el JSON de bienvenida de `/` a `/api/v1/`. **La mitad del trabajo ya está hecha**: el cliente del Cockpit usa desde el Paso 3 una URL relativa al propio origen, que es justo lo que el mismo origen necesita.
+
+> 🔑 **Lo que el Paso 3 decidió y no hay que volver a plantear.** *(1)* **Qué hacer ante un puerto ocupado por un tercero no es configurable**: el contrato ya lo fijó —detenerse—, y dejar que un fichero de texto autorizara lo contrario sería relajar una invariante desde configuración. Tampoco lo es si reutilizar nuestra propia API viva, porque la alternativa a reutilizarla no es arrancar otra: es no arrancar. *(2)* **Con varios fallos a la vez manda el del entorno, no el del puerto**: el código 20 sólo significa algo cuando el puerto es el único problema; el resumen, en cambio, no esconde ninguno.
+
+> ⚠️ **El defecto que el Paso 3 destapó y por qué es el más incómodo de su familia** (H-38): el Cockpit compilado llevaba `http://127.0.0.1:8000/api/v1` incrustado. Mientras el puerto fue 8000 para todos, la URL absoluta funcionaba **por casualidad**; en cuanto el puerto se declara en un fichero, arrancar en otro habría servido las pantallas correctamente mientras todas las llamadas de datos iban al 8000. No rompe nada: miente en pantalla, como H-21, H-22 y H-23. La regresión mira **el bundle compilado y no el fuente**, porque es lo que se sirve y el fuente puede estar arreglado con `dist/` sin recompilar.
 
 > 🔑 **Las dos decisiones del Paso 2 que rigen el resto de la capa.** La primera: **`es_sesion_interactiva()` contesta `False` ante la duda**, porque el daño es asimétrico —un diálogo de más cuelga la tarea nocturna para siempre y de forma invisible; uno de menos sólo pierde el aviso gráfico, y quedan el registro y el código de salida—. La segunda: **comprobar no modifica nada, ni siquiera el registro**. Instanciar `Memoria()` crea el directorio de datos (H-24) y escribir en `pipeline.jsonl` también, así que el healthcheck es puro y quien decide dejar rastro es el llamador. Crear cosas es competencia de `ARRANCANDO`, no de `COMPROBANDO`.
 
@@ -455,7 +460,7 @@ cd frontend && npm run dev          # http://localhost:5173
 
 ### Pasos pendientes
 
-Ninguno. **37 hallazgos catalogados, 37 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2.
+Ninguno. **38 hallazgos catalogados, 38 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2; **H-38**, de escribir su configuración, y se cerró en el Paso 3.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.
 

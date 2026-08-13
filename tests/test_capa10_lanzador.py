@@ -1,7 +1,7 @@
-"""Capa 10, Paso 2 — el healthcheck de arranque en frío y la invariante de la sesión.
+"""Capa 10, Pasos 2 y 3 — el healthcheck, la invariante de la sesión y la configuración.
 
 Lo que se prueba aquí no es que el módulo importe, sino **lo que de verdad puede romperse**
-en esta capa, que son tres cosas y ninguna es obvia:
+en esta capa, que son cuatro cosas y ninguna es obvia:
 
 1. **Que sin sesión interactiva no se invoque un solo elemento de interfaz gráfica.** Es la
    invariante central del contrato. Su fallo no se manifiesta como una excepción sino como
@@ -16,6 +16,11 @@ en esta capa, que son tres cosas y ninguna es obvia:
 3. **Que comprobar no modifique nada.** El healthcheck corre antes de decidir si se arranca;
    si crea el directorio de datos por el camino, deja de ser un diagnóstico y pasa a ser una
    instalación a medias.
+
+4. **Que una configuración incoherente detenga el arranque en vez de degradarlo** (Paso 3), y
+   que el puerto configurable no rompa el Cockpit en silencio (H-38). Este último es el
+   defecto más incómodo de la familia: las pantallas cargan, el sistema parece vivo y no hay
+   ni un dato.
 """
 
 import json
@@ -27,11 +32,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import yaml
+
 from src.lanzador import (
+    CONFIGURACION_INVALIDA,
+    ERROR_NO_PREVISTO,
+    ConfiguracionLanzadorInvalida,
     EstadoPuerto,
     HEALTHCHECK_INSATISFACTORIO,
     PUERTO_OCUPADO_AJENO,
     avisar_fallo_fatal,
+    cargar_configuracion,
+    comprobar_arranque,
     comunicar_fallo_fatal,
     ejecutar_healthcheck,
     es_sesion_interactiva,
@@ -106,19 +118,68 @@ def test_la_omision_del_dialogo_deja_rastro(tmp_path):
     assert "LANZADOR_HEALTHCHECK_FALLIDO" in acciones
 
 
+def _bundle_valido(tmp_path):
+    bundle = tmp_path / "dist"
+    bundle.mkdir(exist_ok=True)
+    (bundle / "index.html").write_text("<html></html>", encoding="utf-8")
+    return str(bundle)
+
+
 def test_el_puerto_ajeno_tiene_codigo_de_salida_propio(tmp_path):
     """No es lo mismo "me falta una dependencia" que "alguien ocupa mi puerto": quien revise
-    por qué no arrancó necesita distinguirlos sin abrir el registro."""
+    por qué no arrancó necesita distinguirlos sin abrir el registro.
+
+    El entorno está **entero** salvo el puerto, que es cuando ese código significa algo.
+    """
     with _servidor_ajeno() as puerto:
         diagnostico = ejecutar_healthcheck(
             host="127.0.0.1", puerto=puerto,
-            ruta_bundle=str(tmp_path / "no_existe"), db_path=str(tmp_path / "x.db"),
+            ruta_bundle=_bundle_valido(tmp_path), db_path=str(tmp_path / "x.db"),
         )
         with patch("src.lanzador.es_sesion_interactiva", return_value=False), \
              patch("src.lanzador._ruta_base", return_value=str(tmp_path / "x.db")):
             codigo = comunicar_fallo_fatal(diagnostico)
 
     assert codigo == PUERTO_OCUPADO_AJENO
+
+
+def test_con_varios_fallos_manda_el_del_entorno_no_el_del_puerto(tmp_path):
+    """**Semántica que conviene dejar fijada**, porque con varios fallos un único código es
+    por fuerza una simplificación.
+
+    Si además del puerto falta el bundle, el código honesto es el 10: el entorno no está
+    preparado, y liberar el puerto no lo arreglaría. El detalle de *todos* los fallos viaja
+    en el resumen, que es lo que se muestra y se registra.
+    """
+    with _servidor_ajeno() as puerto:
+        diagnostico = ejecutar_healthcheck(
+            host="127.0.0.1", puerto=puerto,
+            ruta_bundle=str(tmp_path / "sin_compilar"), db_path=str(tmp_path / "x.db"),
+        )
+
+    assert diagnostico.codigo_salida == HEALTHCHECK_INSATISFACTORIO
+    assert len(diagnostico.fallos) == 2
+    resumen = diagnostico.resumen()
+    assert "Cockpit compilado" in resumen and "Puerto" in resumen, \
+        "un único código simplifica, pero el resumen no puede esconder ningún fallo"
+
+
+def test_comunicar_un_fallo_con_diagnostico_correcto_nunca_devuelve_cero(tmp_path):
+    """Transición prohibida nº 5 del contrato: terminar en `DEGRADADO` con código 0. Si se
+    pide comunicar un fallo que no existe, ha ocurrido algo no previsto — y eso tiene su
+    propio código, el 1."""
+    diagnostico = ejecutar_healthcheck(
+        host="127.0.0.1", puerto=_puerto_libre(),
+        ruta_bundle=_bundle_valido(tmp_path), db_path=str(tmp_path / "x.db"),
+    )
+    assert diagnostico.satisfactorio
+
+    with patch("src.lanzador.es_sesion_interactiva", return_value=False), \
+         patch("src.lanzador._ruta_base", return_value=str(tmp_path / "x.db")):
+        codigo = comunicar_fallo_fatal(diagnostico)
+
+    assert codigo != 0
+    assert codigo == ERROR_NO_PREVISTO
 
 
 # ==============================================================================
@@ -287,6 +348,159 @@ def test_el_evento_del_lanzador_usa_run_id_reservado_y_su_autor(tmp_path):
     assert entradas[0]["run_id"] == 0, "0 es el valor reservado para eventos fuera de una corrida"
     assert entradas[0]["updated_by"] == "lanzador"
     assert entradas[0]["action"] == "LANZADOR_INICIADO"
+
+
+# ==============================================================================
+# 6. Configuración versionada (Paso 3) — sin valores por defecto
+# ==============================================================================
+
+def _config_valida():
+    return {
+        "lanzador": {
+            "version": "1.0.0",
+            "servidor": {
+                "host": "127.0.0.1", "puerto": 8000,
+                "espera_api_segundos": 30, "espacio_minimo_mb": 200,
+            },
+            "cockpit": {"ruta_bundle": "frontend/dist", "abrir_navegador": True},
+            "apagado": {"gracia_endpoint_segundos": 10, "gracia_senal_segundos": 10},
+            "despertador": {"hora": "06:30", "ejecutar_si_se_perdio": True},
+        }
+    }
+
+
+def _escribir_config(tmp_path, transformar=None):
+    datos = _config_valida()
+    if transformar:
+        transformar(datos["lanzador"])
+    ruta = tmp_path / "lanzador.yaml"
+    ruta.write_text(yaml.safe_dump(datos, allow_unicode=True), encoding="utf-8")
+    return str(ruta)
+
+
+def test_la_configuracion_real_del_proyecto_es_valida():
+    """La que se distribuye tiene que cargar. Un fichero de ejemplo que no valida es una
+    trampa para quien clone el repositorio."""
+    config = cargar_configuracion()
+    assert config.version
+    assert config.servidor.puerto == 8000
+    assert config.despertador.hora == "06:30"
+
+
+def test_sin_fichero_no_se_arranca_con_valores_por_defecto(tmp_path):
+    """La doctrina de `src/retencion.py` y la lección de H-18: un fichero ausente no puede
+    degradarse a un comportamiento distinto que nadie ha pedido."""
+    with pytest.raises(ConfiguracionLanzadorInvalida):
+        cargar_configuracion(str(tmp_path / "no_existe.yaml"))
+
+
+@pytest.mark.parametrize("mutacion, motivo", [
+    (lambda c: c["servidor"].__setitem__("puerto", 80), "puerto privilegiado"),
+    (lambda c: c["servidor"].__setitem__("puerto", 99999), "puerto inexistente"),
+    (lambda c: c["servidor"].__setitem__("puerto", "8000"), "puerto como texto"),
+    (lambda c: c["servidor"].__setitem__("puerto", True), "booleano colándose como entero"),
+    (lambda c: c["servidor"].pop("host"), "falta el host"),
+    (lambda c: c["despertador"].__setitem__("hora", "25:70"), "hora imposible"),
+    (lambda c: c["despertador"].__setitem__("hora", "6:30"), "hora sin cero inicial"),
+    (lambda c: c["cockpit"].__setitem__("abrir_navegador", "si"), "booleano deducido"),
+    (lambda c: c.pop("version"), "sin versión no hay rastro reconstruible"),
+    (lambda c: c.pop("apagado"), "falta un bloque entero"),
+])
+def test_una_configuracion_incoherente_se_rechaza(tmp_path, mutacion, motivo):
+    """Cada caso es una forma real de equivocarse escribiendo YAML a mano.
+
+    El de `True` como puerto no es rebuscado: `bool` es subclase de `int` en Python, así
+    que una validación ingenua lo aceptaría como el puerto 1.
+    """
+    ruta = _escribir_config(tmp_path, mutacion)
+    with pytest.raises(ConfiguracionLanzadorInvalida):
+        cargar_configuracion(ruta)
+
+
+def test_una_configuracion_ilegible_da_codigo_de_salida_propio(tmp_path):
+    """`11` y no `10`: "no he podido leer el criterio" y "el entorno no cumple" son cosas
+    distintas, y quien revise por qué no arrancó necesita distinguirlas."""
+    ruta = tmp_path / "lanzador.yaml"
+    ruta.write_text("lanzador: [esto no es un mapa", encoding="utf-8")
+
+    config, diagnostico = comprobar_arranque(ruta_config=str(ruta), db_path=str(tmp_path / "x.db"))
+
+    assert config is None
+    assert not diagnostico.satisfactorio
+    assert diagnostico.codigo_salida == CONFIGURACION_INVALIDA
+
+
+def test_el_arranque_comprueba_el_puerto_que_declara_el_fichero(tmp_path):
+    """Comprobar el 8000 porque es el de siempre, cuando el fichero declara otro, sería
+    diagnosticar un sistema distinto del que se va a arrancar."""
+    puerto = _puerto_libre()
+    with _servidor_ajeno() as ocupado:
+        ruta = _escribir_config(tmp_path, lambda c: c["servidor"].__setitem__("puerto", ocupado))
+        _, diagnostico = comprobar_arranque(ruta_config=ruta, db_path=str(tmp_path / "x.db"))
+
+        assert diagnostico.estado_puerto is EstadoPuerto.AJENO
+        assert diagnostico.codigo_salida == PUERTO_OCUPADO_AJENO
+    assert puerto != ocupado
+
+
+def test_la_ruta_del_bundle_se_ancla_a_la_raiz_no_al_directorio_de_trabajo(tmp_path):
+    """Lección de H-18, y la razón de que el acceso directo del Paso 7 no necesite fijar el
+    directorio de trabajo: el de un acceso directo no es el que uno cree."""
+    ruta = _escribir_config(tmp_path, lambda c: c["cockpit"].__setitem__("ruta_bundle", "frontend/dist"))
+    config = cargar_configuracion(ruta)
+
+    absoluta = config.ruta_bundle_absoluta()
+    assert os.path.isabs(absoluta)
+    assert os.path.isfile(os.path.join(absoluta, "index.html")), \
+        "debe resolver al bundle real del proyecto, no a uno relativo al cwd"
+
+
+def test_h38_el_cliente_del_cockpit_no_fija_ningun_puerto():
+    """**Regresión de H-38, sobre el fuente.** `BASE_URL` llevaba
+    `http://127.0.0.1:8000/api/v1` a fuego, de modo que desde el momento en que el puerto es
+    configurable, arrancar en otro habría servido las pantallas correctamente mientras
+    **todas** las llamadas de datos iban al 8000: el sistema parece vivo y no hay ni un dato.
+
+    Esta mitad se comprueba siempre, porque el fuente está versionado.
+    """
+    from src import ruta_proyecto
+
+    ruta = ruta_proyecto(os.path.join("frontend", "src", "lib", "api-client.ts"))
+    with open(ruta, "r", encoding="utf-8") as fichero:
+        contenido = fichero.read()
+
+    codigo = "\n".join(
+        linea for linea in contenido.splitlines()
+        if not linea.lstrip().startswith("//")
+    )
+    assert "127.0.0.1:8000" not in codigo, \
+        "la URL base vuelve a fijar un puerto; debe ser relativa al propio origen"
+    assert "'/api/v1'" in codigo
+
+
+def test_h38_el_bundle_compilado_tampoco_lo_lleva():
+    """**La otra mitad, sobre lo que de verdad se sirve.**
+
+    Se comprueba aparte porque `frontend/dist/` **no está versionado**: en un clon limpio no
+    existe, y exigirlo convertiría una regresión en un fallo por no haber compilado. Pero
+    cuando existe hay que mirarlo, porque el fuente puede estar arreglado y el bundle no —y
+    lo que llega al navegador es el bundle—.
+    """
+    import glob
+    from src import ruta_proyecto
+
+    javascript = glob.glob(ruta_proyecto(os.path.join("frontend", "dist", "assets", "*.js")))
+    if not javascript:
+        pytest.skip("no hay bundle compilado; ejecutar «npm run build» dentro de frontend/")
+
+    for fichero in javascript:
+        with open(fichero, "r", encoding="utf-8") as f:
+            contenido = f.read()
+        assert "127.0.0.1:8000" not in contenido, (
+            f"{os.path.basename(fichero)} lleva el puerto incrustado; "
+            "recompilar con «npm run build» tras arreglar la URL base"
+        )
+        assert "/api/v1" in contenido, "el cliente debe seguir apuntando a la API por ruta relativa"
 
 
 # ==============================================================================
