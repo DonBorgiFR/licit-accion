@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from src import PROJECT_ROOT, ruta_datos, ruta_proyecto
+from src.proceso import es_el_mismo_proceso, es_pid_activo, instante_creacion_proceso
 
 # ==============================================================================
 # Códigos de salida (contrato, sección "Códigos de salida")
@@ -801,45 +802,6 @@ def comprobar_arranque(
 
 NOMBRE_FICHERO_PID = "lanzador.pid"
 
-#: `PROCESS_QUERY_LIMITED_INFORMATION`. Basta para preguntar cuándo nació un proceso y no
-#: pide privilegios: se consulta la identidad de procesos ajenos, no se toca ninguno.
-_ACCESO_CONSULTA = 0x1000
-
-
-def instante_creacion_proceso(pid: int) -> Optional[int]:
-    """Instante de creación del proceso, o `None` si no existe.
-
-    **Es la mitad que le falta al PID para ser una identidad.** Windows recicla los
-    identificadores: un proceso que muere deja su número libre y el sistema se lo puede dar
-    a otro cualquiera. Con el número a secas, *"apago sólo lo mío"* puede acabar matando algo
-    inocente que heredó el número, y la reclamación de cerrojos huérfanos puede ver "el PID
-    sigue vivo" sobre un dueño que ya murió — que es el plantón de diez minutos de H-15.
-
-    El instante de creación no se recicla, así que el par (pid, instante) sí identifica.
-    """
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        manejador = kernel32.OpenProcess(_ACCESO_CONSULTA, False, pid)
-        if not manejador:
-            return None
-        try:
-            creacion, salida = wintypes.FILETIME(), wintypes.FILETIME()
-            nucleo, usuario = wintypes.FILETIME(), wintypes.FILETIME()
-            ok = kernel32.GetProcessTimes(
-                manejador, ctypes.byref(creacion), ctypes.byref(salida),
-                ctypes.byref(nucleo), ctypes.byref(usuario),
-            )
-            if not ok:
-                return None
-            return (creacion.dwHighDateTime << 32) | creacion.dwLowDateTime
-        finally:
-            kernel32.CloseHandle(manejador)
-    except Exception:
-        return None
-
 
 def es_nuestro_proceso(pid: int, instante_creacion: Optional[int]) -> bool:
     """¿Sigue vivo **el mismo** proceso que anotamos, y no otro que heredó su número?
@@ -847,10 +809,13 @@ def es_nuestro_proceso(pid: int, instante_creacion: Optional[int]) -> bool:
     Sin `instante_creacion` anotado se responde `False`: ante la duda no se mata nada. Es la
     misma asimetría que gobierna `es_sesion_interactiva()` — no apagar deja un proceso de
     más, que es visible y molesto; apagar el que no era puede tumbar el trabajo de alguien.
+
+    Envuelve a `src.proceso.es_el_mismo_proceso()`, donde vive la definición canónica desde
+    el 2026-08-17. Se conserva el nombre local porque en este módulo la pregunta que se hace
+    es literalmente *"¿es **nuestro** proceso, el que encendimos?"*, y perder ese matiz al
+    unificar habría hecho menos legible el sitio donde se decide matar algo.
     """
-    if instante_creacion is None:
-        return False
-    return instante_creacion_proceso(pid) == instante_creacion
+    return es_el_mismo_proceso(pid, instante_creacion)
 
 
 @dataclass(frozen=True)
@@ -1110,6 +1075,329 @@ def _avisar_si_quedo_cerrojo(db_path: Optional[str] = None) -> None:
             motivo=f"{cerrojo} sigue presente tras el apagado",
             db_path=db_path,
         )
+
+
+# ==============================================================================
+# Operación 3 — Prospectar (Capa 10, Paso 6)
+# ==============================================================================
+#
+# Ejecutar el pipeline respetando el cerrojo, y traducir el resultado a un código de salida
+# honesto. Dos ideas gobiernan todo lo que sigue, y las dos costaron un hallazgo:
+#
+# 1. **El cerrojo que decide es el de EJECUCIÓN, no el de fichero** (contrato v1.1.0,
+#    sección F). `db_lock()` se toma y se suelta en cada escritura, así que durante una
+#    corrida de minutos su fichero está libre la mayor parte del tiempo: preguntarle "¿hay
+#    una corrida en marcha?" es preguntar a quien no lo sabe. El que abarca la corrida
+#    entera es la fila `RUNNING` de la tabla `ejecuciones`.
+#
+# 2. **El resultado se lee de la base, no del código de salida del proceso.** `main.py`
+#    sale con `0` cuando falla a mitad —el modo de fallo más frecuente—, de modo que
+#    fiarse del código convertiría una prospección reventada en una noche sana a ojos del
+#    Programador de tareas. `finalizar_ejecucion()` sí deja la verdad escrita.
+#
+# **Esta sección no realiza ninguna llamada a interfaz gráfica**, ni de apertura ni de
+# error, así que nada de aquí pasa por `es_sesion_interactiva()` — y no debe pasar. Queda
+# dicho para que auditar la invariante central sobre este fichero cueste un segundo.
+
+#: Fichero por el que se invoca el pipeline. Nunca `src/main.py` (Convención C1).
+NOMBRE_PUNTO_ENTRADA = "run.py"
+
+
+class EstadoCerrojo(str, Enum):
+    """En qué situación está el cerrojo de ejecución **ahora mismo**."""
+
+    #: Nadie prospectando. Se puede lanzar.
+    LIBRE = "libre"
+    #: Hay una corrida cuyo proceso sigue vivo. **No se lanza**: código 30.
+    TOMADO_VIVO = "tomado_vivo"
+    #: Queda la fila de una corrida cuyo dueño ya no existe. Se lanza igual y **no se toca
+    #: la fila**: la reclama `iniciar_ejecucion()`, que es quien sabe (prohibida nº 3).
+    TOMADO_HUERFANO = "tomado_huerfano"
+
+
+@dataclass(frozen=True)
+class DiagnosticoCerrojo:
+    """Lo que se sabe del cerrojo sin haber modificado nada."""
+
+    estado: EstadoCerrojo
+    detalle: str
+    ejecucion_id: Optional[int] = None
+    pid: Optional[int] = None
+    #: Estado del cerrojo **de fichero**. Es contexto de diagnóstico y nunca criterio: saber
+    #: que había una escritura en vuelo ayuda a interpretar un apagado brusco, pero no
+    #: contesta a "¿puedo prospectar?" (ver el punto 1 de la cabecera de esta sección).
+    escritura_en_vuelo: bool = False
+
+    @property
+    def puede_prospectar(self) -> bool:
+        return self.estado is not EstadoCerrojo.TOMADO_VIVO
+
+
+def inspeccionar_cerrojo(db_path: Optional[str] = None) -> DiagnosticoCerrojo:
+    """Estado del cerrojo de ejecución. **Operación de sólo lectura sobre el sistema.**
+
+    No instancia `Memoria()` —hacerlo crea el directorio de datos, que es la reparación de
+    H-24— y abre la base en `mode=ro`, de modo que no puede escribir ni crear siquiera los
+    ficheros auxiliares del WAL. Misma doctrina que el healthcheck del Paso 2: comprobar no
+    modifica nada, ni siquiera el registro; emitir el evento es cosa del llamador.
+
+    **Una base inexistente no es un fallo**: es una instalación nueva y nadie está
+    prospectando, así que el cerrojo está libre.
+    """
+    from src.memoria import motivo_ejecucion_huerfana
+
+    ruta = _ruta_base(db_path)
+    escritura_en_vuelo = os.path.exists(ruta + ".lock")
+
+    if not os.path.exists(ruta):
+        return DiagnosticoCerrojo(
+            EstadoCerrojo.LIBRE,
+            "la base no existe todavía: no hay ninguna corrida en marcha",
+            escritura_en_vuelo=escritura_en_vuelo,
+        )
+
+    try:
+        fila = _ultima_ejecucion_en_curso(ruta)
+    except Exception as e:
+        # Una base ilegible no puede afirmarse libre: sería lanzar una corrida sobre algo
+        # que no entendemos. Se declara tomada y viva, que es la respuesta conservadora, y
+        # el healthcheck del Paso 2 ya habrá dado el diagnóstico preciso antes de llegar
+        # aquí — este camino existe para que un fallo entre una comprobación y otra no se
+        # convierta en un arranque a ciegas.
+        return DiagnosticoCerrojo(
+            EstadoCerrojo.TOMADO_VIVO,
+            f"no se pudo leer el estado de las ejecuciones ({type(e).__name__}: {e})",
+            escritura_en_vuelo=escritura_en_vuelo,
+        )
+
+    if fila is None:
+        return DiagnosticoCerrojo(
+            EstadoCerrojo.LIBRE,
+            "ninguna ejecución en curso",
+            escritura_en_vuelo=escritura_en_vuelo,
+        )
+
+    run_id, start_str, pid_previo, instante_previo = fila
+    motivo = motivo_ejecucion_huerfana(
+        start_str, pid_previo, instante_previo, datetime.now(timezone.utc)
+    )
+
+    if motivo is None:
+        return DiagnosticoCerrojo(
+            EstadoCerrojo.TOMADO_VIVO,
+            f"la ejecución {run_id} (PID {pid_previo}) sigue en curso desde {start_str}",
+            ejecucion_id=run_id,
+            pid=pid_previo,
+            escritura_en_vuelo=escritura_en_vuelo,
+        )
+
+    return DiagnosticoCerrojo(
+        EstadoCerrojo.TOMADO_HUERFANO,
+        f"la ejecución {run_id} quedó sin cerrar: {motivo}",
+        ejecucion_id=run_id,
+        pid=pid_previo,
+        escritura_en_vuelo=escritura_en_vuelo,
+    )
+
+
+def _ultima_ejecucion_en_curso(ruta: str) -> Optional[Tuple[Any, ...]]:
+    """La fila `RUNNING` más reciente, o `None`. Tolera una base todavía en esquema v7.
+
+    **Por qué la tolera**: el lanzador inspecciona *antes* de que corra el pipeline, y es el
+    pipeline quien migra la base. En el primer arranque tras actualizar el software, la
+    inspección se encuentra por fuerza un esquema viejo sin las columnas de v8. Reventar ahí
+    convertiría una actualización normal en un sistema que no arranca.
+    """
+    uri = f"file:{ruta}?mode=ro"
+    with sqlite3.connect(uri, uri=True, timeout=5.0) as conexion:
+        try:
+            fila = conexion.execute(
+                "SELECT id, start_time, pid, pid_creado_en FROM ejecuciones "
+                "WHERE estado = 'RUNNING' ORDER BY id DESC LIMIT 1;"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Esquema anterior a v8: sin columnas de identidad. Se responde con lo que hay,
+            # y la decisión caerá a la regla de las seis horas, que es lo correcto para una
+            # fila de la que no sabemos quién la corría.
+            fila = conexion.execute(
+                "SELECT id, start_time, NULL, NULL FROM ejecuciones "
+                "WHERE estado = 'RUNNING' ORDER BY id DESC LIMIT 1;"
+            ).fetchone()
+    return fila
+
+
+def _ultimo_id_ejecucion(db_path: Optional[str] = None) -> int:
+    """Mayor `id` de `ejecuciones` antes de lanzar, o `0`. La marca contra la que se
+    reconocerá después *la corrida que acabamos de lanzar*."""
+    ruta = _ruta_base(db_path)
+    if not os.path.exists(ruta):
+        return 0
+    try:
+        uri = f"file:{ruta}?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=5.0) as conexion:
+            fila = conexion.execute("SELECT MAX(id) FROM ejecuciones;").fetchone()
+        return int(fila[0]) if fila and fila[0] is not None else 0
+    except Exception:
+        return 0
+
+
+def _resultado_de_la_corrida(ultimo_id: int, db_path: Optional[str] = None) -> Tuple[Optional[int], Optional[str]]:
+    """`(id, estado)` de la corrida creada después de `ultimo_id`, o `(None, None)`.
+
+    Es la fuente de verdad sobre si el pipeline hizo su trabajo, porque su código de salida
+    no lo dice: `main.py` termina con `0` cuando falla a mitad.
+    """
+    ruta = _ruta_base(db_path)
+    if not os.path.exists(ruta):
+        return None, None
+    try:
+        uri = f"file:{ruta}?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=5.0) as conexion:
+            fila = conexion.execute(
+                "SELECT id, estado FROM ejecuciones WHERE id > ? ORDER BY id DESC LIMIT 1;",
+                (ultimo_id,),
+            ).fetchone()
+        if fila is None:
+            return None, None
+        return int(fila[0]), fila[1]
+    except Exception:
+        return None, None
+
+
+def _ruta_registro_prospeccion(db_path: Optional[str] = None) -> str:
+    """Dónde se vuelca lo que el pipeline imprime.
+
+    Hace falta porque el `.vbs` del Paso 7 arranca sin consola y la tarea del Paso 8 corre
+    en Session 0: sin esto, todo lo que el pipeline dice por pantalla se pierde. El nombre
+    lleva la fecha para que la corrida nocturna fallida siga estando ahí cuando alguien
+    llegue por la mañana y haga doble clic —que lanzaría otra prospección y, con nombre
+    fijo, pisaría justo el registro que se quería leer—.
+
+    *(La retención de estos ficheros no la gobierna todavía ninguna política; queda
+    señalado para el Paso 10, que es el que escribe el manual de operación.)*
+    """
+    directorio = os.path.join(os.path.dirname(_ruta_base(db_path)) or ruta_datos(), "logs")
+    marca = datetime.now().strftime("%Y-%m-%d")
+    return os.path.join(directorio, f"prospeccion_{marca}.log")
+
+
+def prospectar(db_path: Optional[str] = None, comando: Optional[List[str]] = None) -> int:
+    """Ejecuta el pipeline respetando el cerrojo y devuelve el código de salida de la capa.
+
+    | Situación | Código |
+    |---|---|
+    | Cerrojo tomado y vivo: no se lanza | `30` |
+    | El pipeline terminó y su corrida consta `COMPLETED` | `0` |
+    | Todo lo demás | `31` |
+
+    `comando` existe para que las pruebas puedan sustituir el pipeline por algo predecible;
+    sin él se invoca el punto de entrada real, que es la ruta que la Convención C4 exige
+    ejercitar.
+    """
+    diagnostico = inspeccionar_cerrojo(db_path)
+
+    if not diagnostico.puede_prospectar:
+        # La transición prohibida nº 2 en acción. No es una avería —el sistema está
+        # protegiendo un proceso que borra ficheros del disco—, pero tampoco es un éxito.
+        registrar_evento_lanzador(
+            "LANZADOR_PIPELINE_OMITIDO",
+            motivo=diagnostico.detalle,
+            run_id=diagnostico.ejecucion_id or 0,
+            db_path=db_path,
+        )
+        print(f"[!] Prospección omitida: {diagnostico.detalle}", file=sys.stderr)
+        return PIPELINE_OMITIDO
+
+    if diagnostico.estado is EstadoCerrojo.TOMADO_HUERFANO:
+        # Se lanza igual y **no se toca la fila**: reclamarla desde aquí sería la transición
+        # prohibida nº 3. Queda registrado porque explica por qué se siguió adelante, y
+        # porque un huérfano tras cada apagado señalaría que algo se está matando de más.
+        registrar_evento_lanzador(
+            "LANZADOR_CERROJO_EJECUCION_HUERFANO",
+            motivo=diagnostico.detalle,
+            run_id=diagnostico.ejecucion_id or 0,
+            db_path=db_path,
+        )
+
+    ultimo_id = _ultimo_id_ejecucion(db_path)
+    orden = comando or [sys.executable, str(PROJECT_ROOT / NOMBRE_PUNTO_ENTRADA)]
+    registro = _ruta_registro_prospeccion(db_path)
+
+    # **El pipeline tiene que prospectar sobre la MISMA base que se acaba de inspeccionar.**
+    #
+    # Sin esto, `db_path` era una trampa: el lanzador miraba el cerrojo de la base indicada
+    # y lanzaba un pipeline que escribía en la de por defecto. Se descubrió cometiéndolo, el
+    # 2026-08-17, apuntando a una copia y arrancando una prospección real sobre producción.
+    # `DB_PATH_INCOOP` tiene prioridad sobre todo en `Memoria.__init__`, así que es la forma
+    # de que el subproceso obedezca. Un parámetro que sólo gobierna la mitad de la operación
+    # no es un parámetro: es un defecto esperando a que alguien se fíe de él.
+    entorno = None
+    if db_path:
+        entorno = os.environ.copy()
+        entorno["DB_PATH_INCOOP"] = os.path.abspath(db_path)
+
+    inicio = time.perf_counter()
+    try:
+        os.makedirs(os.path.dirname(registro), exist_ok=True)
+        with open(registro, "a", encoding="utf-8") as salida:
+            salida.write(f"\n===== {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} =====\n")
+            salida.flush()
+            completado = subprocess.run(
+                orden,
+                cwd=str(PROJECT_ROOT),
+                env=entorno,
+                stdout=salida,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                # Sin ventana: el `.vbs` del Paso 7 no tiene consola y la tarea del Paso 8
+                # corre sin escritorio. Una consola emergente de madrugada tampoco la vería
+                # nadie, pero en modo completo sí saltaría delante de quien esté trabajando.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        codigo_proceso = completado.returncode
+    except Exception as e:
+        registrar_evento_lanzador(
+            "LANZADOR_PIPELINE_FALLIDO",
+            motivo=f"no se pudo invocar el pipeline ({type(e).__name__}: {e})",
+            db_path=db_path,
+        )
+        print(f"[-] No se pudo invocar el pipeline: {e}", file=sys.stderr)
+        return PIPELINE_FALLIDO
+
+    duracion = time.perf_counter() - inicio
+    id_corrida, estado_corrida = _resultado_de_la_corrida(ultimo_id, db_path)
+
+    # --- Traducción del resultado (contrato v1.1.0, Operación 3) ---
+    #
+    # El código del proceso se mira, pero no manda solo: `main.py` sale con 0 cuando falla a
+    # mitad. Manda lo que quedó escrito en la fila de la corrida, que es donde consta si el
+    # pipeline hizo su trabajo.
+    if codigo_proceso != 0:
+        motivo = f"el pipeline terminó con código {codigo_proceso}"
+    elif id_corrida is None:
+        motivo = "el pipeline terminó con código 0 sin llegar a registrar ninguna corrida"
+    elif estado_corrida != "COMPLETED":
+        motivo = (
+            f"el pipeline terminó con código 0 pero la corrida {id_corrida} "
+            f"consta como {estado_corrida}"
+        )
+    else:
+        registrar_evento_lanzador(
+            "LANZADOR_PIPELINE_COMPLETADO",
+            motivo=f"corrida {id_corrida} completada en {duracion:.1f}s",
+            run_id=id_corrida,
+            db_path=db_path,
+        )
+        return EXITO
+
+    registrar_evento_lanzador(
+        "LANZADOR_PIPELINE_FALLIDO",
+        motivo=f"{motivo}. Detalle en {registro}",
+        run_id=id_corrida or 0,
+        db_path=db_path,
+    )
+    print(f"[-] Prospección fallida: {motivo}", file=sys.stderr)
+    return PIPELINE_FALLIDO
 
 
 # ==============================================================================

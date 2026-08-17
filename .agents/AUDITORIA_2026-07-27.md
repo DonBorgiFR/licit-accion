@@ -23,7 +23,7 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 
 ---
 
-## Cuadro de estado (actualizado el 2026-08-07)
+## Cuadro de estado (actualizado el 2026-08-17)
 
 | Hallazgo | Estado | Cerrado en |
 |---|---|---|
@@ -63,9 +63,21 @@ sistema funcione. Ver reglas C1–C6 en `AGENTS.md`.
 | H-34 · La rotación de copias anunciaba un fallo del backup que no existía | 🟢 Cerrado | Capa 9, Paso 5 |
 | H-35 · La purga documental sólo corría los días con ingesta nueva | 🟢 Cerrado | Capa 9, Paso 10 |
 | H-36 · Purgar sobre una copia de la base borraba los ficheros de producción | 🟢 Cerrado | Capa 9, Paso 10 |
+| H-37 · `setup_db()` usaba un cerrojo propio que no sabía reclamar huérfanos | 🟢 Cerrado | Capa 10, Paso 2 |
+| H-38 · El Cockpit compilado llevaba el puerto incrustado | 🟢 Cerrado | Capa 10, Paso 3 |
+| H-39 · `pipeline.jsonl` mezcla dos esquemas de evento incompatibles | 🔴 **Abierto** | Previsto: Capa 10, Paso 9 |
+| H-40 · El cerrojo de ejecución no sabe si su dueño sigue vivo | 🟢 Cerrado | Capa 10, Paso 6 |
+| H-41 · El pipeline revienta con una violación de acceso sobre datos reales | 🔴 **Abierto** | Sin asignar |
 
-**No queda ningún hallazgo abierto**: los 36 catalogados están cerrados con prueba de regresión o
-verificación reproducible. Suite: **334/334**.
+**41 hallazgos catalogados, 39 cerrados** con prueba de regresión o verificación reproducible.
+**Quedan dos abiertos**: **H-39**, con sitio asignado —el Paso 9 de la Capa 10, donde se decide
+qué canal dice qué—, y **H-41**, sin asignar todavía.
+
+**Los cinco últimos no salieron de la remediación**, sino de abrir la Capa 10: H-37 de redactar su
+contrato, H-38 de escribir su configuración, H-39 de verificar en vivo su supervisor, H-40 de
+preparar su Paso 6 y H-41 de una corrida real lanzada por error al verificarlo. Es el patrón que
+este dosier lleva registrando desde H-21: **los defectos que quedan aparecen al usar lo
+construido, no al leerlo.** H-41 lo lleva al extremo — apareció al usarlo *por accidente*.
 
 > **H-26 se cerró antes de la primera ejecución real, y esa era toda la urgencia.** No afectaba al
 > score ni al orden de prioridad, pero `sector_detectado` se persiste en la base
@@ -1464,6 +1476,109 @@ porque la decisión de qué esquema gana es de diseño, no de implementación.
 
 ---
 
+## Hallazgo de la apertura del Paso 6 — 2026-08-17 (Capa 10, Paso 6)
+
+### H-40 · El cerrojo de ejecución no sabe si su dueño sigue vivo 🟢 CERRADO (Capa 10, Paso 6)
+
+**Detectado el 2026-08-17**, preparando el Paso 6, al preguntarse **qué comprueba exactamente** la
+precondición *"el cerrojo no está tomado por un proceso vivo"*. La pregunta destapó primero que el
+contrato señalaba el cerrojo equivocado, y en segundo lugar que el cerrojo correcto no sabe
+contestar.
+
+#### Primero: hay dos cerrojos, y el contrato nombraba el que no protege de esto
+
+| | **Cerrojo de fichero** | **Cerrojo de ejecución** |
+|---|---|---|
+| Dónde | `licitaciones.db.lock` — `memoria.py:644` | Tabla `ejecuciones`, estado `RUNNING` — `memoria.py:1041` |
+| Quién lo toma | `db_lock()`, en **cada operación de escritura** | `iniciar_ejecucion()`, **una vez por corrida** |
+| Cuánto vive | Lo que dura una escritura: se crea al entrar (`memoria.py:661`) y se borra en el `finally` (`memoria.py:703`) | **Toda la corrida** |
+| Qué impide | Que dos escrituras se pisen | **Que haya dos corridas a la vez** |
+
+`main.py` **no toma nunca el cerrojo de fichero** para la corrida entera: lo toman por dentro los
+métodos de `Memoria` que escriben. Durante una prospección de minutos ese fichero está libre la
+inmensa mayoría del tiempo, así que una comprobación previa basada en él se ejecutaría siempre y no
+detectaría casi nunca la corrida concurrente que dice impedir. **Es la lección del Paso 5 de la Capa
+9 repetida** —*que un módulo se ejecute no prueba que haga algo*—, esta vez a punto de escribirse
+desde un contrato ya validado.
+
+#### Segundo: el cerrojo correcto no guarda quién lo tomó
+
+La tabla `ejecuciones` (`memoria.py:280`) guarda `start_time`, `end_time` y `estado`. **No guarda el
+PID ni el instante de creación del proceso.** `iniciar_ejecucion()` sólo puede preguntar *"¿empezó
+hace menos de seis horas?"* (`memoria.py:1067`), no *"¿vive el dueño?"*.
+
+**Cómo reproducirlo**: lanzar `python run.py`, matar el proceso a mitad, y volver a lanzarlo. La
+segunda corrida aborta con *"Ya existe una ejecución en curso"* y **seguirá abortando durante seis
+horas**, aunque no haya nada corriendo.
+
+**El daño en operación, que es lo que lo hace un hallazgo y no una imperfección**: una corrida que
+muere a mitad —un apagón, un cierre de sesión, o el **nivel 3 del apagado que el Paso 5 construyó**—
+deja una fila `RUNNING` fantasma, y el despertador de las 06:30 **no prospecta esa mañana**. Con el
+Paso 6 en marcha sería peor que perder la corrida: devolvería el código `30`, *"omisión deliberada,
+hay una corrida en marcha"*, cuando la verdad es *"hay el cadáver de una corrida"*. **El `30`
+mentiría, y ese código existe precisamente para no mentirle al Programador de tareas.**
+
+**No lo introduce esta capa: lo activa esta capa** —el mismo argumento que H-37—. Mientras el
+pipeline lo lanzaba una persona desde una terminal, el mensaje aparecía en pantalla y se resolvía en
+el momento. Con el despertador ocurre de madrugada, sin consola y sin nadie mirando.
+
+**Reparación (Paso 6, 2026-08-17)**: **esquema v8**. `ejecuciones` gana `pid` y `pid_creado_en`,
+escritos por `iniciar_ejecucion()`, que antepone un criterio nuevo a la regla de las seis horas: si
+el par (PID, instante de creación) ya no vive, la fila se reclama de inmediato. **Ante la duda se
+respeta el cerrojo**: sin PID anotado —filas anteriores a v8, o plataformas donde no se puede
+resolver el instante— se conserva intacta la regla de las seis horas. Es la misma asimetría de
+`es_sesion_interactiva()`: no arrancar cuesta una mañana; arrancar sobre una corrida viva son dos
+procesos destruyendo peso documental a la vez.
+
+Para que la Capa 3 pudiera preguntar por el instante de creación sin importar de la Capa 10 —lo que
+invertiría la dependencia sobre la que está construido todo el proyecto—, las dos mitades de la
+identidad de un proceso se unifican en **`src/proceso.py`**: `es_pid_activo()` venía de
+`memoria.py:30` e `instante_creacion_proceso()` de `lanzador.py:809`. Es un traslado, no un cambio
+de comportamiento: **`db_lock()` se queda exactamente como estaba**, y la nota de alcance sobre su
+`created_at` sigue vigente y sin tocar.
+
+### H-41 · El pipeline revienta con una violación de acceso sobre datos reales 🔴 ABIERTO (sin asignar)
+
+**Detectado el 2026-08-17**, por accidente: durante la verificación del Paso 6 se lanzó una
+prospección real contra las fuentes públicas, y **terminó con el código `3221225477`**, que es
+`0xC0000005` — `ACCESS_VIOLATION`.
+
+**Lo que se sabe:**
+
+* Es una **violación de acceso nativa, no una excepción de Python**. No la produce el código del
+  proyecto: viene de una biblioteca compilada. Los candidatos son **PyMuPDF** extrayendo texto y
+  **Tesseract** haciendo OCR, que son las dos únicas piezas nativas del pipeline.
+* **El proceso muere sin ejecutar su `finally`**, de modo que no cierra su ejecución: por eso
+  dejó la fila `RUNNING` id 4. Es exactamente el escenario que H-40 acababa de reparar, lo que
+  permitió comprobarlo en producción sin fabricarlo.
+* Alcanzó a captar **36 expedientes nuevos** (de 12 a 48) y **131 documentos** (de 83 a 214), así
+  que reventó en una fase avanzada, con la ingesta y el scoring ya hechos.
+* La suite **no puede detectarlo**: no sale a la red (C5) y no procesa PDFs reales con OCR.
+
+**Lo que NO se sabe, y es lo que hay que averiguar:**
+
+* Qué documento concreto lo provoca. Un `0xC0000005` mata el proceso sin dejar traza en Python,
+  así que hace falta **registrar qué fichero se está procesando antes de abrirlo**, no después.
+* Si es reproducible o dependió de un PDF concreto de esa corrida.
+
+> ⚠️ **La evidencia directa se perdió, y conviene saber por qué**: el volcado de la corrida se
+> escribió junto a la base que se le había inyectado al lanzador —una copia en un directorio
+> temporal— y se borró al limpiarlo. **Ya no puede repetirse**: desde la corrección de ese mismo
+> día, `prospectar()` propaga `DB_PATH_INCOOP`, de modo que el registro y la base que se escribe
+> son siempre el mismo sitio. Queda el código de salida, anotado aquí, y la fila huérfana.
+
+**Por qué importa más de lo que parece**: un pipeline que muere sin ejecutar su `finally` es
+justo el caso que la Capa 9 declaró **asimétricamente peligroso** —la purga documental borra
+ficheros *antes* de tocar la base, así que una interrupción deja el fichero fuera y la fila sin
+marcar—. Aquí no pasó (`purgas` a 0, no llegó a esa fase), pero un crash sistemático en la fase
+documental sí podría alcanzarla.
+
+**Reparación: sin asignar.** No pertenece a la Capa 10, que arranca procesos y no lee pliegos.
+Procede decidir si se abre como tarea propia o se atiende dentro del Paso 10, que es el que
+cierra el ecosistema y escribe el manual de operación.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -1494,9 +1609,13 @@ porque la decisión de qué esquema gana es de diseño, no de implementación.
 | 2026-08-12 | **La Capa 10 arranca, no avisa** | El nombre "Despertador" y el diagrama del roadmap sugerían alertas activas, pero el canal por el que el sistema habla ya existe y es el Cockpit: KPIs, Funnel, Centinela e historial de prospecciones. Añadir notificaciones de escritorio abriría una pregunta que hoy nadie ha respondido —qué merece interrumpir a una persona— y competiría con la pantalla que ya se mira. La capa queda acotada a lanzar y programar, que es lo que falta para que lo construido se use. |
 | 2026-08-12 | **La ejecución automática se apoya en el Programador de tareas de Windows** | Sobrevive a los reinicios, no deja proceso residente consumiendo memoria y aporta su propio registro además del JSONL. Un servicio propio significaría asumir la responsabilidad de mantenerlo vivo a cambio de nada que el sistema operativo no dé ya hecho. Programar pasa a ser configuración, no código. |
 | 2026-08-12 | **La máquina de destino sólo necesitará Python: FastAPI sirve el Cockpit** | Ver el Cockpit exige hoy Node.js y un segundo servidor (`npm run dev`). Como `frontend/dist/` ya se compila y la API ya está en marcha, servir el bundle como estáticos elimina una dependencia por cada PC de la cooperativa, un proceso que arrancar y un puerto que vigilar. Node sigue haciendo falta para desarrollar, no para usar. Implica un cambio de contrato de la Capa 7: la raíz `/` deja de devolver el JSON de bienvenida, que se traslada a `/api/v1/`. |
-| 2026-08-13 | **El lanzador traduce los códigos de salida del pipeline; no los modifica** | Hoy `src/main.py` devuelve `1` para todo fallo, de modo que "no prospecté porque había un cerrojo vivo" y "reventé" son indistinguibles para el Programador de tareas. Se resuelve **envolviendo**: el lanzador comprueba el cerrojo antes de invocar y emite su propio código. Cambiar los códigos de `main.py` sería modificar desde la Capa 10 una capa cerrada y validada, que es lo que la Regla 14 prohíbe. |
+| 2026-08-13 | **El lanzador traduce los códigos de salida del pipeline; no los modifica** | `src/main.py` no distingue "no prospecté porque había un cerrojo vivo" de "reventé": las dos cosas llegan al Programador de tareas igual. Se resuelve **envolviendo**: el lanzador comprueba el cerrojo antes de invocar y emite su propio código. Cambiar los códigos de `main.py` sería modificar desde la Capa 10 una capa cerrada y validada, que es lo que la Regla 14 prohíbe. *(Motivo corregido el 2026-08-17: esta fila afirmaba que `main.py` devuelve `1` para todo fallo. No es cierto —devuelve `0` cuando falla a mitad, `main.py:392`— y la decisión se sostiene igual, pero por una razón peor de lo que se creía. Ver H-40.)* |
 | 2026-08-13 | **Si el pipeline falla pero la API está sana, el Cockpit se abre igual** | Con el distintivo del Paso 9 avisando de que la última corrida falló. Negarle a alguien los datos de ayer porque la prospección de hoy falló convierte un fallo parcial en una avería total: el Cockpit sigue siendo útil sin la corrida del día, y quien haga doble clic necesita ver **por qué** falló, no una pantalla que no abre. |
 | 2026-08-13 | **H-37 se repara dentro del Paso 2 de la Capa 10, no antes** | El healthcheck de arranque en frío es literalmente el sitio donde se comprueba que la base es accesible y migrable. Repararlo suelto por adelantado sería tocar la Capa 9 ya cerrada sin el contrato que lo justifique. |
 | 2026-08-13 | **Qué hacer con un puerto ocupado por un tercero no es configurable** | El contrato ya lo fijó: detenerse. Ni pelearse por el puerto ni saltar a otro en silencio, porque un lanzador que arranca a ciegas acaba dejando instancias duplicadas que se pisan en la misma base. Dejar que un fichero de texto autorizara lo contrario sería relajar una invariante del contrato desde configuración — la misma doctrina por la que `retencion.yaml` rechaza `Presentada` en `estados_archivables` aunque se declare. Tampoco es configurable si reutilizar nuestra propia API viva: el puerto está ocupado, así que la alternativa no es arrancar otra, es no arrancar. |
 | 2026-08-13 | **H-38 se repara dentro del Paso 3, no se difiere al 4** | Es el Paso 3 el que introduce el puerto configurable, así que dejar el acoplamiento vivo aunque fuera un solo paso habría significado publicar una configuración cuyo parámetro más visible rompe el sistema en silencio si alguien lo toca. Un fichero que invita a cambiar algo que no se puede cambiar todavía es peor que no tener el fichero. |
-| 2026-08-13 | **El `created_at` de `db_lock()` se declara pero no se repara en esta capa** | El cerrojo guarda la fecha del cerrojo, no la del proceso propietario, de modo que un PID reciclado por Windows puede hacerle ver "vivo" a un dueño que ya murió. Queda enunciado en el contrato de la Capa 10 (sección E). Tocar el cerrojo de la Capa 9 desde la 10 sin un defecto reproducible que lo exija es lo que la Regla 14 prohíbe; si el Paso 5 produce esa evidencia, se abre como hallazgo propio. |
+| 2026-08-13 | **El `created_at` de `db_lock()` se declara pero no se repara en esta capa** | El cerrojo guarda la fecha del cerrojo, no la del proceso propietario, de modo que un PID reciclado por Windows puede hacerle ver "vivo" a un dueño que ya murió. Queda enunciado en el contrato de la Capa 10 (sección E). Tocar el cerrojo de la Capa 9 desde la 10 sin un defecto reproducible que lo exija es lo que la Regla 14 prohíbe; si el Paso 5 produce esa evidencia, se abre como hallazgo propio. **Sigue vigente tras el Paso 6**: lo que ese paso endurece es el cerrojo de *ejecución*, no el de fichero. |
+| 2026-08-17 | **La precondición del Paso 6 es el cerrojo de EJECUCIÓN, no el de fichero** | El contrato v1.0.0 señalaba `db_lock()`, que se toma y se suelta en cada escritura: durante una corrida de minutos ese fichero está libre la mayor parte del tiempo, así que la comprobación se habría ejecutado siempre sin detectar casi nunca la corrida concurrente que dice impedir. El que abarca la corrida entera —y por tanto el que responde a "¿puedo prospectar?"— es el cerrojo lógico de la tabla `ejecuciones`. El estado del cerrojo de fichero se conserva como **contexto de diagnóstico**, nunca como criterio. Contrato corregido a v1.1.0, sección F. |
+| 2026-08-17 | **H-40 se repara dentro del Paso 6, con esquema v8** | Mismo precedente que H-37 en el Paso 2: el Paso 6 es literalmente el sitio donde se comprueba el cerrojo antes de prospectar, y sin la reparación el código `30` mentiría —anunciaría una omisión deliberada sobre el cadáver de una corrida muerta—. Se descartó la alternativa de que el lanzador escribiera su propio `pipeline.pid`, que evitaba tocar la Capa 3 pero sólo conocería las corridas que arrancó él: una lanzada a mano no dejaría marca y el lanzador se lanzaría encima. **Ante la duda se respeta el cerrojo**: sin PID anotado se conserva la regla de las seis horas. |
+| 2026-08-17 | **Hasta la demo, los datos de la base son material de prueba y no un activo** | Mientras el proyecto sea una beta, lo valioso es **ejercitar el ecosistema y detectar defectos**, no conservar registros: se puede ejecutar el pipeline real contra las fuentes públicas cuantas veces haga falta, y perder datos por el camino es aceptable **siempre que se sepa por qué se perdieron**. Lo inaceptable es un fallo que no se controla. **La decisión caduca en cuanto el sistema entre en demo o en uso operativo**, momento para el que la idea es haber atajado ya lo que hoy puede costar datos. No relaja ni una línea del código: la memoria comercial sigue sin purgarse jamás y la purga sigue exigiendo previsualización y confirmación explícita. Lo que cambia es cuánto duele perder la base de pruebas, no lo que el sistema tiene permitido hacer. |
+| 2026-08-17 | **El resultado del pipeline se lee de la base, no del código de salida del proceso** | `main.py` sale con `0` cuando falla a mitad (`main.py:392`), que es el modo de fallo más frecuente: traducir sólo el código del proceso dejaría el `31` sin emitirse nunca y el Programador registraría noches sanas sobre corridas rotas. `finalizar_ejecucion()` ya escribe `COMPLETED`/`FAILED` en la fila de la corrida, así que el lanzador anota el último `id` antes de invocar y consulta el estado al terminar. Es **medir el efecto en vez de dar por bueno que se ejecutó**, aplicado a los códigos de salida, y no toca una línea de la Capa 9. |

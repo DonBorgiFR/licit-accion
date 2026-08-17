@@ -14,26 +14,48 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-13)
+## ▶️ Para retomar (sesión del 2026-08-17)
 
-**Todo lo hecho está en GitHub y el árbol de trabajo está limpio.** No hay nada a medias, ni
-código sin registrar, ni decisiones pendientes de tomar.
-
-La sesión cerró **cinco pasos de la Capa 10** (1 a 5) más la separación de este fichero
-respecto de `AGENTS.md`. **La tarea siguiente es el Paso 6**, y arranca sin deuda previa: sólo
-hay que leer el bloque de la Capa 10 más abajo y el contrato en
-[`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
+La sesión cerró el **Paso 6 de la Capa 10**, y empezó corrigiendo el contrato en vez de
+escribiendo código: al leer el código *contra* el documento aparecieron **dos afirmaciones
+falsas en un contrato ya validado**. El contrato sube a **v1.1.0** y el esquema de base de
+datos a **v8**. **La tarea siguiente es el Paso 7.**
 
 **Lo que ya se puede hacer con el sistema, y antes no:**
 
 * Servir el Cockpit **sin Node.js** — un solo proceso de Python lo sirve todo.
 * Arrancar el servidor y **apagarlo de forma ordenada**, sin matar nada ajeno.
+* **Ejecutar el pipeline respetando el cerrojo**, sin lanzarse encima de una corrida viva y
+  sin quedarse plantado seis horas ante el cadáver de una corrida muerta.
+* **Distinguir una prospección rota de una noche sana**, que antes eran el mismo `0`.
 * Detenerse con un diagnóstico claro si el entorno no está listo, en vez de fallar de forma
   confusa diez segundos después.
 
-**Lo que todavía no**: ejecutar el pipeline desde el lanzador (Paso 6), el doble clic sin
-consola (Paso 7), la tarea programada (Paso 8), el aviso en pantalla de una corrida fallida
-(Paso 9) y el cierre con `MANUAL.md` (Paso 10).
+**Lo que todavía no**: el doble clic sin consola (Paso 7), la tarea programada (Paso 8), el
+aviso en pantalla de una corrida fallida (Paso 9) y el cierre con `MANUAL.md` (Paso 10).
+
+> ⚠️ **En qué estado queda la base, para que nadie se asuste al abrirla.**
+>
+> Hay **una corrida sin cerrar** (`ejecuciones` id 4, del 2026-08-17) y **48 expedientes**
+> donde antes había 12. Durante la verificación se lanzó sin querer una prospección real
+> contra las fuentes públicas, que captó 36 expedientes nuevos y **reventó a mitad** con una
+> violación de acceso (`0xC0000005`, probablemente leyendo un PDF). No se perdió nada:
+> `purgas` sigue a 0 y el estado previo está intacto en
+> `data/backups/licitaciones_20260812_120410.db.bak`.
+>
+> **Se deja todo tal cual, y las dos cosas son deliberadas**: los datos son material de prueba
+> hasta la demo *(ver el recuadro de "Pendiente de acción del usuario")*, y la fila huérfana la
+> reclamará sola la prospección siguiente — forzarla a mano es la transición prohibida nº 3.
+> Sirve además de banco de pruebas: es exactamente el escenario que el Paso 6 resuelve.
+>
+> *Detalle útil para el futuro: la copia preventiva de una migración
+> —`licitaciones.db.mig_backup`— **se borra sola al migrar con éxito**, así que no es la que
+> hay que buscar cuando se quiera volver atrás. Las buenas están en `data/backups/`.*
+>
+> 🐛 **Y queda un defecto de verdad sin diagnosticar, que quizá sea el mejor hallazgo de la
+> sesión: H-41.** El pipeline **revienta con `0xC0000005` sobre datos reales**. Está catalogado
+> en el dosier de auditoría con lo que se sabe y lo que no. **No se ha diagnosticado aquí** para
+> no mezclarlo con el Paso 6.
 
 > 📋 **La Capa 11 existe en el README, y NO es una tarea.** El 2026-08-13 se anotó un apunte de
 > alcance sobre el despliegue en servidor —VPS, Docker, `cron` y Basic Auth— para pasar de una
@@ -47,27 +69,27 @@ consola (Paso 7), la tarea programada (Paso 8), el aviso en pantalla de una corr
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **390/390**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v7** y la política de retención, **v1.2.0**. De 39 hallazgos catalogados, 38 están cerrados y **H-39 queda abierto**, para repararse en el Paso 9 de esta capa. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13**, tarea activa el **Paso 6**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **419/419**. La Capa 9 se cerró el 2026-08-12 tras verificarse con una **corrida real del pipeline de extremo a extremo** —12 expedientes, 63 pliegos descargados y leídos, 10 análisis del LLM, 0 errores—. El esquema de base de datos vigente es **v8** (desde el 2026-08-17) y la política de retención, **v1.2.0**. De 41 hallazgos catalogados, 39 están cerrados y **quedan abiertos H-39** —para repararse en el Paso 9 de esta capa— y **H-41**, el crash nativo del pipeline, sin asignar. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13 y el Paso 6 el 2026-08-17**, tarea activa el **Paso 7**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 390/390
+python -m pytest tests/ -q          # debe dar 419/419
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 6
+### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 7
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
 **La Capa 10 ya está redactada y pautada en el `README.md`**, sección *"🚀 Capa 10: El Lanzador y Despertador"*: objetivo, doce consideraciones de diseño, los artefactos que produce y **los 10 pasos atómicos en cuatro fases**. No hay que rediseñarla.
 
-**El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13**.
+**El Paso 1 está redactado el 2026-08-13** y vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md): máquina de estados, seis transiciones prohibidas, los tres modos de invocación, la invariante central, el mapa de códigos de salida y los eventos `LANZADOR_*`. **Rige todo lo que venga después: léelo antes de tocar `src/lanzador.py`.** Quedó **validado por dirección el 2026-08-13** y **corregido a la v1.1.0 el 2026-08-17**.
 
-* **Paso 1** 🟢 — contrato y máquina de estados, validado el 2026-08-13. Vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
+* **Paso 1** 🟢 — contrato y máquina de estados, validado el 2026-08-13, **v1.1.0 desde el 2026-08-17**. Vive en [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md).
 * **Paso 2** 🟢 — healthcheck de arranque en frío en `src/lanzador.py`, **cierra H-37**. Aquí vive `es_sesion_interactiva()`, el punto único de decisión que gobierna toda llamada gráfica de la capa. Verificado contra el entorno real y contra la API de verdad levantada.
 * **Paso 3** 🟢 — `config/lanzador.yaml` **v1.0.0** y su lector estricto en `src/lanzador.py`, sin valores por defecto (código de salida 11, distinto del 10 del entorno). **Cierra H-38.** Verificado en vivo con la API y el Cockpit levantados.
 
@@ -75,7 +97,17 @@ python -m pytest tests/ -q          # debe dar 390/390
 
 * **Paso 5** 🟢 — supervisor del servidor en `src/lanzador.py` y `POST /api/v1/admin/apagar`. **Medido, no supuesto**: `CTRL_BREAK_EVENT` apaga uvicorn en 0,3 s, `TerminateProcess` en 0,1 s y **`CTRL_C_EVENT` no hace nada** en un grupo `CREATE_NEW_PROCESS_GROUP`. Verificado de extremo a extremo con un servidor real: arranque en 1,41 s y **apagado por el nivel 1 en 0,65 s**. **Destapó H-39.**
 
-**La tarea activa es el Paso 6**: ejecutar el pipeline respetando el cerrojo. Si está tomado y vivo, **no arranca**, registra `LANZADOR_PIPELINE_OMITIDO` y devuelve el código 30; si está huérfano, **no lo borra por su cuenta** — deja que lo reclame `db_lock()`, que sabe hacerlo bien desde el Paso 2.
+* **Paso 6** 🟢 — ejecución del pipeline respetando el cerrojo (`inspeccionar_cerrojo()` y `prospectar()` en `src/lanzador.py`), nuevo `src/proceso.py` y **esquema v8**. **Cierra H-40** y corrigió el contrato a v1.1.0. Verificado en vivo: corrida viva → 30 en 0,001 s sin lanzar nada; corrida muerta → la siguiente arranca en **0,017 s** en vez de esperar seis horas. **71 regresiones acumuladas** de la capa en `tests/test_capa10_lanzador.py`, más 13 en `tests/test_migracion_v8.py`.
+
+**La tarea activa es el Paso 7**: el lanzador silencioso `.vbs`, los accesos directos con icono y la apertura del Cockpit en modo aplicación. Toda la lógica se queda en Python —VBS no se puede probar con la suite—, y **la apertura del navegador pasa por `es_sesion_interactiva()`** como cualquier otra llamada gráfica.
+
+> 🔑 **Lo que el Paso 6 enseñó, y es lo más transferible de la sesión: un contrato validado no es un contrato comprobado.** El Paso 1 se validó el 2026-08-13 y contenía **dos afirmaciones falsas** que nadie podía ver leyéndolo —sólo aparecieron al escribir el código que debía obedecerlas—. *(1)* La precondición nombraba `db_lock()`, el cerrojo de fichero, cuando el que abarca una corrida es el lógico de `ejecuciones`: **medido, el `.lock` existe el 0,09 % del tiempo de una corrida**, así que la protección habría acertado esa fracción de las veces. *(2)* Afirmaba que `main.py` devuelve `1` para todo fallo, cuando devuelve **`0` al reventar a mitad**, que es el fallo más frecuente. Por eso el Paso 6 **empezó corrigiendo el documento** y no escribiendo código: implementar fielmente un contrato equivocado produce una protección decorativa que además parece auditada.
+
+> 🔑 **Por qué el resultado del pipeline se lee de la base y no de su código de salida.** `finalizar_ejecucion()` escribe `COMPLETED` o `FAILED` en la fila de la corrida, así que el lanzador anota el último `id` antes de invocar y consulta el estado al terminar. Es la doctrina de la casa —**medir el efecto, no dar por bueno que se ejecutó**— aplicada a los códigos de salida, y no toca una línea de la Capa 9. Sin ello el código `31` no se emitiría nunca en el caso más común.
+
+> ⚠️ **El defecto que me pillé cometiendo, y que vale la pena no repetir**: `prospectar(db_path=X)` inspeccionaba el cerrojo de X y lanzaba un pipeline que escribía en la base **por defecto**. Apuntando a una copia, arrancó una prospección real contra producción. Corregido propagando `DB_PATH_INCOOP` al subproceso, con su regresión. **Un parámetro que sólo gobierna la mitad de una operación no es un parámetro: es una trampa esperando a que alguien se fíe de él.**
+
+> ⚠️ **Cómo NO medir si un proceso sigue vivo** *(costó dos intentos)*. Mientras alguien conserve un handle abierto sobre un proceso, Windows mantiene su objeto-proceso aunque haya terminado, y `OpenProcess` sigue funcionando sobre él: **el mismo proceso que lo engendró lo ve vivo; otro lo ve muerto.** Y en este entorno un proceso nieto no sobrevive a la muerte de su lanzadera. Las dos formas en que el proyecto pregunta caen del lado bueno —comprobado también para el supervisor del Paso 5—, pero una prueba mal montada mide su propio andamiaje. Está anotado en `src/proceso.py`.
 
 > 🔑 **Lo que el Paso 3 decidió y no hay que volver a plantear.** *(1)* **Qué hacer ante un puerto ocupado por un tercero no es configurable**: el contrato ya lo fijó —detenerse—, y dejar que un fichero de texto autorizara lo contrario sería relajar una invariante desde configuración. Tampoco lo es si reutilizar nuestra propia API viva, porque la alternativa a reutilizarla no es arrancar otra: es no arrancar. *(2)* **Con varios fallos a la vez manda el del entorno, no el del puerto**: el código 20 sólo significa algo cuando el puerto es el único problema; el resumen, en cambio, no esconde ninguno.
 
@@ -133,13 +165,50 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-**Nada que requiera decisión.** El contrato del Paso 1 de la Capa 10 quedó **validado el
-2026-08-13**, y con él las decisiones de los Pasos 3 y 5.
+**Una sola cuestión abierta, y no bloquea el Paso 7:**
 
-**Un hallazgo abierto, con sitio y fecha asignados: H-39.** `data/pipeline.jsonl` mezcla dos
-esquemas de evento incompatibles desde la Capa 7 —el pipeline y el lanzador escriben `action`,
-la API escribe `tipo_evento`—. **No bloquea el Paso 6**, y se repara en el **Paso 9**, que es
-donde se decide qué canal dice qué. No hace falta adelantarlo.
+* **Si el pipeline debe tener un tope de duración**, ahora que lo va a lanzar una tarea
+  nocturna sin consola. Uno colgado de madrugada correría indefinidamente. **No se ha
+  inventado ningún plazo** porque la Regla 4 lo prohíbe: procede declararlo en
+  `config/lanzador.yaml` —subiría a v1.1.0— y decidir el número, o razonar por qué no hace
+  falta. Sitio natural: el Paso 8.
+
+**Resueltas el 2026-08-17:**
+
+* **Los 48 expedientes de la base son material de prueba, no un activo** *(decisión de
+  dirección)*. Se conservan tal cual. Ver el recuadro de abajo, que acota hasta cuándo.
+* **La corrida `RUNNING` sin cerrar** (id 4) se deja como está a propósito: la reclamará sola
+  la prospección siguiente, y forzarla a mano es la transición prohibida nº 3.
+
+> 🔑 **Hasta la demo, los datos son material de prueba** *(decisión de dirección, 2026-08-17)*.
+> Mientras el proyecto sea una beta, **lo valioso es detectar defectos, no conservar
+> registros**: se puede ejecutar el pipeline real contra fuentes públicas cuantas veces haga
+> falta para ejercitar el ecosistema, y perder datos por el camino es aceptable **siempre que
+> se sepa por qué se perdieron**. Lo que no es aceptable es un fallo que no se controla.
+>
+> ⚠️ **Esta decisión tiene fecha de caducidad y no es una licencia permanente.** Deja de valer
+> **en cuanto el sistema entre en demo o en uso operativo**, y para entonces la idea es
+> precisamente haber atajado ya los problemas que hoy pueden costarnos datos. Un agente que lea
+> esto después de esa fecha está leyendo una regla vencida: la doctrina por defecto del
+> proyecto —la memoria comercial no se purga jamás, la purga se previsualiza antes de
+> ejecutarse— **sigue implementada y no se ha relajado ni una línea**. Lo que cambia es sólo
+> cuánto duele perder la base de pruebas, no lo que el código tiene permitido hacer.
+
+**Dos hallazgos abiertos:**
+
+* **H-39**, con sitio y fecha asignados. `data/pipeline.jsonl` mezcla dos esquemas de evento
+  incompatibles desde la Capa 7 —el pipeline y el lanzador escriben `action`, la API escribe
+  `tipo_evento`—. **No bloqueó el Paso 6** y se repara en el **Paso 9**, que es donde se decide
+  qué canal dice qué. No hace falta adelantarlo.
+* **H-41, sin asignar**: el pipeline revienta con `0xC0000005` sobre datos reales, muriendo sin
+  ejecutar su `finally`. **No pertenece a la Capa 10**, que arranca procesos y no lee pliegos.
+  Procede decidir si se abre como tarea propia o se atiende en el Paso 10. Lo primero que hará
+  falta es **registrar qué fichero se va a procesar antes de abrirlo**: un crash nativo no deja
+  traza en Python, así que el rastro hay que escribirlo por adelantado.
+
+**Sigue vigente y sin tocar la nota de alcance sobre `db_lock()`**: su `created_at` es la fecha
+del cerrojo y no la del proceso propietario. Lo que el Paso 6 endureció es el cerrojo de
+**ejecución**, que es otro. Sin un defecto reproducible que lo exija, no se toca.
 
 ~~Y una **inconsistencia latente, hoy inocua**~~ **— cerrada el 2026-08-12 dentro del Paso 8.** `Memoria.actualizar_estado_lote()` guardaba el estado
 en minúsculas, mientras el selector del Cockpit ofrece los valores capitalizados del enum. Un lote
@@ -287,7 +356,14 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
   > ⚠️ **Este recuadro decía que el Paso 5 era "consolidar, no escribir", porque las dos piezas de purga "ya funcionaban y sólo les faltaba gobierno". Era falso, y se conserva como advertencia.** `lector.ejecutar_purga_obsoletos()` no alcanzaba ningún documento con peso (H-33) y `memoria.rotar_backups()` devolvía `None`, haciendo que el pipeline anunciase un fallo de backup inexistente (H-34). Las dos se ejecutaban en cada corrida sin fallar nunca. **Que un módulo se ejecute no prueba que haga algo: hay que medir su efecto sobre una base sembrada antes de darlo por bueno.**
 
-* **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada): 🛠️ **Capa activa desde el 2026-08-12.** Redactada y pautada en el `README.md`; ningún paso implementado todavía. Empieza por el Paso 1, el contrato de servicio y la máquina de estados.
+* **Capa 10** - El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada): 🛠️ **Capa activa desde el 2026-08-12.** Redactada y pautada en el `README.md`. **Pasos 1 a 5 cerrados el 2026-08-13; Paso 6 el 2026-08-17.** Tarea activa: el **Paso 7**. El detalle de cada paso vive arriba, en "Tarea activa".
+  * Paso 1 — Contrato de Servicio y Máquina de Estados: 🟢 **v1.0.0 el 2026-08-13, v1.1.0 el 2026-08-17.** Destapó H-37.
+  * Paso 2 — Healthcheck de Arranque en Frío y canal de fallo fatal: 🟢 **Cierra H-37.** Aquí vive `es_sesion_interactiva()`.
+  * Paso 3 — Configuración versionada `config/lanzador.yaml` v1.0.0: 🟢 **Cierra H-38.**
+  * Paso 4 — El Cockpit servido por FastAPI: 🟢 La máquina de destino ya sólo necesita Python.
+  * Paso 5 — Supervisor del servidor: arrancar, reutilizar y apagar sin matar: 🟢 **Destapó H-39.**
+  * Paso 6 — Ejecución del pipeline respetando el cerrojo: 🟢 **Completado el 2026-08-17.** Corrigió el contrato a v1.1.0, creó `src/proceso.py`, subió el esquema a **v8** y **cierra H-40**.
+  * Pasos 7 a 10 — Lanzador `.vbs`, despertador, la voz del proceso silencioso y cierre de capa: 💤
 
 ---
 
@@ -349,6 +425,8 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **39 hallazgos catalogados, 38 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10; **H-37** salió de redactar el contrato de la Capa 10 y se cerró en su Paso 2; **H-38**, de escribir su configuración, y se cerró en el Paso 3.
+De la remediación, ninguno. **41 hallazgos catalogados, 39 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+
+> **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 
 **Los datos de la beta se borraron el 2026-08-06** a petición de la dirección del proyecto: la base, los documentos descargados, los registros y los informes. El sistema queda como una instalación nueva. Los registros de julio no eran información comercial —10 de 22 lotes tenían el plazo vencido y todos estaban puntuados con la lógica anterior al Bloque 2—, y conservarlos habría mezclado dos generaciones de puntuación en la misma tabla.

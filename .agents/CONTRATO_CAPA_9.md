@@ -219,9 +219,14 @@ que en las capas de lectura, donde lo correcto era seguir con datos parciales.
 * **Contrato**: `1.0.0` (este documento).
 * **Política de retención**: versionada en `config/retencion.yaml`. Cada purga registra bajo qué
   versión se ejecutó, para que un cambio de criterio no reescriba la historia de lo ya purgado.
-* **Esquema de base de datos**: **v7**. Subió a v6 con el ciclo de vida del dato (Paso 3) y a
-  v7 con `rescatado_at` (Paso 8), que es lo que impide que el archivado automático deshaga un
-  rescate pedido por una persona.
+* **Esquema de base de datos**: **v7 al cerrarse esta capa**. Subió a v6 con el ciclo de vida
+  del dato (Paso 3) y a v7 con `rescatado_at` (Paso 8), que es lo que impide que el archivado
+  automático deshaga un rescate pedido por una persona.
+
+  > El esquema **vigente hoy es v8**, desde el 2026-08-17: el Paso 6 de la Capa 10 añadió `pid`
+  > y `pid_creado_en` a `ejecuciones` para reparar H-40. **No afecta a nada de esta capa** —el
+  > Depurador no lee esas columnas—, y se anota aquí sólo para que este documento no parezca
+  > decir que v7 es lo actual.
 
 ---
 

@@ -26,7 +26,10 @@ en esta capa, que son cuatro cosas y ninguna es obvia:
 import json
 import os
 import socket
+import sqlite3
+import sys
 import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import MagicMock, patch
 
@@ -38,8 +41,11 @@ from src.lanzador import (
     CONFIGURACION_INVALIDA,
     ERROR_NO_PREVISTO,
     ConfiguracionLanzadorInvalida,
+    EstadoCerrojo,
     EstadoPuerto,
     HEALTHCHECK_INSATISFACTORIO,
+    PIPELINE_FALLIDO,
+    PIPELINE_OMITIDO,
     PUERTO_OCUPADO_AJENO,
     avisar_fallo_fatal,
     cargar_configuracion,
@@ -48,9 +54,12 @@ from src.lanzador import (
     ejecutar_healthcheck,
     es_sesion_interactiva,
     estado_del_puerto,
+    inspeccionar_cerrojo,
+    prospectar,
     registrar_evento_lanzador,
 )
 from src.memoria import Memoria
+from src.proceso import instante_creacion_proceso
 
 PID_MUERTO = 999999
 TTL_DB_LOCK = 600.0
@@ -804,3 +813,249 @@ def _servidor_health(status: str, codigo: int):
             pass
 
     return _ServidorDePrueba(Salud)
+
+
+# ==============================================================================
+# 5. Paso 6 — prospectar respetando el cerrojo
+# ==============================================================================
+#
+# Dos defectos gobiernan esta sección, y los dos salieron de leer el código contra el
+# contrato en vez de leer sólo el contrato:
+#
+# · **El cerrojo que decide es el de EJECUCIÓN, no el de fichero** (contrato v1.1.0,
+#   sección F). `db_lock()` se toma y se suelta en cada escritura, así que una comprobación
+#   basada en su fichero se ejecutaría siempre sin detectar casi nunca la corrida
+#   concurrente que dice impedir.
+#
+# · **El resultado se lee de la base, no del código de salida del proceso** (H-40 y la
+#   corrección del contrato): `main.py` sale con `0` cuando falla a mitad, que es el modo de
+#   fallo más frecuente. Fiarse del código convertiría una prospección reventada en una
+#   noche sana a ojos del Programador de tareas.
+
+def _base_lista(tmp_path):
+    """Una base real, migrada, sin ninguna corrida en marcha."""
+    ruta = str(tmp_path / "licitaciones.db")
+    Memoria(db_path=ruta).setup_db()
+    return ruta
+
+
+def _sembrar_corrida(db_path, estado="RUNNING", pid=None, instante="123456789"):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ejecuciones (start_time, estado, pid, pid_creado_en) VALUES (?, ?, ?, ?);",
+            (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), estado, pid, instante),
+        )
+
+
+def _pipeline_simulado(ruta, estado, codigo=0):
+    """Un pipeline de mentira que se comporta como el de verdad: escribe su fila y sale.
+
+    Se invoca como **subproceso real** —no se sustituye `subprocess.run`— para que la prueba
+    ejercite el lanzamiento de verdad, incluidos el volcado del registro y la lectura
+    posterior de la base.
+    """
+    script = (
+        "import sqlite3, sys\n"
+        "ruta, estado, codigo = sys.argv[1], sys.argv[2], int(sys.argv[3])\n"
+        "if estado != 'NINGUNA':\n"
+        "    c = sqlite3.connect(ruta)\n"
+        "    c.execute(\"INSERT INTO ejecuciones (start_time, estado) VALUES "
+        "('2026-08-17T00:00:00Z', ?)\", (estado,))\n"
+        "    c.commit(); c.close()\n"
+        "print('pipeline simulado:', estado)\n"
+        "sys.exit(codigo)\n"
+    )
+    return [sys.executable, "-c", script, ruta, estado, str(codigo)]
+
+
+# --- El cerrojo decide, y decide el correcto -------------------------------------------
+
+def test_una_corrida_viva_omite_la_prospeccion_con_codigo_propio(tmp_path):
+    """Transición prohibida nº 2. El `30` no es una avería: es la protección funcionando.
+
+    Pero tampoco puede ser un `0`, o el Programador registraría una noche sana en la que no
+    se prospectó nada — y esa mentira sólo se descubre cuando alguien echa en falta las
+    oportunidades de tres semanas.
+    """
+    db_path = _base_lista(tmp_path)
+    _sembrar_corrida(db_path, pid=os.getpid(), instante=str(instante_creacion_proceso(os.getpid())))
+
+    with patch("src.lanzador.subprocess.run") as lanzamiento:
+        codigo = prospectar(db_path=db_path)
+
+    assert codigo == PIPELINE_OMITIDO == 30
+    lanzamiento.assert_not_called()  # lo que de verdad importa: no se lanzó nada
+    assert "LANZADOR_PIPELINE_OMITIDO" in _acciones_registradas(tmp_path / "pipeline.jsonl")
+
+
+def test_una_corrida_muerta_no_impide_prospectar_y_su_fila_no_se_toca(tmp_path):
+    """Transición prohibida nº 3: el lanzador **detecta e informa**, nunca reclama.
+
+    Quien sabe reclamar es `iniciar_ejecucion()`. Un lanzador que fuerce cerrojos anula la
+    protección que la Capa 9 necesita, así que aquí se comprueba que la fila huérfana sigue
+    exactamente como estaba después de que el lanzador la haya visto.
+    """
+    db_path = _base_lista(tmp_path)
+    _sembrar_corrida(db_path, pid=PID_MUERTO)
+
+    codigo = prospectar(db_path=db_path, comando=_pipeline_simulado(db_path, "COMPLETED"))
+
+    assert codigo == 0
+    with sqlite3.connect(db_path) as conn:
+        estado = conn.execute("SELECT estado FROM ejecuciones ORDER BY id LIMIT 1;").fetchone()[0]
+    assert estado == "RUNNING"  # intacta: el lanzador no la reclamó por su cuenta
+    assert "LANZADOR_CERROJO_EJECUCION_HUERFANO" in _acciones_registradas(tmp_path / "pipeline.jsonl")
+
+
+def test_el_cerrojo_de_fichero_es_diagnostico_y_no_criterio(tmp_path):
+    """El defecto que la v1.1.0 del contrato corrigió **antes** de escribirse.
+
+    Un `.lock` presente significa "hay una escritura en vuelo", no "hay una corrida en
+    marcha": lo toma y lo suelta cada operación de escritura. Si gobernara la decisión, el
+    Cockpit guardando el estado de un lote impediría prospectar.
+    """
+    db_path = _base_lista(tmp_path)
+    open(db_path + ".lock", "w").close()
+
+    diagnostico = inspeccionar_cerrojo(db_path=db_path)
+
+    assert diagnostico.escritura_en_vuelo is True     # se ve...
+    assert diagnostico.estado is EstadoCerrojo.LIBRE  # ...pero no decide
+    assert diagnostico.puede_prospectar is True
+
+
+# --- Comprobar no modifica nada ---------------------------------------------------------
+
+def test_inspeccionar_no_crea_la_base_ni_el_directorio(tmp_path):
+    """Misma doctrina que el healthcheck del Paso 2: instanciar `Memoria()` crearía el
+    directorio de datos (H-24), y una comprobación previa no puede dejar una instalación a
+    medias. Una base inexistente no es una avería: es una instalación nueva y nadie está
+    prospectando."""
+    inexistente = tmp_path / "sin_crear" / "licitaciones.db"
+
+    diagnostico = inspeccionar_cerrojo(db_path=str(inexistente))
+
+    assert diagnostico.estado is EstadoCerrojo.LIBRE
+    assert not inexistente.exists()
+    assert not inexistente.parent.exists()
+
+
+def test_inspeccionar_no_escribe_en_una_base_existente(tmp_path):
+    """Se abre en `mode=ro`, de modo que no puede crear ni siquiera los ficheros del WAL."""
+    db_path = _base_lista(tmp_path)
+    antes = os.path.getmtime(db_path)
+
+    for _ in range(3):
+        inspeccionar_cerrojo(db_path=db_path)
+
+    assert os.path.getmtime(db_path) == antes
+
+
+# --- La traducción del resultado --------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "estado_corrida, codigo_proceso, esperado, motivo",
+    [
+        ("COMPLETED", 0, 0, "corrida completada: el único camino al éxito"),
+        ("FAILED", 0, 31, "el caso que hoy pasaría por sano: sale con 0 sobre una corrida rota"),
+        ("COMPLETED", 1, 31, "el código del proceso manda cuando es distinto de cero"),
+        ("RUNNING", 0, 31, "salió sin cerrar su propia corrida"),
+        ("NINGUNA", 0, 31, "terminó con 0 sin llegar a registrar nada"),
+    ],
+)
+def test_el_resultado_se_lee_de_la_base_y_no_del_codigo_de_salida(
+    tmp_path, estado_corrida, codigo_proceso, esperado, motivo
+):
+    db_path = _base_lista(tmp_path)
+
+    codigo = prospectar(
+        db_path=db_path,
+        comando=_pipeline_simulado(db_path, estado_corrida, codigo_proceso),
+    )
+
+    assert codigo == esperado, motivo
+
+
+def test_una_prospeccion_fallida_deja_dicho_que_fallo(tmp_path):
+    db_path = _base_lista(tmp_path)
+
+    prospectar(db_path=db_path, comando=_pipeline_simulado(db_path, "FAILED", 0))
+
+    assert "LANZADOR_PIPELINE_FALLIDO" in _acciones_registradas(tmp_path / "pipeline.jsonl")
+
+
+def test_lo_que_el_pipeline_imprime_no_se_pierde(tmp_path):
+    """El `.vbs` del Paso 7 arranca sin consola y la tarea del Paso 8 corre en Session 0:
+    sin volcado, todo lo que el pipeline dice por pantalla desaparecería."""
+    db_path = _base_lista(tmp_path)
+
+    prospectar(db_path=db_path, comando=_pipeline_simulado(db_path, "COMPLETED"))
+
+    registros = list((tmp_path / "logs").glob("prospeccion_*.log"))
+    assert registros, "no se escribió el registro de la prospección"
+    assert "pipeline simulado" in registros[0].read_text(encoding="utf-8")
+
+
+def test_un_pipeline_ininvocable_es_un_fallo_no_una_excepcion(tmp_path):
+    """Un lanzador que revienta con una traza deja al Programador sin saber qué pasó, y en
+    modo silencioso ni siquiera hay consola donde verla."""
+    db_path = _base_lista(tmp_path)
+
+    codigo = prospectar(db_path=db_path, comando=["no_existe_este_programa_xyz"])
+
+    assert codigo == PIPELINE_FALLIDO == 31
+    assert "LANZADOR_PIPELINE_FALLIDO" in _acciones_registradas(tmp_path / "pipeline.jsonl")
+
+
+# --- La ruta real, sin inyectar (Convención C4) -----------------------------------------
+
+def test_el_pipeline_se_invoca_por_run_py_y_nunca_por_src_main(tmp_path):
+    """C1: `python src/main.py` cargaba el mismo fichero como dos objetos-módulo distintos y
+    mataba la Capa 6 en silencio (H-01). El lanzador es un invocador nuevo, así que la
+    convención hay que sujetarla también aquí: sin esta prueba, nada impide que alguien
+    "simplifique" la orden apuntando al módulo."""
+    db_path = _base_lista(tmp_path)
+
+    with patch("src.lanzador.subprocess.run") as lanzamiento:
+        lanzamiento.return_value = MagicMock(returncode=0)
+        prospectar(db_path=db_path)
+
+    orden = lanzamiento.call_args[0][0]
+    assert orden[0] == sys.executable
+    assert orden[1].endswith("run.py")
+    assert "main.py" not in orden[1]
+
+
+def test_el_pipeline_prospecta_sobre_la_misma_base_que_se_inspecciono(tmp_path):
+    """Descubierto cometiéndolo, el 2026-08-17, durante la verificación en vivo.
+
+    `prospectar(db_path=X)` inspeccionaba el cerrojo de X y lanzaba un pipeline que escribía
+    en la base por defecto: apuntando a una copia se arrancó una prospección real contra
+    producción. **Un parámetro que sólo gobierna la mitad de la operación no es un
+    parámetro, es una trampa.**
+
+    La prueba no comprueba la variable de entorno sino su efecto: el subproceso construye un
+    `Memoria()` sin argumentos —como hace `main.py`— y anota contra qué fichero acabó
+    hablando. Comprobar el mecanismo en vez del efecto habría dejado pasar el defecto.
+    """
+    db_path = _base_lista(tmp_path)
+    testigo = tmp_path / "base_vista_por_el_pipeline.txt"
+    script = (
+        "import sys\n"
+        f"sys.path.insert(0, r'{os.getcwd()}')\n"
+        "from src.memoria import Memoria\n"
+        f"open(r'{testigo}', 'w').write(Memoria().db_path)\n"
+    )
+
+    prospectar(db_path=db_path, comando=[sys.executable, "-c", script])
+
+    assert os.path.normcase(testigo.read_text().strip()) == os.path.normcase(db_path)
+
+
+def test_inspeccionar_funciona_sobre_la_ruta_por_defecto_sin_inyectar_nada():
+    """C4: la ruta que se usa de verdad es la que nadie prueba. `db_path=None` resuelve
+    contra `ruta_datos()`, que en la suite apunta al directorio temporal de `conftest.py`."""
+    diagnostico = inspeccionar_cerrojo()
+
+    assert isinstance(diagnostico.estado, EstadoCerrojo)
+    assert diagnostico.detalle

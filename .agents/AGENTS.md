@@ -169,9 +169,10 @@ Un análisis degradado no puede alterar un score en ninguna dirección. No basta
 La suite en verde y el código revisado no bastan. Antes de dar una capa por cerrada hay que levantar la API y el Cockpit contra `data/licitaciones.db` y **mirar la pantalla**, comparando cada cifra visible con la consulta directa a la base de datos.
 
 ```bash
-python -m uvicorn src.api.main:app --port 8000
-cd frontend && npm run dev          # http://localhost:5173
+python -m uvicorn src.api.main:app --port 8000     # sirve API y Cockpit: http://127.0.0.1:8000
 ```
+
+*(Desde el Paso 4 de la Capa 10 —2026-08-13— **un solo proceso sirve las dos cosas**: FastAPI monta `frontend/dist/` como estáticos. El servidor de Vite sólo hace falta para desarrollar el frontend con recarga en caliente, `cd frontend && npm run dev`, y entonces el Cockpit vive en el 5173 hablando con la API del 8000.)*
 
 **Por qué**: con la suite en 171/171 y veinte hallazgos cerrados, arrancar la aplicación destapó otros tres en diez minutos (H-21, H-22, H-23). Los tres afectaban a lo que el usuario ve y ninguno rompía nada: un contador sobre una población distinta a su propio desglose, 29 filas fantasma en la tabla con la que se decide a qué concurso presentarse, y una columna de riesgo que contradecía el único análisis real de la base. Ningún test los habría detectado, porque todos afirmaban sobre datos sintéticos coherentes; el defecto estaba en la unión entre consulta, contrato y pantalla.
 

@@ -1,9 +1,28 @@
 # Contrato de Servicio — Capa 10: El Lanzador y Despertador
 
-**Versión:** 1.0.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13.**
+**Versión:** 1.1.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13**, corregido y revalidado
+el **2026-08-17**.
 
 Corresponde al **Paso 1** de la Capa 10 (Reglas 1 y 2). Rige todo lo que venga después: léelo antes
 de tocar `src/lanzador.py`.
+
+> **Qué cambió en la v1.1.0 y por qué** *(2026-08-17, al preparar el Paso 6)*. Tres correcciones,
+> las tres nacidas de leer el código **contra** este documento en vez de leer sólo el documento:
+>
+> 1. **La precondición de la Operación 3 nombraba el cerrojo que no protege de lo que se quiere
+>    evitar.** Decía `db_lock()`, que es el cerrojo de fichero y se toma y suelta en **cada
+>    escritura**; el que abarca una corrida entera es el **cerrojo lógico** de la tabla
+>    `ejecuciones`. Implementarlo literalmente habría dado una comprobación que se ejecuta siempre y
+>    casi nunca detecta nada — la lección del Paso 5 de la Capa 9 repetida.
+> 2. **La afirmación «hoy `src/main.py` devuelve `1` para todo fallo» era falsa**, y el Paso 6
+>    consiste precisamente en traducir códigos. Devuelve `1` en los fallos tempranos, pero **`0`
+>    cuando revienta a mitad**.
+> 3. **Se cataloga H-40**, que la primera corrección destapa: el cerrojo lógico no sabe si su dueño
+>    sigue vivo.
+>
+> **Lo que NO cambió**: los seis estados, las seis transiciones prohibidas, la invariante central,
+> los tres modos y el mapa de códigos de salida. La corrección afecta a **dónde se mira**, no a qué
+> se decide.
 
 ---
 
@@ -101,13 +120,15 @@ Son la parte sustantiva de este contrato. Cada una impide un daño concreto:
 
 1. **`COMPROBANDO → ARRANCANDO` sin healthcheck satisfactorio.** Arrancar sobre un entorno que no
    cumple es cambiar un diagnóstico preciso por un fallo confuso diez segundos después.
-2. **Ejecutar el pipeline con el cerrojo tomado y vivo.** Desde la Capa 9 el pipeline **borra
-   ficheros del disco**: dos corridas simultáneas no son un desperdicio, son dos procesos
+2. **Ejecutar el pipeline con el cerrojo de ejecución tomado y vivo.** Desde la Capa 9 el pipeline
+   **borra ficheros del disco**: dos corridas simultáneas no son un desperdicio, son dos procesos
    destruyendo peso documental a la vez. Ante un cerrojo vivo la respuesta correcta es no arrancar
-   y decirlo.
-3. **Forzar o borrar un cerrojo huérfano por cuenta propia.** Existe `db_lock()`, que sabe
-   reclamarlo por PID y TTL. Un lanzador que fuerce cerrojos anula la protección que la Capa 9
-   necesita. *(Ver H-37: hoy esa reclamación no siempre llega a actuar.)*
+   y decirlo. **Cuál es "el cerrojo" a estos efectos se define abajo, en la sección F**, porque hay
+   dos y sólo uno responde a esta pregunta.
+3. **Forzar o borrar un cerrojo huérfano por cuenta propia.** Cada uno de los dos cerrojos tiene su
+   reclamador legítimo —`db_lock()` para el de fichero, `iniciar_ejecucion()` para el de
+   ejecución—, y los dos saben decidir por PID. Un lanzador que fuerce cerrojos anula la protección
+   que la Capa 9 necesita: se limita a **detectar y a informar**, y deja reclamar a quien sabe.
 4. **Apagar un proceso que el lanzador no encendió.** Si encuentra una API que ya estaba corriendo
    —alguien la lanzó a mano para desarrollar—, la usa pero **no la mata al terminar**.
 5. **Terminar en `DEGRADADO` con código de salida `0`.** Un lanzador que siempre devuelve `0` deja
@@ -155,6 +176,35 @@ cierre brusco: **no es corrupción de datos, es un plantón de diez minutos.**
 > capa**: tocar el cerrojo de la Capa 9 desde la 10 sin un defecto reproducible que lo exija sería
 > justo lo que la Regla 14 prohíbe. Si el Paso 5 produce evidencia de que causa daño real, se abre
 > como hallazgo con su propia reparación.
+
+### F. Los dos cerrojos, y cuál contesta a "¿hay una corrida en marcha?"
+
+*(Sección añadida en la v1.1.0. La v1.0.0 nombraba `db_lock()` en la Operación 3 y en la transición
+prohibida nº 2, y era el cerrojo equivocado para esa pregunta.)*
+
+Sobre la misma base conviven **dos cerrojos que protegen cosas distintas**, y confundirlos produce
+una protección que parece existir:
+
+| | **Cerrojo de fichero** | **Cerrojo de ejecución** |
+|---|---|---|
+| Dónde | `licitaciones.db.lock` — [`memoria.py:644`](../src/memoria.py) | Tabla `ejecuciones`, estado `RUNNING` — [`memoria.py:1041`](../src/memoria.py) |
+| Quién lo toma | `db_lock()`, en **cada operación de escritura** | `iniciar_ejecucion()`, **una vez por corrida** |
+| Cuánto vive | Lo que dura una escritura: se crea al entrar y se borra en el `finally` | **Toda la corrida**, de principio a fin |
+| Qué impide | Que dos escrituras se pisen | **Que haya dos corridas a la vez** |
+| Cómo reclama huérfanos | Por PID inactivo y TTL de 600 s | Por PID inactivo y ventana de 6 h *(desde el Paso 6; ver H-40)* |
+
+**`main.py` no toma nunca el cerrojo de fichero para la corrida entera**: lo toman por dentro los
+métodos de `Memoria` que escriben. De modo que durante una prospección de diez minutos ese fichero
+está libre la inmensa mayoría del tiempo, y consultarlo para decidir *"¿puedo prospectar?"* sería
+preguntar a quien no lo sabe.
+
+> **La precondición de la Operación 3 es, por tanto, el cerrojo de EJECUCIÓN.** El estado del
+> cerrojo de fichero se registra como **contexto de diagnóstico** —saber que había una escritura en
+> vuelo ayuda a interpretar un apagado—, nunca como criterio para arrancar o no.
+
+**Esto no reabre la nota de alcance anterior.** Lo que el Paso 6 endurece es el cerrojo de
+**ejecución**, que es el que esta capa consulta y del que depende el despertador. `db_lock()` se
+queda exactamente como está.
 
 ---
 
@@ -207,20 +257,48 @@ contesta dentro del tope, **se informa en vez de abrir un navegador sobre nada**
 |---|---|
 | **Entradas** | Modo de invocación. |
 | **Salidas** | Código de salida del pipeline, traducido al mapa de esta capa. |
-| **Precondiciones** | **El cerrojo no está tomado por un proceso vivo.** Se comprueba antes de lanzar. |
+| **Precondiciones** | **El cerrojo de EJECUCIÓN no está tomado por un proceso vivo** (sección F). Se comprueba antes de lanzar, y la comprobación es de **sólo lectura**. |
 | **Postcondiciones** | El pipeline terminó, o no se lanzó y consta por qué. |
 | **Side-effects** | Los del pipeline (escribe en BD, descarga, **archiva y purga ficheros**). |
 | **Errores** | `CerrojoTomadoPorProcesoVivo` |
 
 **El lanzador traduce códigos de salida; no modifica el pipeline** *(decisión de dirección,
-2026-08-13)*. Hoy `src/main.py` devuelve `1` para todo fallo, de modo que *"no prospecté porque
-había un cerrojo vivo"* y *"reventé"* son indistinguibles para el Programador de tareas. La capa lo
-resuelve **envolviendo**: comprueba el cerrojo antes de invocar y emite su propio código, dejando la
-Capa 9 intacta. Cambiar los códigos de `main.py` sería modificar una capa cerrada y validada desde
-otra, que es lo que la Regla 14 prohíbe.
+2026-08-13)*, dejando la Capa 9 intacta: cambiar los códigos de `main.py` sería modificar una capa
+cerrada y validada desde otra, que es lo que la Regla 14 prohíbe.
 
-**Si el cerrojo está huérfano, no lo borra**: deja que lo reclame la lógica que ya existe y sabe
-hacerlo bien (transición prohibida nº 3).
+**Lo que `main.py` devuelve hoy, medido** *(corrección de la v1.1.0; la v1.0.0 afirmaba que devolvía
+`1` para todo fallo, y no es cierto)*:
+
+| Qué le ocurre al pipeline | Código que devuelve | Dónde |
+|---|---|---|
+| `setup_db()` revienta | `1` | [`main.py:92`](../src/main.py) |
+| El cerrojo de ejecución está tomado | `1` | [`main.py:105`](../src/main.py) |
+| **Falla a mitad de la corrida** | **`0`** | [`main.py:392`](../src/main.py) — captura la excepción, marca `ejecucion_con_exito = False`, y la función termina sin `sys.exit` |
+
+El tercer caso es el modo de fallo más frecuente y el más engañoso: **una prospección reventada sale
+con el código del éxito**. Traducir sólo el código del proceso dejaría el `31` sin emitirse nunca y
+haría que el Programador registrara una noche sana sobre una corrida rota — exactamente la mentira
+que el `30` existe para evitar.
+
+**Por eso el resultado se lee de donde consta de verdad**: `finalizar_ejecucion()` escribe
+`COMPLETED` o `FAILED` en la fila de la corrida. El lanzador anota el último `id` de `ejecuciones`
+antes de invocar y consulta el estado de la corrida nueva al terminar. Es la doctrina de la casa
+—**medir el efecto, no dar por bueno que se ejecutó**— aplicada a los códigos de salida, y no toca
+una sola línea de la Capa 9.
+
+| Salida del proceso | Fila de la corrida | Código del lanzador |
+|---|---|---|
+| ≠ 0 | cualquiera | `31` |
+| 0 | `FAILED` | `31` |
+| 0 | `COMPLETED` | `0` |
+| 0 | no llegó a crearse ninguna | `31`, con el motivo registrado |
+
+**Si el cerrojo está huérfano, no lo borra**: lanza igual y deja que lo reclame `iniciar_ejecucion()`,
+que sabe hacerlo bien (transición prohibida nº 3).
+
+**Esta operación no realiza ninguna llamada a interfaz gráfica**, ni de apertura ni de error. Queda
+dicho a propósito: la invariante central se audita recorriendo el código con una lista en la mano, y
+un módulo que declara no tener llamadas gráficas se audita en un segundo.
 
 **Matar el proceso a mitad tiene consecuencias asimétricas**, y el lanzador debe saberlo: el
 archivado y la eliminación son transaccionales y revierten solos; la purga documental borra ficheros
@@ -326,8 +404,10 @@ Todos con `updated_by="lanzador"`, en `data/pipeline.jsonl` vía `Memoria.regist
 | `LANZADOR_PUERTO_OCUPADO_AJENO` | El puerto lo ocupa algo que no es nuestro |
 | `LANZADOR_SERVIDOR_ARRANCADO` | Servidor propio en marcha y respondiendo, con el tiempo que tardó |
 | `LANZADOR_SERVIDOR_NO_RESPONDE` | Venció el tope de espera |
-| `LANZADOR_PIPELINE_OMITIDO` | Cerrojo tomado y vivo, con la causa |
-| `LANZADOR_PIPELINE_FALLIDO` | El pipeline devolvió error |
+| `LANZADOR_PIPELINE_OMITIDO` | Cerrojo de ejecución tomado y vivo, con la causa |
+| `LANZADOR_CERROJO_EJECUCION_HUERFANO` | Se encontró la fila de una corrida cuyo dueño ya no vive. **Se lanza igual y no se toca la fila** *(añadido en la v1.1.0)* |
+| `LANZADOR_PIPELINE_COMPLETADO` | La corrida terminó y consta `COMPLETED`, con lo que tardó *(añadido en la v1.1.0)* |
+| `LANZADOR_PIPELINE_FALLIDO` | El pipeline falló, **según la fila de la corrida y no según su código de salida** |
 | `LANZADOR_APAGADO` | Apagado conseguido, **indicando en qué nivel** |
 | `LANZADOR_APAGADO_INCOMPLETO` | Agotados los tres niveles |
 | `LANZADOR_CERROJO_HUERFANO_TRAS_APAGADO` | El cerrojo no quedó liberado |
@@ -369,9 +449,9 @@ y por eso **se declara aquí, no se descubre**. Lo implementa el Paso 4.
 
 ---
 
-## Defecto detectado al redactar este contrato
+## Defectos detectados al redactar este contrato y al aplicarlo
 
-### H-37 · `setup_db()` usa un cerrojo propio que no sabe reclamar huérfanos 🔴 ABIERTO
+### H-37 · `setup_db()` usa un cerrojo propio que no sabe reclamar huérfanos 🟢 CERRADO (Paso 2)
 
 Hay **dos cerrojos distintos sobre el mismo fichero `.lock`**. `db_lock()`
 ([`src/memoria.py:644`](../src/memoria.py)) tiene TTL de 600 s, verificación de PID y reclamación de
@@ -391,7 +471,43 @@ llega a actuar, porque quien pregunta primero es el cerrojo que no sabe reclamar
 
 **Reparación: dentro del Paso 2** *(decisión de dirección, 2026-08-13)*, donde vive el healthcheck
 de arranque en frío — que es literalmente el sitio donde se comprueba que la base es accesible y
-migrable.
+migrable. **Cerrado allí el 2026-08-13**: `setup_db()` pasa a usar `db_lock()`, de modo que hay un
+solo cerrojo de fichero y es el que sabe reclamar.
+
+### H-40 · El cerrojo de ejecución no sabe si su dueño sigue vivo 🔴 ABIERTO (se repara en el Paso 6)
+
+**Detectado el 2026-08-17**, preparando el Paso 6, al preguntarse cómo se comprueba que "el cerrojo
+está tomado por un proceso **vivo**".
+
+La tabla `ejecuciones` ([`memoria.py:280`](../src/memoria.py)) guarda `start_time`, `end_time` y
+`estado`. **No guarda el PID de quien corre, ni su instante de creación.** Por eso
+`iniciar_ejecucion()` no puede preguntar *"¿vive el dueño?"*: sólo sabe *"¿empezó hace menos de seis
+horas?"* ([`memoria.py:1067`](../src/memoria.py)).
+
+**El daño, en operación**: una corrida que muere a mitad —un apagón, un cierre de sesión, o el
+**nivel 3 del apagado que el Paso 5 acaba de construir**— deja una fila `RUNNING` fantasma. El
+despertador de las 06:30 se la encuentra, ve que empezó hace menos de seis horas y **no prospecta
+esa mañana**. Peor aún para esta capa: devolvería el código `30` —*"omisión deliberada, hay una
+corrida en marcha"*— cuando la verdad es *"hay el cadáver de una corrida"*. **El `30` mentiría, que
+es justo lo que ese código existe para evitar.**
+
+**Es exactamente la familia de H-37, y el mismo argumento**: no lo introduce esta capa, **lo activa
+esta capa**. Mientras el pipeline lo lanzaba una persona desde una terminal, el mensaje se leía en
+pantalla y se resolvía en el momento; con el despertador ocurre de madrugada, sin consola y sin
+nadie mirando. Y es también la sección E de este contrato —*la identidad de un proceso no es su
+número*— vista desde el cerrojo de ejecución.
+
+**Reparación: dentro del Paso 6** *(decisión de dirección, 2026-08-17)*, que es literalmente el sitio
+donde se comprueba el cerrojo antes de prospectar. Mismo precedente que H-37 en el Paso 2. Consiste
+en el **esquema v8**: `ejecuciones` gana `pid` y `pid_creado_en`, escritos por `iniciar_ejecucion()`,
+que pasa a reclamar de inmediato la fila cuyo dueño ya no vive. **Ante la duda se respeta el
+cerrojo**: sin PID anotado —filas anteriores a v8— se conserva intacta la regla de las seis horas.
+
+> **Alternativa considerada y descartada**: que el lanzador escribiera su propio `data/pipeline.pid`,
+> como ya hace con el servidor en el Paso 5, evitando tocar la Capa 3. Se descarta porque **sólo
+> conocería los pipelines que arrancó él**: una corrida lanzada a mano no dejaría marca, y el
+> lanzador o se lanzaría encima —el daño exacto que hay que evitar— o bloquearía para siempre.
+> `iniciar_ejecucion()` anota el PID venga la corrida de donde venga.
 
 ---
 

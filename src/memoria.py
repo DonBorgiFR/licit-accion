@@ -26,23 +26,95 @@ from src import (
 # =====================================================================
 # HELPER DE VERIFICACIÓN DE PID Y PROCESOS
 # =====================================================================
+#
+# La definición canónica vive en `src/proceso.py` desde el 2026-08-17 (Capa 10, Paso 6).
+# Se trasladó porque el cerrojo de ejecución necesita también el *instante de creación*
+# del proceso —la otra mitad de la identidad, que vivía en `src/lanzador.py`—, y la Capa 3
+# no puede importar de la Capa 10 sin invertir la dependencia del proyecto. Ver H-40.
+#
+# `es_pid_activo` se reexporta aquí porque ya formaba parte de la superficie pública de
+# este módulo: `tests/test_file_lock.py` lo importa desde `src.memoria`.
 
-def es_pid_activo(pid: int) -> bool:
+from src.proceso import es_el_mismo_proceso, es_pid_activo, instante_creacion_proceso
+
+
+#: Horas tras las cuales una ejecución `RUNNING` se da por perdida aunque no se sepa nada de
+#: su dueño. Es la red de seguridad de las filas anteriores al esquema v8 y de las
+#: plataformas donde no se puede resolver el instante de creación de un proceso.
+TIMEOUT_EJECUCION_HORAS = 6.0
+
+
+def motivo_ejecucion_huerfana(
+    start_str: Optional[str],
+    pid_previo: Optional[int],
+    instante_previo: Optional[str],
+    ahora_utc: datetime,
+    timeout_horas: float = TIMEOUT_EJECUCION_HORAS,
+) -> Optional[str]:
+    """¿Puede reclamarse esta fila `RUNNING`? Devuelve el motivo, o `None` si debe respetarse.
+
+    Misma forma que `Memoria._motivo_lock_huerfano()` a propósito: los dos cerrojos del
+    proyecto deciden con la misma gramática —*motivo textual o `None`*— para que no haya que
+    aprenderse dos.
+
+    **Vive fuera de la clase, y eso es deliberado.** El Lanzador de la Capa 10 necesita hacer
+    esta misma pregunta *antes* de arrancar el pipeline, y hacerlo instanciando `Memoria()`
+    crearía el directorio de datos (H-24) en lo que debe ser una comprobación de sólo
+    lectura. Que la respuesta la dé una función pura, sin estado ni conexión, es lo que
+    permite que **haya un solo criterio y no dos**: dos copias de esta decisión acabarían
+    divergiendo, que es exactamente la familia de defectos que este proyecto lleva
+    persiguiendo desde H-33.
+
+    **El orden de los criterios es la parte sustantiva** (esquema v8, repara H-40). Se
+    pregunta primero por el dueño y sólo después por el reloj, porque saber que el proceso
+    murió es un **hecho** y las seis horas son una **conjetura**: hasta v8 sólo existía la
+    conjetura, y una corrida muerta a mitad bloqueaba la prospección hasta que venciera — en
+    la práctica, una mañana entera sin prospectar y sin que nadie supiera por qué.
+
+    **Ante la duda se respeta el cerrojo.** Cuando no se puede afirmar que el dueño murió
+    —fila sin PID anotado, o un instante de creación que el sistema no deja consultar— no se
+    decide aquí: se cae a la regla temporal, que es exactamente el comportamiento anterior a
+    v8. Reclamar por error el cerrojo de una corrida viva serían dos procesos archivando y
+    purgando ficheros a la vez, que es el daño que este cerrojo existe para impedir.
     """
-    Verifica si un Process ID (PID) está activo en el sistema operativo.
-    Compatibilidad en Windows y POSIX sin librerías externas.
-    """
-    if pid <= 0:
-        return False
+    # 1. El dueño ya no existe. Es el criterio nuevo de v8, y el único que descansa sobre un
+    #    hecho del sistema operativo en vez de sobre un plazo.
+    if pid_previo is not None:
+        try:
+            pid_int = int(pid_previo)
+        except (TypeError, ValueError):
+            pid_int = 0
+
+        if pid_int > 0:
+            if not es_pid_activo(pid_int):
+                return f"el proceso {pid_int} que la lanzó ya no existe"
+
+            # El número vive, pero puede haberlo heredado otro proceso: Windows los recicla.
+            # Sólo se afirma el reciclaje cuando se resuelve un instante DISTINTO; si no se
+            # puede resolver ninguno —permisos, plataforma— la respuesta correcta es "no lo
+            # sé", no "murió". Afirmar lo segundo sobre lo primero es reclamar a ciegas.
+            instante_vivo = instante_creacion_proceso(pid_int)
+            if instante_vivo is not None and instante_previo:
+                if str(instante_vivo) != str(instante_previo):
+                    return (
+                        f"el número de proceso {pid_int} lo ocupa hoy otro proceso distinto "
+                        "del que lanzó la corrida"
+                    )
+
+    # 2. Red de seguridad temporal, idéntica a la de antes de v8.
     try:
-        os.kill(pid, 0)
-        return True
-    except OSError as e:
-        if getattr(e, 'winerror', None) == 5 or getattr(e, 'errno', None) == 13:
-            return True
-        return False
-    except Exception:
-        return False
+        start_time = datetime.strptime(start_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        # Fecha de inicio ilegible: no se puede medir la antigüedad ni, por tanto, respetar
+        # la fila con criterio. Se reclama dejando constancia del motivo, que es preferible a
+        # arrastrar para siempre una fila RUNNING que nadie cerrará jamás.
+        return "la fecha de inicio de la corrida es ilegible"
+
+    horas = (ahora_utc - start_time).total_seconds() / 3600.0
+    if horas >= timeout_horas:
+        return f"supera el plazo de {timeout_horas:.0f} h ({horas:.1f} h)"
+
+    return None
 
 # =====================================================================
 # HELPER DE NORMALIZACIÓN DE FECHAS
@@ -164,14 +236,16 @@ def calcular_feed_hash(licitacion: Dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 # =====================================================================
-# CONSTANTES DDL - ESQUEMA DE BASE DE DATOS (ESQUEMA COMPLETO v6)
+# CONSTANTES DDL - ESQUEMA DE BASE DE DATOS (ESQUEMA COMPLETO v8)
 # =====================================================================
 
 # Versión única del esquema. Antes vivía duplicada —como literal en el INSERT inicial y
 # como atributo de clase—, de modo que una base recién creada podía nacer declarando una
 # versión distinta de la que el código esperaba y disparar una migración sobre un esquema
 # que ya estaba al día. Ahora sólo hay una fuente.
-ESQUEMA_VERSION_ACTUAL = 7
+#
+# v8 (2026-08-17, Capa 10 Paso 6): `ejecuciones` guarda quién la corría — ver H-40.
+ESQUEMA_VERSION_ACTUAL = 8
 
 SQL_CREATE_METADATA = """
 CREATE TABLE IF NOT EXISTS metadata (
@@ -293,7 +367,26 @@ CREATE TABLE IF NOT EXISTS ejecuciones (
     alertas_generadas INTEGER DEFAULT 0,
     errores INTEGER DEFAULT 0,
     version_scoring TEXT,
-    version_politica_retencion TEXT
+    version_politica_retencion TEXT,
+    -- Identidad del proceso que corre esta ejecución (esquema v8, repara H-40).
+    --
+    -- Sin estas dos columnas, `iniciar_ejecucion()` sólo sabía preguntar "¿empezó hace
+    -- menos de seis horas?", nunca "¿vive el dueño?". Una corrida muerta a mitad —un
+    -- apagón, un cierre de sesión, o el apagado de nivel 3 del Lanzador— dejaba una fila
+    -- RUNNING fantasma que bloqueaba la prospección durante seis horas. Invisible
+    -- mientras la lanzaba una persona desde una terminal; una mañana perdida en silencio
+    -- desde que la lanza el despertador de madrugada.
+    --
+    -- Son DOS columnas y no una porque Windows recicla los números de proceso: el PID a
+    -- secas puede hacer ver "vivo" a un dueño que murió y cuyo número heredó otro. El
+    -- instante de creación no se recicla, así que el par sí identifica. Ver
+    -- `src/proceso.py` y la sección E del contrato de la Capa 10.
+    --
+    -- `pid_creado_en` es TEXT y no INTEGER a propósito: el valor es un FILETIME de 64 bits
+    -- en Windows y no existe en otras plataformas, así que se guarda tal cual llega y se
+    -- compara como cadena. Nunca se hace aritmética con él — no es una fecha, es una huella.
+    pid INTEGER,
+    pid_creado_en TEXT
 );
 """
 
@@ -936,6 +1029,20 @@ class Memoria:
                                                         f"ALTER TABLE {tabla} ADD COLUMN rescatado_at TEXT;"
                                                     )
 
+                                        # --- v8: el cerrojo de ejecución aprende quién lo tomó (H-40) ---
+                                        #
+                                        # Las filas que ya existan quedan con `pid` a NULL, y eso es
+                                        # correcto y deliberado: son corridas de las que no sabemos
+                                        # nada, así que `iniciar_ejecucion()` las seguirá tratando
+                                        # con la regla de las seis horas. Rellenarlas con un valor
+                                        # inventado sería peor que dejarlas vacías — un NULL dice
+                                        # "no lo sé" y un cero diría "murió", que no es lo mismo.
+                                        if version_actual < 8:
+                                            for columna, tipo in (("pid", "INTEGER"), ("pid_creado_en", "TEXT")):
+                                                if not _columna_existe("ejecuciones", columna):
+                                                    conn_mig.execute(
+                                                        f"ALTER TABLE ejecuciones ADD COLUMN {columna} {tipo};"
+                                                    )
 
                                         # Re-crear índices (v2, v3, v4 y v5)
                                         for query in SQL_CREATE_INDICES:
@@ -1041,51 +1148,65 @@ class Memoria:
     def iniciar_ejecucion(self) -> int:
         """
         Intenta adquirir el lock de inicio de ejecución.
-        Si hay una ejecución activa hace menos de 6 horas, lanza RuntimeError.
-        Si la ejecución tiene más de 6 horas, se reapropia de ella, marcándola como FAILED por timeout.
-        Devuelve el ID de la nueva ejecución creada.
+
+        Devuelve el ID de la nueva ejecución creada, o lanza `RuntimeError` si hay otra
+        corrida que debe respetarse. Quién puede reclamarse y por qué lo decide
+        `_motivo_ejecucion_huerfana()`.
+
+        Desde el esquema v8 la fila anota **el PID y el instante de creación** del proceso
+        que la corre, de modo que el cerrojo puede distinguir una corrida viva del cadáver
+        de una corrida muerta a mitad (H-40). Es también lo que permite al Lanzador de la
+        Capa 10 emitir un código de salida honesto: sin esto, "hay una corrida en marcha" y
+        "hay los restos de una que reventó anoche" eran indistinguibles.
         """
         now_utc = datetime.now(timezone.utc)
         now_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+        pid_actual = os.getpid()
+        instante_actual = instante_creacion_proceso(pid_actual)
+
         with self.conectar() as conn:
             cursor = conn.cursor()
-            
+
             # Comprobar la última ejecución RUNNING
             cursor.execute(
-                "SELECT id, start_time FROM ejecuciones WHERE estado = 'RUNNING' ORDER BY id DESC LIMIT 1;"
+                "SELECT id, start_time, pid, pid_creado_en FROM ejecuciones "
+                "WHERE estado = 'RUNNING' ORDER BY id DESC LIMIT 1;"
             )
             row = cursor.fetchone()
-            
+
             if row:
-                run_id, start_str = row
-                try:
-                    start_time = datetime.strptime(start_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                    diferencia = now_utc - start_time
-                    horas = diferencia.total_seconds() / 3600.0
-                    
-                    if horas < 6.0:
-                        raise RuntimeError(
-                            f"Ya existe una ejecución en curso (ID: {run_id}) iniciada hace {horas:.1f} horas. "
-                            "Ejecución paralela del radar abortada."
-                        )
-                    else:
-                        # Reapropiación de lock por timeout (6 horas)
-                        with conn:
-                            cursor.execute(
-                                "UPDATE ejecuciones SET estado = 'FAILED', end_time = ? WHERE id = ?;",
-                                (now_str, run_id)
-                            )
-                        print(f"[!] [radar] Reapropiación de lock. Ejecución huérfana ID: {run_id} cerrada por timeout.")
-                except Exception as e:
-                    if "Ejecución paralela del radar abortada" in str(e):
-                        raise e
+                run_id, start_str, pid_previo, instante_previo = row
+                motivo = motivo_ejecucion_huerfana(
+                    start_str, pid_previo, instante_previo, now_utc
+                )
+
+                if motivo is None:
+                    raise RuntimeError(
+                        f"Ya existe una ejecución en curso (ID: {run_id}, PID: {pid_previo}). "
+                        "Ejecución paralela del radar abortada."
+                    )
+
+                # Cerrar una corrida ajena deja rastro: es una decisión, no una limpieza.
+                with conn:
+                    cursor.execute(
+                        "UPDATE ejecuciones SET estado = 'FAILED', end_time = ? WHERE id = ?;",
+                        (now_str, run_id)
+                    )
+                print(f"[!] [radar] Reapropiación de lock. Ejecución huérfana ID: {run_id}: {motivo}.")
+                self.registrar_log_json(
+                    run_id=run_id,
+                    action="EJECUCION_HUERFANA_RECLAMADA",
+                    reason=motivo,
+                    updated_by="memoria",
+                )
 
             # Adquirir nuevo lock
             with conn:
                 cursor.execute(
-                    "INSERT INTO ejecuciones (start_time, estado) VALUES (?, 'RUNNING');",
-                    (now_str,)
+                    "INSERT INTO ejecuciones (start_time, estado, pid, pid_creado_en) "
+                    "VALUES (?, 'RUNNING', ?, ?);",
+                    (now_str, pid_actual, str(instante_actual) if instante_actual is not None else None)
                 )
                 nueva_id = cursor.lastrowid
             return nueva_id
