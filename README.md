@@ -1530,6 +1530,50 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    - Idempotente: registrarla dos veces no crea dos tareas, y darla de baja es tan sencillo como
      registrarla.
 
+   > ❓ **CUESTIÓN ABIERTA QUE ESTE PASO DEBE RESOLVER: ¿tiene el pipeline un tope de duración?**
+   > *(Planteada el 2026-08-17 al cerrar el Paso 6. Requiere decisión de dirección antes de
+   > implementar el Paso 8.)*
+   >
+   > **Por qué aparece aquí y no antes.** Mientras el pipeline lo lanzaba una persona, un cuelgue
+   > se veía: la consola dejaba de avanzar y se cerraba la ventana. Este paso lo pone a correr
+   > **de madrugada, sin consola y sin nadie mirando**, así que un pipeline colgado —una descarga
+   > que no vence, un modelo que no contesta— correría indefinidamente. Y el daño no es sólo esa
+   > noche: el cerrojo de ejecución quedaría tomado por un proceso **que sigue vivo**, de modo que
+   > la protección del Paso 6 haría lo correcto —código 30, no prospectar— **noche tras noche**.
+   > Un cuelgue no se manifestaría como una avería, sino como un sistema que dejó de encontrar
+   > oportunidades. Es la familia de H-21: no rompe, calla.
+   >
+   > **Por qué no se ha resuelto ya.** Porque la Regla 4 prohíbe inventar plazos: *ningún plazo
+   > ni puerto inventado*. Poner "dos horas" porque suena razonable es exactamente lo que hizo
+   > que los 90 días de retención vivieran codificados a fuego sin que nadie los hubiera decidido.
+   >
+   > **Qué hay que decidir, en este orden:**
+   >
+   > 1. **¿Hace falta un tope, o basta con lo que ya existe?** Hoy hay una red parcial: la
+   >    reapropiación del cerrojo a las **6 horas** (`TIMEOUT_EJECUCION_HORAS`, `src/memoria.py`).
+   >    Pero ojo — **esa red no mata nada**: sólo permite que la corrida siguiente arranque. Un
+   >    pipeline colgado seguiría vivo, y a las 6 h tendríamos **dos** corriendo a la vez sobre
+   >    una base que archiva y purga ficheros. Conviene mirarlo antes de decidir que no hace falta.
+   > 2. **Si hace falta, cuántos minutos.** El único dato real disponible: la corrida completa del
+   >    2026-08-12 tardó **255 s** con 12 expedientes, 63 pliegos descargados y 10 análisis del
+   >    LLM. Un tope debe dejar margen para una jornada con mucha más ingesta, no para la media.
+   > 3. **Qué hacer al vencerlo.** Matarlo es coherente con el nivel 3 del apagado, pero **el
+   >    pipeline purga borrando ficheros antes de tocar la base**, así que una interrupción deja el
+   >    fichero fuera y la fila sin marcar. Es la dirección recuperable a propósito —la corrida
+   >    siguiente lo termina—, y el contrato ya lo advierte en la Operación 3.
+   > 4. **Dónde vive el número.** En `config/lanzador.yaml`, bloque `despertador`, subiendo la
+   >    configuración a **v1.1.0**. En ningún otro sitio.
+   >
+   > **Lo que este paso NO debe hacer**: dejar la cuestión sin contestar e implementar el
+   > despertador igual. Programar una tarea nocturna sin haber decidido qué pasa si no termina es
+   > precisamente la caja negra silenciosa que el contrato de esta capa existe para impedir.
+   >
+   > 🔗 **Relacionado: H-41** *(abierto, sin asignar)*. El pipeline revienta con `0xC0000005` sobre
+   > datos reales. Un crash **sí** libera el cerrojo —el proceso muere— y por tanto es el caso
+   > benigno frente a un cuelgue. Pero los dos comparten causa probable, la fase documental, y
+   > conviene mirarlos juntos: si se diagnostica H-41 antes, es posible que el tope de duración
+   > pueda decidirse con datos en vez de a ojo.
+
 9. **Paso 9 — La Voz del Proceso Silencioso**: 💤
    - **Cuatro canales, y cuál se usa depende de hasta dónde llegó el arranque.** Es lo que hace que
      ninguno sobre y que ninguno se use donde haría daño:

@@ -102,3 +102,23 @@ lanzador:
     # arranque. Sin esto, un fin de semana con el ordenador apagado significa un lunes sin
     # las oportunidades del viernes.
     ejecutar_si_se_perdio: true
+
+    # ❓ FALTA AQUÍ UN PARÁMETRO, Y SU AUSENCIA ES UNA CUESTIÓN ABIERTA, NO UNA DECISIÓN
+    #    (planteada el 2026-08-17 al cerrar el Paso 6; se resuelve en el Paso 8)
+    #
+    #    `duracion_maxima_minutos` — el tope tras el cual se da por colgada una prospección.
+    #
+    #    No está porque **la Regla 4 prohíbe inventar plazos**, y elegir un número "razonable"
+    #    aquí sería repetir lo que hizo que los 90 días de retención vivieran codificados a
+    #    fuego sin que nadie los hubiera decidido. Se anota su ausencia por la misma razón por
+    #    la que se explican las de arriba: un parámetro que falta sin motivo se acaba añadiendo.
+    #
+    #    Por qué importa: desde el Paso 8 esto corre de madrugada y sin consola. Un pipeline
+    #    colgado seguiría VIVO, así que el cerrojo del Paso 6 haría lo correcto —código 30, no
+    #    prospectar— noche tras noche, y el sistema no parecería averiado: parecería que ya no
+    #    encuentra oportunidades. La red que existe hoy —la reapropiación a las 6 h de
+    #    `TIMEOUT_EJECUCION_HORAS`— NO mata nada: sólo deja arrancar a la corrida siguiente, de
+    #    modo que a las 6 h habría dos pipelines a la vez sobre una base que purga ficheros.
+    #
+    #    El enunciado completo, con las cuatro cosas que hay que decidir, vive en el README,
+    #    sección "Capa 10", Paso 8. Al resolverlo, esta configuración sube a v1.1.0.

@@ -168,10 +168,17 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 **Una sola cuestión abierta, y no bloquea el Paso 7:**
 
 * **Si el pipeline debe tener un tope de duración**, ahora que lo va a lanzar una tarea
-  nocturna sin consola. Uno colgado de madrugada correría indefinidamente. **No se ha
-  inventado ningún plazo** porque la Regla 4 lo prohíbe: procede declararlo en
-  `config/lanzador.yaml` —subiría a v1.1.0— y decidir el número, o razonar por qué no hace
-  falta. Sitio natural: el Paso 8.
+  nocturna sin consola. **No se ha inventado ningún plazo** porque la Regla 4 lo prohíbe.
+  **El enunciado completo está anotado donde toca resolverlo**: en el `README.md`, dentro del
+  **Paso 8** de la Capa 10, con las cuatro cosas que hay que decidir y por qué; y su ausencia
+  queda explicada en el bloque `despertador` de `config/lanzador.yaml`, que es donde alguien
+  buscará el parámetro. **No hace falta traerlo aquí ni resolverlo antes de tiempo.**
+
+  > Lo único que conviene no perder de vista al llegar: un pipeline **colgado** sigue vivo, de
+  > modo que el cerrojo del Paso 6 haría lo correcto —código 30— **noche tras noche**, y el
+  > sistema no parecería averiado sino simplemente vacío de oportunidades. Y la red que hay hoy
+  > —la reapropiación a las 6 h— **no mata nada**: sólo deja arrancar a la corrida siguiente, de
+  > modo que a las 6 h habría dos pipelines a la vez sobre una base que purga ficheros.
 
 **Resueltas el 2026-08-17:**
 
