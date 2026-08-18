@@ -1673,6 +1673,18 @@ usuario y no como proyecto.
    raíz del proyecto— y la cabecera muestra en su lugar un icono genérico de edificio. La
    iconografía es la librería estándar sin criterio propio, y la jerarquía visual es de plantilla:
    todo pesa lo mismo, de modo que nada destaca.
+
+   **Y los títulos de las licitaciones no se pueden leer** *(precisado por dirección el
+   2026-08-18)*. Son **dos problemas distintos con el mismo síntoma**, y conviene no confundirlos:
+
+   * **De presentación**: la tabla recorta a dos líneas en una columna estrecha. Medido sobre los
+     expedientes vivos: mediana de **135 caracteres** y **10 de 15 por encima de 80**, así que casi
+     todo se corta.
+   * **De datos, y es el que no arregla ningún ancho de columna**: el título más largo de la base
+     mide **1.663 caracteres** porque la fuente vuelca el anuncio entero en el campo — el título
+     real son las primeras once palabras y el resto es el cuerpo del acuerdo del pleno. Hace falta
+     **derivar un título legible** —hasta el primer punto, o el objeto del contrato— conservando el
+     texto completo aparte, porque también lo sufren la ficha de detalle y los informes.
 2. **El Funnel ofrece lo que no es su negocio** (H-47). De 19 expedientes vivos, 3 catalanes y 3 de
    Madrid, mientras los 63 servicios activos reales de Incoop están todos en Catalunya. El perfil
    comercial está bien y premia la geografía; lo que no existe es un criterio de **ámbito**.

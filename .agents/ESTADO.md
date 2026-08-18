@@ -117,7 +117,11 @@ impresión:
 1. **El sistema no se parece a Incoop.** La cabecera lleva un icono genérico de edificio en una
    caja con degradado donde debería ir el logo — que ni siquiera vive dentro del frontend: está en
    la raíz del proyecto. La iconografía es la librería estándar sin criterio propio y la jerarquía
-   visual es de plantilla: todo pesa lo mismo, así que nada destaca.
+   visual es de plantilla: todo pesa lo mismo, así que nada destaca. **Y los títulos de las
+   licitaciones no se pueden leer**: la tabla los recorta a dos líneas —mediana de 135 caracteres,
+   10 de 15 por encima de 80— y, sobre todo, **la fuente vuelca el anuncio entero en el campo**:
+   el más largo de la base mide **1.663 caracteres**. Lo segundo no lo arregla ningún ancho de
+   columna; hace falta derivar un título legible y conservar el texto completo aparte.
 2. **El Funnel ofrece lo que no es su negocio** (H-47). Ver la reparación decidida abajo.
 3. **El análisis semántico no se ve.** El motor funciona y está integrado en el pipeline desde la
    Capa 5 —**33 análisis completados y 176 documentos con texto extraído** en la base de hoy—,
