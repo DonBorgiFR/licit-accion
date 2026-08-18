@@ -1654,6 +1654,50 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ---
 
+## 🎨 Bloque 3: Identidad y Foco (revisión funcional con dirección)
+
+* **Estado actual**: 📋 **Apunte de alcance del 2026-08-18, pendiente de plan.** Es la **tarea
+  activa** por decisión de dirección, por delante del Paso 8 de la Capa 10, que queda en pausa.
+  Sin plan validado no se implementa (Reglas 8 y 9).
+
+### 🎯 Objetivo
+
+Que el sistema **se parezca a Incoop y hable de su negocio**. Las nueve capas anteriores se han
+invertido en que el motor sea honesto; ninguna en que el resultado sea reconocible para quien lo
+usa. Se detectó el 2026-08-18, cuando dirección miró por primera vez el sistema terminado como
+usuario y no como proyecto.
+
+### 🔍 Las cuatro carencias detectadas
+
+1. **No se parece a Incoop.** El logo de la cooperativa no está dentro del frontend —vive en la
+   raíz del proyecto— y la cabecera muestra en su lugar un icono genérico de edificio. La
+   iconografía es la librería estándar sin criterio propio, y la jerarquía visual es de plantilla:
+   todo pesa lo mismo, de modo que nada destaca.
+2. **El Funnel ofrece lo que no es su negocio** (H-47). De 19 expedientes vivos, 3 catalanes y 3 de
+   Madrid, mientras los 63 servicios activos reales de Incoop están todos en Catalunya. El perfil
+   comercial está bien y premia la geografía; lo que no existe es un criterio de **ámbito**.
+3. **El análisis semántico no se ve.** Funciona y está integrado desde la Capa 5 —33 análisis
+   completados sobre 176 documentos con texto en la base actual—, pero queda enterrado en la ficha
+   de detalle. Tanto, que dirección llegó a creer que había que ejecutarlo a mano.
+4. **El Centinela y la purga engañan** (H-45 y H-46). *No se reparan aquí*: encajan en el Paso 9 de
+   la Capa 10, que es el que hace hablar a lo que el sistema ya sabe.
+
+### 🧭 Decisión de dirección ya tomada (2026-08-18)
+
+**El ámbito se filtra en la pantalla, con Catalunya por defecto y un interruptor para ver el
+resto.** No se toca la ingesta ni el scoring: así **no se pierde ni un dato y es reversible**.
+Descartado filtrar al ingerir —dejaría fuera una oportunidad legítima sin que nadie la viera— y
+descartado subir el umbral de persistencia, que confundiría el criterio de ámbito con el de calidad
+comercial.
+
+### ⚠️ Lo que este bloque NO es
+
+No es rehacer la Capa 8. El Cockpit funciona, sus datos son correctos y sus pantallas están
+validadas; lo que falta es identidad, jerarquía y foco. Y **no reabre el diseño del motor**: el
+scoring, el perfil y las fuentes se quedan como están salvo que un hallazgo lo exija.
+
+---
+
 ## 🌐 Capa 11: Despliegue en Servidor LAN/Cloud (VPS y Contenedores)
 
 * **Estado actual**: 📋 **Apunte de alcance, anotado el 2026-08-13.** No está diseñada ni pautada,

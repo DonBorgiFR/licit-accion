@@ -91,7 +91,7 @@ arrastra una cuestión abierta de dirección, abajo.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **464/464**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De 44 hallazgos catalogados, 42 están cerrados y **quedan abiertos H-39** —para repararse en el Paso 9 de esta capa— y **H-41**, el crash nativo del pipeline, sin asignar. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13, el Paso 6 el 2026-08-17 y el Paso 7 el 2026-08-18**, tarea activa el **Paso 8**. Desde hoy **el sistema se usa con un doble clic**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **464/464**. **Desde el 2026-08-18 la tarea activa NO es la Capa 10**, que queda en pausa tras su Paso 7: dirección antepuso el **Bloque 3 — Identidad y foco**, y el porqué está justo abajo. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De 44 hallazgos catalogados, 42 están cerrados y **quedan abiertos H-39** —para repararse en el Paso 9 de esta capa— y **H-41**, el crash nativo del pipeline, sin asignar. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13, el Paso 6 el 2026-08-17 y el Paso 7 el 2026-08-18**, tarea activa el **Paso 8**. Desde hoy **el sistema se usa con un doble clic**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -103,7 +103,53 @@ python -m pytest tests/ -q          # debe dar 464/464
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
 
-### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 8
+### ⏭️ Tarea activa: Bloque 3 — Identidad y foco (decisión de dirección del 2026-08-18)
+
+> **La Capa 10 queda abierta y en pausa, con el Paso 8 esperando.** No es un salto de capa
+> encubierto: el doble clic ya funciona de extremo a extremo y la capa no queda a medias en nada
+> que impida usarla. Lo que se antepone es lo que dirección detectó **mirando el sistema
+> terminado**, que es la primera vez que alguien lo mira como usuario y no como proyecto.
+
+**El problema, dicho por dirección:** *"con todo el proyectazo que nos hemos mandado, que se vea
+tan mediocre me disgusta y desmotiva"*. Y detrás de esa frase hay cuatro cosas concretas, no una
+impresión:
+
+1. **El sistema no se parece a Incoop.** La cabecera lleva un icono genérico de edificio en una
+   caja con degradado donde debería ir el logo — que ni siquiera vive dentro del frontend: está en
+   la raíz del proyecto. La iconografía es la librería estándar sin criterio propio y la jerarquía
+   visual es de plantilla: todo pesa lo mismo, así que nada destaca.
+2. **El Funnel ofrece lo que no es su negocio** (H-47). Ver la reparación decidida abajo.
+3. **El análisis semántico no se ve.** El motor funciona y está integrado en el pipeline desde la
+   Capa 5 —**33 análisis completados y 176 documentos con texto extraído** en la base de hoy—,
+   pero el trabajo queda enterrado en la ficha de detalle. Dirección llegó a creer que había que
+   ejecutarlo a mano con un `.py`: eso es la herramienta de inspección, no el motor.
+4. **El Centinela y la purga engañan** (H-45 y H-46), cada uno a su manera.
+
+**Alcance del bloque**: identidad visual y jerarquía de la información, el filtro de ámbito, y
+hacer visible el análisis que ya se hace. **No incluye** H-45 ni H-46, que siguen encajando mejor
+en el Paso 9 de la Capa 10 —son el mismo problema: el sistema sabe cosas que no cuenta—.
+
+> 🔑 **Decisión de dirección del 2026-08-18 sobre el ámbito (H-47): se filtra en la pantalla, con
+> Catalunya por defecto y un interruptor para ver el resto.** No se toca la ingesta ni el scoring.
+> El motivo es que **no se pierde ni un dato y la decisión es reversible**: si algún día interesa
+> mirar fuera de zona, sigue estando todo. Descartado filtrar al ingerir —dejaría fuera una
+> oportunidad legítima sin que nadie llegara a verla— y descartado subir el umbral, que mezclaría
+> el criterio de ámbito con el de calidad comercial.
+
+> 📌 **El material de referencia del negocio, revisado con dirección el 2026-08-18**: la unidad
+> compartida de servicios activos (`G:\Unitats compartides\SERVEIS ACTIUS`, **sólo lectura, es
+> una carpeta sensible**) contiene los **63 servicios vivos** de Incoop. Son escoles bressol,
+> llars d'infants, ludoteques, casals infantils i de barri, dinamització juvenil, acció
+> comunitària, centres de dia i PFI, **todos en Catalunya**. Es la mejor evidencia disponible de
+> qué debería estar persiguiendo el sistema, y con ella se puede por fin rehacer el cruce de CPVs
+> que quedó aplazado el 2026-08-07 esperando datos reales.
+
+**Al terminar el bloque se retoma la Capa 10 por el Paso 8**, con su cuestión abierta del tope de
+duración intacta.
+
+---
+
+### ⏸️ En pausa: Capa 10 — El Lanzador y Despertador, Paso 8
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
