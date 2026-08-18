@@ -38,15 +38,26 @@ import pytest
 import yaml
 
 from src.lanzador import (
+    APAGADO_INCOMPLETO,
     CONFIGURACION_INVALIDA,
     ERROR_NO_PREVISTO,
+    EXITO,
+    NOMBRE_PERFIL_COCKPIT,
+    SERVIDOR_NO_RESPONDE,
+    ApagadoIncompleto,
+    AperturaCockpit,
     ConfiguracionLanzadorInvalida,
     EstadoCerrojo,
     EstadoPuerto,
     HEALTHCHECK_INSATISFACTORIO,
+    ModoApertura,
+    ModoInvocacion,
     PIPELINE_FALLIDO,
     PIPELINE_OMITIDO,
     PUERTO_OCUPADO_AJENO,
+    ServidorNoRespondio,
+    _degradar,
+    abrir_cockpit,
     avisar_fallo_fatal,
     cargar_configuracion,
     comprobar_arranque,
@@ -55,6 +66,9 @@ from src.lanzador import (
     es_sesion_interactiva,
     estado_del_puerto,
     inspeccionar_cerrojo,
+    localizar_navegador,
+    main,
+    orquestar,
     prospectar,
     registrar_evento_lanzador,
 )
@@ -1059,3 +1073,788 @@ def test_inspeccionar_funciona_sobre_la_ruta_por_defecto_sin_inyectar_nada():
 
     assert isinstance(diagnostico.estado, EstadoCerrojo)
     assert diagnostico.detalle
+
+
+# ==============================================================================
+# 6. Paso 7 — el orquestador, la ventana y el doble clic
+# ==============================================================================
+#
+# Aquí se prueban tres cosas que no se prueban solas:
+#
+# · **Que el modo del despertador no toca una sola pieza gráfica.** Es la invariante central
+#   vista desde el orquestador, y su fallo no se manifiesta como excepción sino como un
+#   proceso que no termina nunca, de madrugada y sin nadie mirando.
+#
+# · **Que sólo se apaga lo que encendió esta invocación**, y que el apagado espera a que se
+#   cierre la ventana en vez de adivinar cuándo ha terminado el trabajo.
+#
+# · **Que al modo «sólo pipeline» no se le exige lo que no usa.** Un bundle sin compilar o un
+#   puerto ocupado por un tercero no pueden costar una noche entera sin prospectar: la
+#   prospección habla con SQLite y no necesita ni pantalla ni puerto.
+
+
+def _config_orquestar(tmp_path, transformar=None, puerto=None):
+    """Configuración válida con puerto propio: ninguna prueba se acerca al 8000 real."""
+    elegido = puerto or _puerto_libre()
+
+    def ajustar(lanzador):
+        lanzador["servidor"]["puerto"] = elegido
+        if transformar:
+            transformar(lanzador)
+
+    return _escribir_config(tmp_path, ajustar), elegido
+
+
+def _registro(tmp_path):
+    return str(tmp_path / "pipeline.jsonl")
+
+
+# --- El healthcheck manda, y lo que no se usa no se exige ------------------------------
+
+def test_un_healthcheck_insatisfactorio_no_arranca_absolutamente_nada(tmp_path):
+    """Transición prohibida nº 1. Arrancar sobre un entorno que no cumple cambia un
+    diagnóstico preciso por un fallo confuso diez segundos después."""
+    ruta_config, _ = _config_orquestar(tmp_path, lambda l: l["servidor"].update({"puerto": 70000}))
+    db = str(tmp_path / "licitaciones.db")
+
+    with patch("src.lanzador.arrancar_servidor") as arrancar, \
+         patch("src.lanzador.abrir_cockpit") as abrir, \
+         patch("src.lanzador.prospectar") as prospectar_falso, \
+         patch("src.lanzador.es_sesion_interactiva", return_value=False):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == CONFIGURACION_INVALIDA
+    arrancar.assert_not_called()
+    abrir.assert_not_called()
+    prospectar_falso.assert_not_called()
+
+    acciones = _acciones_registradas(_registro(tmp_path))
+    assert "LANZADOR_HEALTHCHECK_FALLIDO" in acciones
+    assert "LANZADOR_DEGRADADO" in acciones
+    assert "LANZADOR_INICIADO" not in acciones
+
+
+def test_al_modo_pipeline_no_se_le_exige_bundle_ni_puerto(tmp_path):
+    """**La noche que no se prospectó por culpa de una pantalla que nadie iba a mirar.**
+
+    Prospectar no sirve el Cockpit ni abre puerto: exigirle un bundle compilado o un puerto
+    libre convertiría un requisito ajeno en una avería nocturna, y el Programador de tareas
+    registraría un 10 o un 20 incomprensibles.
+    """
+    db = _base_lista(tmp_path)
+    inexistente = str(tmp_path / "bundle_que_no_existe")
+
+    with _servidor_ajeno() as puerto_ocupado:
+        ruta_config, _ = _config_orquestar(
+            tmp_path,
+            lambda l: l["cockpit"].update({"ruta_bundle": inexistente}),
+            puerto=puerto_ocupado,
+        )
+        with patch("src.lanzador.prospectar", return_value=EXITO) as prospectar_falso, \
+             patch("src.lanzador.arrancar_servidor") as arrancar:
+            codigo = orquestar(ModoInvocacion.PIPELINE, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    prospectar_falso.assert_called_once()
+    arrancar.assert_not_called()
+
+
+def test_al_modo_completo_si_se_le_exige_el_bundle(tmp_path):
+    """La otra mitad: sin Cockpit compilado, el modo que lo sirve no puede arrancar. Si sólo
+    se relajara la exigencia, el doble clic abriría una ventana sobre un 503."""
+    db = _base_lista(tmp_path)
+    inexistente = str(tmp_path / "bundle_que_no_existe")
+    ruta_config, _ = _config_orquestar(
+        tmp_path, lambda l: l["cockpit"].update({"ruta_bundle": inexistente})
+    )
+
+    with patch("src.lanzador.arrancar_servidor") as arrancar, \
+         patch("src.lanzador.es_sesion_interactiva", return_value=False):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == HEALTHCHECK_INSATISFACTORIO
+    arrancar.assert_not_called()
+
+
+# --- El puerto: reutilizar, detenerse, y no matar lo ajeno -----------------------------
+
+def test_un_puerto_ocupado_por_un_tercero_detiene_el_arranque_y_consta(tmp_path):
+    db = _base_lista(tmp_path)
+    with _servidor_ajeno() as puerto:
+        ruta_config, _ = _config_orquestar(tmp_path, puerto=puerto)
+        with patch("src.lanzador.arrancar_servidor") as arrancar, \
+             patch("src.lanzador.es_sesion_interactiva", return_value=False):
+            codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == PUERTO_OCUPADO_AJENO
+    arrancar.assert_not_called()
+    assert "LANZADOR_PUERTO_OCUPADO_AJENO" in _acciones_registradas(_registro(tmp_path))
+
+
+def test_una_api_propia_viva_se_reutiliza_y_no_se_apaga_al_terminar(tmp_path):
+    """Transición prohibida nº 4. Si la API ya estaba —alguien la lanzó a mano para
+    desarrollar—, esta invocación la usa pero **no la mata**."""
+    db = _base_lista(tmp_path)
+    with _servidor_health("ok", 200) as puerto:
+        ruta_config, _ = _config_orquestar(tmp_path, puerto=puerto)
+        with patch("src.lanzador.arrancar_servidor") as arrancar, \
+             patch("src.lanzador.apagar_servidor") as apagar, \
+             patch("src.lanzador.abrir_cockpit",
+                   return_value=AperturaCockpit(ModoApertura.OMITIDA_SIN_ESCRITORIO)), \
+             patch("src.lanzador.prospectar", return_value=EXITO):
+            codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    arrancar.assert_not_called()
+    apagar.assert_not_called()
+    assert "LANZADOR_PUERTO_REUTILIZADO" in _acciones_registradas(_registro(tmp_path))
+
+
+def test_si_la_api_propia_no_responde_a_tiempo_no_se_abre_nada(tmp_path):
+    """Se informa en vez de abrir un navegador sobre nada (Operación 2 del contrato)."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor", side_effect=ServidorNoRespondio("no contestó")), \
+         patch("src.lanzador.abrir_cockpit") as abrir, \
+         patch("src.lanzador.prospectar") as prospectar_falso:
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == SERVIDOR_NO_RESPONDE
+    abrir.assert_not_called()
+    prospectar_falso.assert_not_called()
+    assert "LANZADOR_DEGRADADO" in _acciones_registradas(_registro(tmp_path))
+
+
+# --- El modo del despertador no toca nada gráfico ---------------------------------------
+
+def test_el_modo_pipeline_no_levanta_servidor_ni_abre_ventana(tmp_path):
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor") as arrancar, \
+         patch("src.lanzador.apagar_servidor") as apagar, \
+         patch("src.lanzador.abrir_cockpit") as abrir, \
+         patch("src.lanzador.prospectar", return_value=EXITO) as prospectar_falso:
+        codigo = orquestar(ModoInvocacion.PIPELINE, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    arrancar.assert_not_called()
+    apagar.assert_not_called()
+    abrir.assert_not_called()
+    prospectar_falso.assert_called_once()
+
+
+def test_el_modo_cockpit_no_prospecta(tmp_path):
+    """Abrir la pantalla no puede disparar un proceso que archiva y purga ficheros."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor"), \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.OMITIDA_SIN_ESCRITORIO)), \
+         patch("src.lanzador.prospectar") as prospectar_falso:
+        codigo = orquestar(ModoInvocacion.COCKPIT, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    prospectar_falso.assert_not_called()
+
+
+# --- La apertura del Cockpit -------------------------------------------------------------
+
+def test_sin_sesion_interactiva_no_se_abre_el_cockpit_y_queda_la_huella(tmp_path):
+    """Sin `LANZADOR_GUI_OMITIDA`, "no salió ninguna ventana en Session 0" es
+    indistinguible de "no hubo nada que abrir"."""
+    ruta_config, _ = _config_orquestar(tmp_path)
+    config = cargar_configuracion(ruta_config)
+    db = str(tmp_path / "licitaciones.db")
+
+    with patch("src.lanzador.es_sesion_interactiva", return_value=False), \
+         patch("subprocess.Popen") as popen:
+        apertura = abrir_cockpit(config, db_path=db)
+
+    assert apertura.modo is ModoApertura.OMITIDA_SIN_ESCRITORIO
+    assert apertura.hay_ventana_vigilable is False
+    popen.assert_not_called()
+    assert "LANZADOR_GUI_OMITIDA" in _acciones_registradas(_registro(tmp_path))
+
+
+def test_la_preferencia_de_no_abrir_no_se_disfraza_de_invariante(tmp_path):
+    """`abrir_navegador: false` es una preferencia declarada, no la invariante actuando. Si
+    emitiera el mismo evento, `LANZADOR_GUI_OMITIDA` dejaría de servir para auditarla."""
+    ruta_config, _ = _config_orquestar(
+        tmp_path, lambda l: l["cockpit"].update({"abrir_navegador": False})
+    )
+    config = cargar_configuracion(ruta_config)
+    db = str(tmp_path / "licitaciones.db")
+
+    with patch("src.lanzador.es_sesion_interactiva", return_value=True), \
+         patch("subprocess.Popen") as popen:
+        apertura = abrir_cockpit(config, db_path=db)
+
+    assert apertura.modo is ModoApertura.OMITIDA_POR_CONFIGURACION
+    popen.assert_not_called()
+    assert "LANZADOR_GUI_OMITIDA" not in _acciones_registradas(_registro(tmp_path))
+
+
+def test_el_cockpit_se_abre_en_modo_aplicacion_y_con_perfil_propio(tmp_path):
+    """El perfil propio es lo que hace fiable el apagado: **medido el 2026-08-18**, con una
+    instancia previa del mismo perfil el proceso nuevo delega y muere en 0,2 s, y el
+    lanzador lo leería como que han cerrado el Cockpit."""
+    ruta_config, puerto = _config_orquestar(tmp_path)
+    config = cargar_configuracion(ruta_config)
+    db = str(tmp_path / "licitaciones.db")
+
+    with patch("src.lanzador.es_sesion_interactiva", return_value=True), \
+         patch("subprocess.Popen") as popen:
+        apertura = abrir_cockpit(config, db_path=db, localizador=lambda: r"C:\falso\chrome.exe")
+
+    assert apertura.modo is ModoApertura.APLICACION
+    assert apertura.hay_ventana_vigilable is True
+    orden = popen.call_args[0][0]
+    assert orden[0] == r"C:\falso\chrome.exe"
+    assert f"--app=http://127.0.0.1:{puerto}/" in orden
+    assert any(a.startswith("--user-data-dir=") and NOMBRE_PERFIL_COCKPIT in a for a in orden)
+
+
+def test_sin_chrome_ni_edge_se_abre_igual_en_el_navegador_por_defecto(tmp_path):
+    """Degradar la apariencia es aceptable; no abrir nada, no."""
+    ruta_config, puerto = _config_orquestar(tmp_path)
+    config = cargar_configuracion(ruta_config)
+    db = str(tmp_path / "licitaciones.db")
+
+    with patch("src.lanzador.es_sesion_interactiva", return_value=True), \
+         patch("webbrowser.open") as abrir_por_defecto:
+        apertura = abrir_cockpit(config, db_path=db, localizador=lambda: None)
+
+    assert apertura.modo is ModoApertura.NAVEGADOR_POR_DEFECTO
+    assert apertura.hay_ventana_vigilable is False
+    assert apertura.hay_ventana_sin_vigilar is True
+    abrir_por_defecto.assert_called_once_with(f"http://127.0.0.1:{puerto}/")
+
+
+def test_el_localizador_real_no_inventa_navegadores(tmp_path):
+    """Convención C4: la ruta real, sin inyectar. O devuelve un ejecutable que existe, o
+    devuelve `None`; lo que no puede es devolver una ruta imaginaria."""
+    ruta = localizar_navegador()
+    assert ruta is None or os.path.isfile(ruta)
+
+
+# --- El apagado: sólo lo mío, y sin interrumpir nada -------------------------------------
+
+def test_se_espera_a_que_se_cierre_la_ventana_antes_de_apagar(tmp_path):
+    """El trabajo del modo completo lo termina una persona cerrando una ventana, no un
+    plazo. Y el orden importa: apagar antes de esperar dejaría el Cockpit muerto en
+    pantalla."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+    sucesos = []
+
+    ventana = MagicMock()
+    ventana.wait.side_effect = lambda: sucesos.append("ventana_cerrada")
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor",
+               side_effect=lambda *a, **k: sucesos.append("apagado")), \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.APLICACION, ventana)), \
+         patch("src.lanzador.prospectar",
+               side_effect=lambda *a, **k: sucesos.append("prospeccion") or EXITO):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    # La prospección termina antes de que el apagado pueda tocar nada: el pipeline borra
+    # ficheros antes de tocar la base, así que matarlo a mitad deja el fichero fuera y la
+    # fila sin marcar.
+    assert sucesos == ["prospeccion", "ventana_cerrada", "apagado"]
+
+
+def test_una_ventana_que_no_podemos_vigilar_no_se_apaga_a_ciegas(tmp_path):
+    """Con el navegador por defecto hay ventana abierta y ningún proceso al que esperar.
+    Apagar sería cerrarle el Cockpit en las narices a quien lo está mirando."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor") as apagar, \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.NAVEGADOR_POR_DEFECTO,
+                                            detalle="no se encontró Chrome ni Edge")), \
+         patch("src.lanzador.prospectar", return_value=EXITO):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    apagar.assert_not_called()
+    assert "LANZADOR_APAGADO_DIFERIDO" in _acciones_registradas(_registro(tmp_path))
+
+
+def test_sin_ninguna_ventana_abierta_el_servidor_se_apaga_en_cuanto_acaba(tmp_path):
+    """Nadie mirando, nada que esperar: el ciclo se cierra y el equipo queda como estaba."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor") as apagar, \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.OMITIDA_SIN_ESCRITORIO)), \
+         patch("src.lanzador.prospectar", return_value=EXITO):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == EXITO
+    apagar.assert_called_once()
+
+
+def test_un_apagado_incompleto_sale_con_su_propio_codigo(tmp_path):
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor", side_effect=ApagadoIncompleto("sigue vivo")), \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.OMITIDA_SIN_ESCRITORIO)), \
+         patch("src.lanzador.prospectar", return_value=EXITO):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == APAGADO_INCOMPLETO
+
+
+# --- Los códigos de salida dicen la verdad ----------------------------------------------
+
+def test_ninguna_terminacion_degradada_puede_salir_con_cero(tmp_path):
+    """Transición prohibida nº 5, comprobada sobre la función que la implementa: aunque se
+    la llame con un cero, no hay forma de salir de `DEGRADADO` con éxito."""
+    db = str(tmp_path / "licitaciones.db")
+    assert _degradar(EXITO, "una causa cualquiera", db) == ERROR_NO_PREVISTO
+    assert _degradar(PIPELINE_FALLIDO, "otra causa", db) == PIPELINE_FALLIDO
+    assert "LANZADOR_DEGRADADO" in _acciones_registradas(_registro(tmp_path))
+
+
+def test_la_omision_deliberada_no_es_una_degradacion(tmp_path):
+    """El `30` no es una avería: es la protección funcionando. Registrarlo como degradado
+    confundiría "no prospecté porque ya había una corrida" con "no pude prospectar"."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+
+    with patch("src.lanzador.prospectar", return_value=PIPELINE_OMITIDO):
+        codigo = orquestar(ModoInvocacion.PIPELINE, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == PIPELINE_OMITIDO
+    assert "LANZADOR_DEGRADADO" not in _acciones_registradas(_registro(tmp_path))
+
+
+def test_una_prospeccion_fallida_no_le_cierra_el_cockpit_a_nadie(tmp_path):
+    """Decisión de dirección del 2026-08-13: negarle a alguien los datos de ayer porque la
+    prospección de hoy falló convierte un fallo parcial en una avería total."""
+    db = _base_lista(tmp_path)
+    ruta_config, _ = _config_orquestar(tmp_path)
+    ventana = MagicMock()
+
+    with patch("src.lanzador.arrancar_servidor"), \
+         patch("src.lanzador.apagar_servidor"), \
+         patch("src.lanzador.abrir_cockpit",
+               return_value=AperturaCockpit(ModoApertura.APLICACION, ventana)) as abrir, \
+         patch("src.lanzador.prospectar", return_value=PIPELINE_FALLIDO):
+        codigo = orquestar(ModoInvocacion.COMPLETO, ruta_config=ruta_config, db_path=db)
+
+    assert codigo == PIPELINE_FALLIDO
+    abrir.assert_called_once()
+    ventana.wait.assert_called_once()
+
+
+# --- La consola de mando ------------------------------------------------------------------
+
+def test_la_cli_ofrece_exactamente_los_tres_modos_del_contrato():
+    with patch("src.lanzador.orquestar", return_value=EXITO) as orquestado:
+        for modo in ("completo", "pipeline", "cockpit"):
+            assert main(["--modo", modo]) == EXITO
+            assert orquestado.call_args[0][0] is ModoInvocacion(modo)
+
+    with pytest.raises(SystemExit):
+        main(["--modo", "inventado"])
+
+
+def test_sin_argumentos_el_doble_clic_hace_el_modo_completo():
+    with patch("src.lanzador.orquestar", return_value=EXITO) as orquestado:
+        main([])
+    assert orquestado.call_args[0][0] is ModoInvocacion.COMPLETO
+
+
+def test_un_error_no_previsto_sale_con_uno_y_deja_constancia(tmp_path):
+    """El `1` está reservado a lo que el contrato no anticipó, y eso es información."""
+    with patch("src.lanzador.orquestar", side_effect=RuntimeError("algo inesperado")), \
+         patch("src.lanzador.es_sesion_interactiva", return_value=False), \
+         patch("src.lanzador.registrar_evento_lanzador") as registrado:
+        codigo = main(["--modo", "pipeline"])
+
+    assert codigo == ERROR_NO_PREVISTO
+    acciones = [llamada[0][0] for llamada in registrado.call_args_list]
+    assert "LANZADOR_DEGRADADO" in acciones
+    assert "LANZADOR_GUI_OMITIDA" in acciones
+
+
+# --- La auditoría de la invariante, con la lista en la mano -------------------------------
+
+def test_ninguna_llamada_grafica_vive_fuera_de_las_dos_funciones_que_comprueban_la_sesion():
+    """**La prueba que el contrato pedía y no existía.**
+
+    La invariante central dice que *toda* llamada gráfica pasa por `es_sesion_interactiva()`,
+    y añade que su virtud es poder auditarse recorriendo el código con una lista en la mano.
+    Esto es esa lista, automatizada: si alguien añade mañana un diálogo o una ventana en
+    cualquier otro punto del módulo, la prueba lo señala. Sin ella, el fallo sólo aparecería
+    de madrugada, en la Session 0, como un proceso que no termina nunca.
+    """
+    import ast
+
+    fuente = open(os.path.join("src", "lanzador.py"), encoding="utf-8").read()
+    arbol = ast.parse(fuente)
+
+    funciones = [n for n in ast.walk(arbol)
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+    def dueña_de(numero_linea):
+        candidatas = [f for f in funciones if f.lineno <= numero_linea <= (f.end_lineno or f.lineno)]
+        return min(candidatas, key=lambda f: (f.end_lineno or f.lineno) - f.lineno).name if candidatas else None
+
+    permitidas = {
+        "MessageBoxW": "avisar_fallo_fatal",   # el diálogo nativo de fallo fatal
+        "webbrowser": "abrir_cockpit",         # la caída al navegador por defecto
+        "--app=": "abrir_cockpit",             # la ventana en modo aplicación
+    }
+
+    for numero, linea in enumerate(fuente.splitlines(), start=1):
+        if linea.lstrip().startswith("#") or ":" == linea.strip()[:1]:
+            continue  # los comentarios documentan la invariante, no la ejercen
+        for marca, funcion_permitida in permitidas.items():
+            if marca in linea:
+                assert dueña_de(numero) == funcion_permitida, (
+                    f"llamada gráfica «{marca}» en la línea {numero}, dentro de "
+                    f"«{dueña_de(numero)}»: la invariante central exige que viva en "
+                    f"«{funcion_permitida}», que es la que comprueba la sesión"
+                )
+
+    # Y las dos funciones permitidas comprueban de verdad la sesión, en vez de confiar en
+    # que el llamador lo haya hecho por ellas.
+    for nombre in ("avisar_fallo_fatal", "abrir_cockpit"):
+        cuerpo = next(f for f in funciones if f.name == nombre)
+        texto = ast.get_source_segment(fuente, cuerpo) or ""
+        assert "es_sesion_interactiva()" in texto, (
+            f"«{nombre}» realiza llamadas gráficas sin consultar la sesión"
+        )
+
+
+# ==============================================================================
+# 7. Paso 7 — la lanzadera silenciosa y los accesos directos
+# ==============================================================================
+#
+# `Incoop.vbs` **no se puede probar con la suite**: VBScript no se ejecuta desde pytest y su
+# comportamiento depende del intérprete de Windows. Lo que sí se puede comprobar —y es donde
+# de verdad se rompería— es que el fichero siga siendo una puerta y no se haya llenado de
+# lógica, que no lleve rutas absolutas grabadas y que no contenga más de un diálogo. Un
+# segundo `MsgBox` que alguien añada con buena intención es un proceso colgado para siempre
+# la noche en que el despertador lo invoque por error.
+
+RUTA_LANZADERA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "Incoop.vbs")
+
+
+def _fuente_lanzadera() -> str:
+    with open(RUTA_LANZADERA, "rb") as fichero:
+        crudo = fichero.read()
+    # Se decodifica como ASCII estricto a propósito: ver la prueba de abajo.
+    return crudo.decode("ascii")
+
+
+def test_la_lanzadera_invoca_el_orquestador_y_nada_mas():
+    """Toda la lógica vive en Python. Si esto empieza a crecer, la capa pierde su red."""
+    fuente = _fuente_lanzadera()
+    assert "-m src.lanzador --modo " in fuente
+    assert "pythonw.exe" in fuente          # sin consola, no sólo con la ventana oculta
+    assert "shell.CurrentDirectory = raiz"  in fuente
+
+    codigo = [l for l in fuente.splitlines()
+              if l.strip() and not l.strip().startswith("'")]
+    assert len(codigo) < 40, "la lanzadera está acumulando lógica que debería vivir en Python"
+
+
+def test_la_lanzadera_no_lleva_ninguna_ruta_absoluta_grabada():
+    """Lección de H-18: el directorio de trabajo de un acceso directo no es el que uno cree,
+    y una ruta grabada a fuego convierte una copia del proyecto en una copia rota."""
+    fuente = _fuente_lanzadera()
+    assert ":\\" not in fuente.replace("C:\\Windows", ""), "hay una ruta absoluta grabada"
+    assert "WScript.ScriptFullName" in fuente, "la raíz debe deducirse del propio fichero"
+
+
+def test_la_lanzadera_tiene_un_solo_dialogo_y_solo_para_lo_que_python_no_puede_avisar():
+    """El único fallo del que Python no puede avisar es no haber podido arrancar Python."""
+    # Sólo el código: los comentarios explican por qué existe ese diálogo, y contarlos como
+    # llamadas haría que documentar la decisión rompiera la prueba que la protege.
+    codigo = [l for l in _fuente_lanzadera().splitlines() if not l.strip().startswith("'")]
+    con_dialogo = [i for i, l in enumerate(codigo) if "MsgBox" in l]
+    assert len(con_dialogo) == 1
+
+    anteriores = [l for l in codigo[:con_dialogo[0]] if l.strip()]
+    assert anteriores[-1].strip() == "If Err.Number <> 0 Then", (
+        "el diálogo debe estar dentro de la comprobación de error del arranque"
+    )
+
+
+def test_la_lanzadera_es_ascii_puro():
+    """Un `.vbs` en UTF-8 sin BOM enseña los acentos rotos en el `MsgBox`, y con BOM algunos
+    motores de Windows se atragantan. En el único sitio donde el sistema habla antes de que
+    exista Python, el texto tiene que leerse bien sí o sí."""
+    _fuente_lanzadera()  # decodifica como ASCII estricto: si hay un acento, revienta aquí
+
+
+def test_el_despertador_no_pasa_por_la_lanzadera():
+    """El modo «sólo pipeline» corre en la Session 0, donde el `MsgBox` de la lanzadera
+    esperaría para siempre. El Paso 8 invocará Python directamente, y esto lo deja fijado."""
+    assert "pipeline" not in _fuente_lanzadera()
+
+
+def test_no_existe_acceso_directo_para_el_modo_pipeline():
+    """Un icono que dispara un proceso que archiva y purga ficheros **sin abrir nada en
+    pantalla** es una escopeta cargada encima de la mesa."""
+    from tools.crear_accesos_directos import ACCESOS
+
+    assert {modo for _, modo, _ in ACCESOS} == {"completo", "cockpit"}
+
+
+def test_los_accesos_directos_se_crean_de_verdad_y_repetirlo_no_los_duplica(tmp_path):
+    """Convención C4: se ejecuta `cscript` de verdad sobre una carpeta temporal, en vez de
+    comprobar que generamos el texto que creemos. El fichero `.lnk` es binario y lo escribe
+    Windows: o se crea o no se crea."""
+    from tools.crear_accesos_directos import alta, baja, estado
+
+    carpeta = str(tmp_path / "accesos")
+    os.makedirs(carpeta)
+
+    creados, _ = alta([carpeta])
+    assert len(creados) == 2
+    assert all(os.path.isfile(ruta) for ruta in creados)
+
+    alta([carpeta])  # idempotente: dar de alta dos veces no deja cuatro iconos
+    assert len(os.listdir(carpeta)) == 2
+    assert all(existe for _, existe in estado([carpeta]))
+
+    retirados = baja([carpeta])
+    assert len(retirados) == 2
+    assert os.listdir(carpeta) == []
+
+
+def test_cada_acceso_directo_invoca_su_propio_modo(tmp_path):
+    """Que los dos iconos existan no basta: el secundario tiene que abrir el Cockpit **sin**
+    prospectar, o serían el mismo botón pintado dos veces."""
+    from tools.crear_accesos_directos import alta
+
+    carpeta = str(tmp_path / "accesos")
+    os.makedirs(carpeta)
+    creados, _ = alta([carpeta])
+
+    # Windows guarda las cadenas del `.lnk` en UTF-16: se lee el fichero real, no la orden
+    # que creímos darle.
+    contenidos = {}
+    for ruta in creados:
+        with open(ruta, "rb") as fichero:
+            contenidos[os.path.basename(ruta)] = fichero.read()
+
+    completo = contenidos["Incoop.lnk"]
+    cockpit = contenidos["Incoop (solo Cockpit).lnk"]
+    assert "completo".encode("utf-16-le") in completo
+    assert "cockpit".encode("utf-16-le") in cockpit
+    assert "completo".encode("utf-16-le") not in cockpit
+
+
+def test_no_se_crea_un_acceso_directo_que_apunte_a_nada(tmp_path, monkeypatch):
+    """Un acceso roto es peor que ninguno: el fallo aparece al hacer doble clic, que es el
+    único momento en que no hay nadie experto delante."""
+    import tools.crear_accesos_directos as accesos
+
+    monkeypatch.setattr(accesos, "NOMBRE_LANZADERA", "Incoop_que_no_existe.vbs")
+    with pytest.raises(FileNotFoundError):
+        accesos.alta([str(tmp_path)])
+
+
+def test_el_icono_se_genera_con_el_fondo_vaciado(tmp_path):
+    """El logo de origen tiene fondo blanco opaco, que en el escritorio se vería como un
+    azulejo blanco. Y un `.ico` de un solo tamaño lo reescala Windows, mal."""
+    from PIL import Image
+
+    from tools.crear_accesos_directos import TAMANOS_ICONO, generar_icono
+
+    destino = str(tmp_path / "prueba.ico")
+    generar_icono(destino=destino)
+
+    with Image.open(destino) as icono:
+        assert sorted(icono.info["sizes"]) == sorted(TAMANOS_ICONO)
+        icono.size = (256, 256)
+        esquina = icono.convert("RGBA").getpixel((0, 0))
+    assert esquina[3] == 0, "la esquina debería ser transparente, no blanca"
+
+
+# ==============================================================================
+# 8. H-43 — Un `RUNNING` no dice si hay alguien prospectando
+# ==============================================================================
+#
+# Descubierto el 2026-08-18 mirando la pantalla, no el código: el indicador nuevo anunciaba
+# «Prospección en curso» sobre la corrida que quedó sin cerrar el 2026-08-17, cuyo proceso
+# murió hace un día. La fila `RUNNING` se queda igual cuando una corrida muere a mitad, así
+# que servir el estado a secas convierte un cadáver en un badge girando para siempre. Es la
+# familia de H-21: no rompe nada, miente en pantalla.
+#
+# La reparación no añade criterio: publica el que ya existía en `motivo_ejecucion_huerfana()`,
+# que es con el que el cerrojo de ejecución decide si puede arrancar (esquema v8, H-40). **Un
+# solo juicio y no dos**, o el lanzador y la pantalla acabarían contando cosas distintas del
+# mismo hecho.
+
+def test_una_corrida_cuyo_dueno_murio_no_se_sirve_como_en_curso(tmp_path):
+    db = _base_lista(tmp_path)
+    _sembrar_corrida(db, estado="RUNNING", pid=PID_MUERTO, instante="123456789")
+
+    items, _ = Memoria(db_path=db).listar_ejecuciones(1, 5)
+
+    assert items[0]["estado"] == "RUNNING"
+    assert items[0]["duenyo_vivo"] is False
+
+
+def test_una_corrida_viva_si_se_sirve_como_en_curso(tmp_path):
+    """La otra mitad. Sin ella, la reparación podría consistir en no decir nunca «en curso»,
+    que taparía el defecto en vez de arreglarlo."""
+    db = _base_lista(tmp_path)
+    yo = os.getpid()
+    _sembrar_corrida(db, estado="RUNNING", pid=yo, instante=str(instante_creacion_proceso(yo)))
+
+    items, _ = Memoria(db_path=db).listar_ejecuciones(1, 5)
+
+    assert items[0]["duenyo_vivo"] is True
+
+
+def test_una_fila_sin_pid_no_afirma_nada(tmp_path):
+    """Las corridas anteriores al esquema v8 no anotaban dueño. Decir «interrumpida» sobre
+    ellas sería inventar, y decir «en curso» también: se responde *no se puede saber*."""
+    db = _base_lista(tmp_path)
+    _sembrar_corrida(db, estado="RUNNING", pid=None, instante=None)
+
+    items, _ = Memoria(db_path=db).listar_ejecuciones(1, 5)
+
+    assert items[0]["duenyo_vivo"] is None
+
+
+def test_una_corrida_terminada_no_habla_de_dueños(tmp_path):
+    db = _base_lista(tmp_path)
+    _sembrar_corrida(db, estado="COMPLETED", pid=PID_MUERTO, instante="123456789")
+
+    items, _ = Memoria(db_path=db).listar_ejecuciones(1, 5)
+
+    assert items[0]["duenyo_vivo"] is None
+
+
+def test_el_endpoint_de_ejecuciones_publica_el_juicio(tmp_path, monkeypatch):
+    """De nada sirve que la base lo sepa si el contrato de la API no lo transporta: el
+    Cockpit lee JSON, no SQLite."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    db = _base_lista(tmp_path)
+    monkeypatch.setenv("DB_PATH_INCOOP", db)
+    _sembrar_corrida(db, estado="RUNNING", pid=PID_MUERTO, instante="123456789")
+
+    respuesta = TestClient(app).get("/api/v1/admin/ejecuciones?page=1&limit=5")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["items"][0]["duenyo_vivo"] is False
+
+
+# ==============================================================================
+# 9. H-44 — Preguntar por PID cuando el hijo es tuyo
+# ==============================================================================
+#
+# Descubierto el 2026-08-18 haciendo doble clic dos veces: las dos sesiones terminaron con
+# `LANZADOR_APAGADO_INCOMPLETO` y código 40 sobre un servidor que **sí había muerto** —el
+# puerto quedaba libre en dos segundos y el proceso ya no existía—. Un lanzador que informa
+# de una avería inexistente al final de cada sesión enseña a no creerse sus códigos de
+# salida, que es exactamente lo contrario de para lo que existen (Consideración 11).
+#
+# La reparación no cambia la escalera de apagado: cambia **a quién se le pregunta si el
+# proceso murió**. `Popen.poll()` consulta el handle que el lanzador ya tiene sobre su hijo;
+# `OpenProcess` puede seguir contestando sobre un difunto mientras alguien conserve un handle
+# abierto, que es el aviso que `src/proceso.py` lleva anotado desde el Paso 6.
+#
+# De paso quedó medido que **el nivel 2 no existe sin consola**: lanzado desde el `.vbs` con
+# `pythonw.exe`, `CTRL_BREAK_EVENT` falla con WinError 6. La escalera real del doble clic
+# tiene dos peldaños, no tres.
+
+def _marca_de_prueba(pid, instante="123456789"):
+    from src.lanzador import MarcaServidor
+
+    return MarcaServidor(pid=pid, instante_creacion=instante, host="127.0.0.1",
+                         puerto=8000, testigo="x", iniciado_at="2026-08-18T00:00:00Z")
+
+
+def test_el_supervisor_pregunta_al_hijo_propio_y_no_al_sistema(monkeypatch):
+    """El caso exacto del falso 40: el hijo ya terminó y el sistema todavía dice que vive."""
+    import src.lanzador as lanzador
+
+    hijo = MagicMock()
+    hijo.pid = 4321
+    hijo.poll.return_value = 0  # ha terminado
+
+    monkeypatch.setattr(lanzador, "_PROCESO_SERVIDOR", hijo)
+    monkeypatch.setattr(lanzador, "es_nuestro_proceso", lambda *a, **k: True)
+
+    assert lanzador._vive_el_servidor(_marca_de_prueba(4321)) is False
+
+
+def test_mientras_el_hijo_no_ha_terminado_se_le_cree_igual(monkeypatch):
+    """La otra mitad: si la reparación contestara siempre «muerto», el apagado dejaría de
+    verificar nada y el nivel 1 parecería funcionar siempre."""
+    import src.lanzador as lanzador
+
+    hijo = MagicMock()
+    hijo.pid = 4321
+    hijo.poll.return_value = None  # sigue corriendo
+
+    monkeypatch.setattr(lanzador, "_PROCESO_SERVIDOR", hijo)
+    monkeypatch.setattr(lanzador, "es_nuestro_proceso", lambda *a, **k: False)
+
+    assert lanzador._vive_el_servidor(_marca_de_prueba(4321)) is True
+
+
+def test_de_un_servidor_que_no_engendramos_se_sigue_preguntando_por_pid(monkeypatch):
+    """Cuando la marca la dejó otra invocación no hay hijo al que preguntar, y entonces el
+    PID con su instante de creación es lo correcto: quien pregunta desde fuera sí ve morir."""
+    import src.lanzador as lanzador
+
+    ajeno = MagicMock()
+    ajeno.pid = 1111
+    ajeno.poll.return_value = 0
+
+    monkeypatch.setattr(lanzador, "_PROCESO_SERVIDOR", ajeno)
+    consultas = []
+    monkeypatch.setattr(lanzador, "es_nuestro_proceso",
+                        lambda pid, instante: consultas.append(pid) or True)
+
+    assert lanzador._vive_el_servidor(_marca_de_prueba(2222)) is True
+    assert consultas == [2222], "con otro PID debe caer a la comprobación del sistema"
+
+
+def test_el_apagado_se_olvida_del_hijo_al_terminar(tmp_path, monkeypatch):
+    """Sin esto, la marca de un servidor ya apagado seguiría contestando a la invocación
+    siguiente dentro del mismo proceso."""
+    import src.lanzador as lanzador
+
+    hijo = MagicMock()
+    hijo.pid = 777
+    hijo.poll.return_value = 0
+    monkeypatch.setattr(lanzador, "_PROCESO_SERVIDOR", hijo)
+
+    marca = _marca_de_prueba(777)
+    lanzador.escribir_marca_servidor(marca, str(tmp_path / "licitaciones.db"))
+    config = cargar_configuracion(_escribir_config(tmp_path))
+
+    nivel = lanzador.apagar_servidor(config, db_path=str(tmp_path / "licitaciones.db"))
+
+    assert nivel == "ya_no_estaba"
+    assert lanzador._PROCESO_SERVIDOR is hijo or lanzador._PROCESO_SERVIDOR is None
+    assert not os.path.exists(str(tmp_path / "lanzador.pid"))

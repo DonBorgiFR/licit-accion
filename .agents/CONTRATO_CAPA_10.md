@@ -1,10 +1,27 @@
 # Contrato de Servicio — Capa 10: El Lanzador y Despertador
 
-**Versión:** 1.1.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13**, corregido y revalidado
-el **2026-08-17**.
+**Versión:** 1.2.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13**, corregido y revalidado
+el **2026-08-17** y el **2026-08-18**.
 
 Corresponde al **Paso 1** de la Capa 10 (Reglas 1 y 2). Rige todo lo que venga después: léelo antes
 de tocar `src/lanzador.py`.
+
+> **Qué cambió en la v1.2.0 y por qué** *(2026-08-18, al implementar el Paso 7)*. Cuatro añadidos,
+> ninguno de ellos una corrección de criterio: son cosas que **el documento no decía** y que hubo
+> que decidir para escribir el orquestador, más una que resultó ser falsa al medirla.
+>
+> 1. **Se declara el orden dentro del modo completo**: el Cockpit se abre **antes** de prospectar.
+>    El contrato no fijaba orden, y hacerlo al revés significaría cuatro minutos de pantalla en
+>    blanco tras el doble clic — el síntoma que la Consideración 6 existe para evitar.
+> 2. **Se declara qué termina el trabajo de cada modo**, que es lo que gobierna el apagado: hay
+>    tres finales distintos según qué ventana se abrió, y de ahí sale el evento nuevo.
+> 3. **Evento nuevo `LANZADOR_APAGADO_DIFERIDO`**: hay un caso —el navegador por defecto— en el
+>    que existe una ventana abierta y ningún proceso al que esperar. Dejar el servidor vivo es lo
+>    correcto; dejarlo vivo **en silencio** sería un agujero de la Convención C2.
+> 4. **El nivel 2 del apagado no existe sin consola**, medido el 2026-08-18: bajo `pythonw.exe`
+>    —el caso del `.vbs`, es decir, el normal— `CTRL_BREAK_EVENT` falla con WinError 6. La
+>    escalera real del doble clic tiene **dos** peldaños. El Paso 5 lo midió con consola y su
+>    medición era cierta; lo que no se había medido es el escenario para el que existe la capa.
 
 > **Qué cambió en la v1.1.0 y por qué** *(2026-08-17, al preparar el Paso 6)*. Tres correcciones,
 > las tres nacidas de leer el código **contra** este documento en vez de leer sólo el documento:
@@ -109,6 +126,27 @@ Cada modo es un contrato distinto sobre qué estados recorre y qué le está per
 | **sólo pipeline** | Todos menos apertura | **No arranca servidor** | Sí | **Nunca** | Tarea programada (madrugada) |
 | **sólo Cockpit** | Todos | Arranca o reutiliza | **No** | **Sí** | Acceso directo secundario |
 
+**En el modo *completo*, el Cockpit se abre ANTES de prospectar** *(declarado en la v1.2.0)*. La
+prospección real del 2026-08-12 tardó 255 s: prospectar primero serían más de cuatro minutos de
+pantalla en blanco tras el doble clic. Abriendo antes, la persona ve los datos de ayer al instante
+y la corrida ocurre mientras mira, con el indicador de la cabecera diciendo que hay trabajo en
+marcha. **El apagado nunca interrumpe una prospección en curso**: si la ventana se cierra a mitad,
+se termina la corrida y se apaga después, porque el pipeline borra ficheros antes de tocar la base.
+
+**Qué termina el trabajo de cada modo, y por tanto cuándo se apaga** *(declarado en la v1.2.0)*:
+
+| Qué ventana se abrió | Cuándo termina el modo | Qué se hace |
+|---|---|---|
+| Ventana propia en modo aplicación | Cuando la persona **la cierra** | Se espera al proceso y se apaga el servidor |
+| Navegador por defecto *(no había Chrome ni Edge)* | No se puede saber | **No se apaga**: hay una ventana delante de alguien y ningún proceso al que esperar. Se emite `LANZADOR_APAGADO_DIFERIDO` y la invocación siguiente reutilizará el servidor |
+| Ninguna *(sin escritorio, o `abrir_navegador: false`)* | Al acabar el trabajo | Se apaga en cuanto termina |
+
+**Sólo se apaga lo que encendió ESTA invocación** *(precisado en la v1.2.0)*. Si el puerto ya tenía
+nuestra API viva se reutiliza y no se toca al terminar, **aunque exista fichero de marca de un
+lanzador anterior**: es la transición prohibida nº 4 leída en su sentido estricto —ante la duda no
+se mata—. Dejar un proceso de más es visible y molesto; matar el que no era puede tumbar el trabajo
+de alguien.
+
 **El modo *sólo pipeline* no levanta la API.** Prospectar no la necesita —`run.py` habla con SQLite
 directamente—, y levantar un servidor que nadie va a consultar sólo añade un puerto que vigilar y un
 proceso que apagar en un entorno sin escritorio. Es también el modo que corre en Session 0, de modo
@@ -150,6 +188,14 @@ invocación. La distinción es el corazón del asunto:
 |---|---|---|
 | El modo de invocación (`--modo pipeline`) | Una **intención declarada** | ❌ Puede llegar equivocada por un defecto, por un acceso directo mal cableado o porque alguien registró la tarea a mano con el modo que no era. Una intención no es un hecho. |
 | El identificador de sesión del proceso | Un **hecho del sistema operativo** | ✅ La Session 0 lo es con independencia de lo que el invocador creyera estar pidiendo. |
+
+> **El navegador se abre con un perfil aislado, y eso no es estética** *(añadido en la v1.2.0;
+> medido el 2026-08-18 en Edge y en Chrome)*. Con una instancia previa del **mismo** perfil, el
+> proceso que se lanza delega en ella y **muere a los 0,2 s**. Como el final de ese proceso es lo
+> que el lanzador interpreta como «han cerrado el Cockpit», usar el perfil del usuario —que
+> normalmente ya tiene el navegador abierto— apagaría el servidor recién arrancado delante de
+> quien acaba de hacer doble clic. Con `--user-data-dir` propio la ventana es nuestra y el proceso
+> vive mientras quede alguna ventana de ese perfil abierta.
 
 **Por qué se declara como invariante y no como buena práctica**: es lo único de esta capa que puede
 auditarse recorriendo el código con una lista en la mano, que es exactamente cómo el Paso 10 de la
@@ -234,6 +280,13 @@ legibles, base accesible y migrable, espacio libre en disco y existencia de `fro
 
 **Reutilizar es más seguro que arrancar**: un lanzador que arranca a ciegas acaba dejando instancias
 duplicadas que se pisan en la misma base.
+
+> **Al modo «sólo pipeline» no se le exige lo que no va a usar** *(precisado en la v1.2.0, al
+> implementar el Paso 7)*. Prospectar habla con SQLite directamente: ni sirve el Cockpit ni abre
+> puerto. Si un bundle sin compilar o un puerto ocupado por un tercero impidieran arrancar, una
+> noche entera se saldaría sin prospectar por un requisito ajeno, y el Programador de tareas
+> registraría un `10` o un `20` incomprensibles. **Se comprueban igual** —el diagnóstico completo
+> no esconde nada— pero bajan a la lista de avisos en vez de detener el arranque.
 
 ### Operación 2 — Servir (arrancar, esperar y reutilizar)
 
@@ -323,11 +376,18 @@ hasta que el proceso desaparece o vence el plazo.
 | Nivel | Mecanismo | Qué garantiza |
 |---|---|---|
 | 1 | `POST /api/v1/admin/apagar` | El único que termina las peticiones en curso, devuelve el cerrojo y ejecuta el `lifespan`. Y **el único que funciona sin consola**, que es justo el caso del `.vbs`. |
-| 2 | `CTRL_BREAK_EVENT` al grupo | Cierre por señal. `CTRL_C_EVENT` **no** sirve: queda deshabilitado en un grupo creado con `CREATE_NEW_PROCESS_GROUP`, y enviarlo sin aislar el grupo nos mataría también a nosotros. |
+| 2 | `CTRL_BREAK_EVENT` al grupo | Cierre por señal. `CTRL_C_EVENT` **no** sirve: queda deshabilitado en un grupo creado con `CREATE_NEW_PROCESS_GROUP`, y enviarlo sin aislar el grupo nos mataría también a nosotros. ⚠️ **Y sin consola este nivel no existe**: bajo `pythonw.exe` —el `.vbs`, es decir, el caso normal— falla con WinError 6 *(medido el 2026-08-18)*. |
 | 3 | `TerminateProcess` | Último recurso, sólo agotado el tiempo de gracia. |
 
 **El endpoint de apagado escucha sólo en `127.0.0.1` y exige el testigo** que el lanzador guardó en
 su fichero PID. Sin él, cualquier página abierta en el navegador podría apagar el servidor.
+
+**Se pregunta al hijo, no al sistema** *(añadido en la v1.2.0; repara H-44)*. Para saber si el
+servidor murió, el supervisor consulta el `Popen` del proceso que **él mismo** arrancó —`poll()`
+mira el handle que ya tiene y reclama al hijo—, y sólo cae a la comprobación por PID e instante de
+creación cuando la marca la dejó otra invocación, que es donde esa vía sí es fiable. Preguntar al
+sistema por un hijo propio recién muerto puede devolver «sigue vivo» mientras alguien conserve un
+handle abierto, y eso producía un **código 40 falso al final de cada sesión**.
 
 **Se comprueba el cerrojo después de apagar**, no se supone liberado. Si quedó huérfano se registra:
 la reclamación por PID y TTL es la red que lo recoge, y conviene saber cuándo actúa.
@@ -385,7 +445,7 @@ información valiosa por sí misma.
 | Situación | Comportamiento | Por qué |
 |---|---|---|
 | **Pipeline falla, API sana** (modo completo) | **El Cockpit se abre igual**, con el distintivo del Paso 9 avisando de que la última corrida falló | *(Decisión de dirección, 2026-08-13.)* Negarle a alguien sus datos de ayer porque la prospección de hoy falló convierte un fallo parcial en una avería total. |
-| **Chrome/Edge no encontrados** | Caída a `webbrowser.open()` | **Degradar la apariencia es aceptable; no abrir nada, no.** |
+| **Chrome/Edge no encontrados** | Caída a `webbrowser.open()`, **sin apagar el servidor al terminar** y con `LANZADOR_APAGADO_DIFERIDO` | **Degradar la apariencia es aceptable; no abrir nada, no.** Pero sin ventana propia no hay proceso al que esperar, y apagar sería cerrarle el Cockpit en las narices a quien lo mira. **No cuenta como terminación `DEGRADADO`** ni da código ≠ 0: un equipo sin Chrome informaría de fallo cada día. |
 | **Cerrojo tomado y vivo** | No se lanza el pipeline; `LANZADOR_PIPELINE_OMITIDO` y código `30` | Es la protección funcionando. |
 | **Sin sesión interactiva y fallo fatal** | **Jamás un diálogo.** Código de salida y registro | Un diálogo en Session 0 cuelga el proceso para siempre. |
 | **Configuración ausente o incoherente** | **No se arranca con valores por defecto.** Se detiene y lo dice | Misma doctrina que `src/retencion.py`. Así fue como H-18 cambió decisiones comerciales en silencio. |
@@ -409,6 +469,7 @@ Todos con `updated_by="lanzador"`, en `data/pipeline.jsonl` vía `Memoria.regist
 | `LANZADOR_PIPELINE_COMPLETADO` | La corrida terminó y consta `COMPLETED`, con lo que tardó *(añadido en la v1.1.0)* |
 | `LANZADOR_PIPELINE_FALLIDO` | El pipeline falló, **según la fila de la corrida y no según su código de salida** |
 | `LANZADOR_APAGADO` | Apagado conseguido, **indicando en qué nivel** |
+| `LANZADOR_APAGADO_DIFERIDO` | Se abrió el Cockpit **sin ventana propia que vigilar** —caída al navegador por defecto—, así que el servidor queda vivo y lo reutilizará la invocación siguiente *(añadido en la v1.2.0)* |
 | `LANZADOR_APAGADO_INCOMPLETO` | Agotados los tres niveles |
 | `LANZADOR_CERROJO_HUERFANO_TRAS_APAGADO` | El cerrojo no quedó liberado |
 | `LANZADOR_GUI_OMITIDA` | **Se suprimió una llamada gráfica por no haber sesión interactiva** |

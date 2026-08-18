@@ -15,6 +15,7 @@ import {
   getLicitacionById,
   getAlertasTempranas,
   getAlertaById,
+  getEjecuciones,
 } from '../lib/api-client';
 import type { LicitacionesQueryParams, AlertasQueryParams } from '../types/api';
 
@@ -22,6 +23,23 @@ import type { LicitacionesQueryParams, AlertasQueryParams } from '../types/api';
  * Hook para monitorizar el estado de salud del backend FastAPI y SQLite v5.
  * Smart Polling reducido a 15 segundos.
  */
+/**
+ * Estado de la última prospección, para el indicador de la cabecera (Capa 10, Paso 7).
+ *
+ * El sondeo se acelera mientras hay una corrida en marcha —5 s frente a 60 s— porque es el
+ * único momento en que el dato cambia y el único en que alguien lo está mirando: quien acaba
+ * de hacer doble clic espera ver que el sistema termina. Fuera de ese rato, preguntar cada
+ * cinco segundos sería ruido sobre la misma base que el pipeline está escribiendo.
+ */
+export function useUltimaProspeccionQuery() {
+  return useQuery({
+    queryKey: QUERY_KEYS.ultimaProspeccion,
+    queryFn: () => getEjecuciones(1, 1),
+    refetchInterval: (query) =>
+      query.state.data?.items?.[0]?.estado === 'RUNNING' ? 5 * 1000 : 60 * 1000,
+  });
+}
+
 export function useHealthQuery() {
   return useQuery({
     queryKey: QUERY_KEYS.health,

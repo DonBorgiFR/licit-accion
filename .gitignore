@@ -50,6 +50,16 @@ data/documents/
 data/backups/
 data/pipeline.jsonl
 data/reports/*.csv
+# Volcado de cada prospeccion lanzada por el lanzador (Capa 10, Paso 6): es salida de
+# ejecucion, no codigo, y es donde queda el rastro cuando el pipeline corre sin consola.
+data/logs/
+
+# Capa 10, Paso 7: el perfil aislado del navegador con el que se abre el Cockpit en modo
+# aplicacion. Son miles de ficheros que Chrome/Edge gestionan solos y que no pertenecen al
+# proyecto; se recrea solo en el primer arranque de cada equipo.
+data/perfil_cockpit/
+# Marca del servidor propio (PID + instante de creacion). Es estado de una ejecucion viva.
+data/lanzador.pid
 
 # Hojas de cálculo: se excluyen las salidas de ejecución, pero el perfil de CPVs
 # de Incoop es configuración de entrada y viaja con el código.

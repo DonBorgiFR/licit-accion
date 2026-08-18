@@ -665,7 +665,26 @@ class Memoria:
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
 
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        # `check_same_thread=False` repara H-42, y no es una relajación caprichosa.
+        #
+        # **El síntoma**: con el Cockpit abierto, entre el 30 % y el 40 % de las peticiones
+        # concurrentes devolvían 500 y las pantallas se pintaban a cero. Medido el
+        # 2026-08-18 contra la API real: 16 de 40 peticiones simultáneas fallaban con
+        # «SQLite objects created in a thread can only be used in that same thread».
+        #
+        # **La causa**: `get_db()` es un generador SÍNCRONO, así que FastAPI lo ejecuta en
+        # un hilo del threadpool; el endpoint que consume la conexión también es síncrono y
+        # corre en OTRO hilo del mismo pool. Con poca carga suele tocar el mismo hilo y no
+        # se nota — por eso llevaba latente desde la Capa 7 y sólo apareció al añadir un
+        # tercer sondeo al Cockpit.
+        #
+        # **Por qué es seguro aquí**: la conexión se abre, se usa y se cierra dentro de una
+        # sola petición, de forma secuencial; nunca la usan dos hilos a la vez, sólo dos
+        # hilos distintos en momentos distintos. Y aunque coincidieran, este intérprete
+        # trae SQLite compilado con `THREADSAFE=1` y `sqlite3.threadsafety == 3` —modo
+        # serializado—, de modo que la propia biblioteca protege el acceso con un mutex.
+        # Lo que se desactiva es una comprobación de Python, no una protección de SQLite.
+        conn = sqlite3.connect(self.db_path, timeout=30.0, check_same_thread=False)
         try:
             conn.execute("PRAGMA busy_timeout=30000;")
             conn.execute("PRAGMA journal_mode=WAL;")
@@ -1306,12 +1325,42 @@ class Memoria:
             conn.row_factory = sqlite3.Row
             total = conn.execute("SELECT COUNT(*) FROM ejecuciones;").fetchone()[0]
             filas = conn.execute(
-                "SELECT id, start_time, end_time, estado, "
+                "SELECT id, start_time, end_time, estado, pid, pid_creado_en, "
                 + ", ".join(self.METRICAS_EJECUCION_VALIDAS)
                 + " FROM ejecuciones ORDER BY id DESC LIMIT ? OFFSET ?;",
                 (limit, offset),
             ).fetchall()
-        return [dict(fila) for fila in filas], total
+
+        # **Un `RUNNING` no dice si hay alguien prospectando** (H-43, Capa 10 Paso 7). La fila
+        # se queda tal cual cuando una corrida muere a mitad —un apagón, un cierre de sesión,
+        # el crash de H-41—, así que servir el estado a secas hace que el Cockpit anuncie una
+        # prospección en marcha sobre un cadáver, indefinidamente. Es la familia de H-21: no
+        # rompe nada, miente en pantalla.
+        #
+        # La respuesta no se inventa aquí: la da `motivo_ejecucion_huerfana()`, el mismo
+        # criterio con el que el cerrojo de ejecución decide si puede arrancar (esquema v8).
+        # **Un solo juicio y no dos**: dos copias de esta decisión acabarían divergiendo, y
+        # entonces la pantalla y el lanzador contarían cosas distintas del mismo hecho.
+        #
+        # `None` significa *"no se puede saber"* —fila anterior a v8, o un instante de
+        # creación que el sistema no deja consultar—, y quien lo pinte debe decirlo así en
+        # vez de elegir por su cuenta entre "en curso" y "rota".
+        ahora = datetime.now(timezone.utc)
+        items = []
+        for fila in filas:
+            registro = dict(fila)
+            duenyo_vivo = None
+            if registro.get("estado") == "RUNNING":
+                if registro.get("pid") is None:
+                    duenyo_vivo = None
+                else:
+                    duenyo_vivo = motivo_ejecucion_huerfana(
+                        registro.get("start_time"), registro.get("pid"),
+                        registro.get("pid_creado_en"), ahora,
+                    ) is None
+            registro["duenyo_vivo"] = duenyo_vivo
+            items.append(registro)
+        return items, total
 
     def registrar_purga(
         self,

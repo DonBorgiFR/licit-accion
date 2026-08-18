@@ -379,4 +379,6 @@ export interface Ejecucion {
   errores: number | null;
   version_scoring: string | null;
   version_politica_retencion: string | null;
+  /** ¿Vive el proceso dueño de una corrida RUNNING? null = no se puede saber (H-43). */
+  duenyo_vivo: boolean | null;
 }

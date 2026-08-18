@@ -436,6 +436,13 @@ class EjecucionSchema(BaseModel):
     version_scoring: Optional[str] = None
     version_politica_retencion: Optional[str] = None
 
+    #: ¿Sigue vivo el proceso dueño de una corrida `RUNNING`? (Capa 10, Paso 7 — H-43.)
+    #: `True` en curso de verdad, `False` interrumpida, `None` no se puede saber. Sólo tiene
+    #: sentido preguntado **desde la máquina que ejecuta el pipeline**, que es el diseño de
+    #: hoy —API y pipeline conviven en 127.0.0.1—; el día que se separen (Capa 11), este
+    #: campo tendrá que responderlo quien corra el pipeline, no quien sirva la pantalla.
+    duenyo_vivo: Optional[bool] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

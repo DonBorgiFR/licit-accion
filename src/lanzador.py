@@ -31,6 +31,7 @@ fichero `config/lanzador.yaml` y su lector estricto son el Paso 3. Así el healt
 puede ejercitar sin fichero (Convención C4) y ningún paso queda a medias.
 """
 
+import argparse
 import json
 import os
 import re
@@ -42,7 +43,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -550,6 +551,7 @@ def ejecutar_healthcheck(
     espacio_minimo_mb: int = 200,
     db_path: Optional[str] = None,
     timeout_puerto: float = 2.0,
+    exige_servidor: bool = True,
 ) -> DiagnosticoArranque:
     """Comprobación previa del ecosistema. **No modifica nada.**
 
@@ -564,9 +566,21 @@ def ejecutar_healthcheck(
     añadir(_comprobar_configuracion_existente())
     añadir(_comprobar_base_de_datos(db_path))
     añadir(_comprobar_espacio(espacio_minimo_mb, db_path))
-    añadir(_comprobar_bundle(ruta_bundle))
 
+    # **Al modo «sólo pipeline» no se le exige lo que no va a usar** (Paso 7). Prospectar
+    # habla con SQLite directamente: ni sirve el Cockpit ni abre puerto. Si un bundle sin
+    # compilar o un puerto ocupado por un tercero impidieran arrancar, una noche entera se
+    # saldaría sin prospectar por algo que no hacía ninguna falta, y el Programador de
+    # tareas registraría un 10 o un 20 incomprensibles. Se comprueban igual —el diagnóstico
+    # completo no esconde nada, criterio del Paso 3— pero dejan de ser críticos: bajan a la
+    # lista de avisos de `resumen()` en vez de detener el arranque.
+    comprobacion_bundle = _comprobar_bundle(ruta_bundle)
     comprobacion_puerto, estado = _comprobar_puerto(host, puerto, timeout_puerto)
+    if not exige_servidor:
+        comprobacion_bundle = replace(comprobacion_bundle, critica=False)
+        comprobacion_puerto = replace(comprobacion_puerto, critica=False)
+
+    añadir(comprobacion_bundle)
     añadir(comprobacion_puerto)
     diagnostico.estado_puerto = estado
 
@@ -748,6 +762,7 @@ def _comprobar_puerto(host: str, puerto: int, timeout: float) -> Tuple[Comprobac
 def comprobar_arranque(
     ruta_config: Optional[str] = None,
     db_path: Optional[str] = None,
+    exige_servidor: bool = True,
 ) -> Tuple[Optional[ConfiguracionLanzador], DiagnosticoArranque]:
     """Punto de entrada del estado `COMPROBANDO`: carga la configuración y comprueba con ella.
 
@@ -780,6 +795,7 @@ def comprobar_arranque(
         ruta_bundle=config.ruta_bundle_absoluta(),
         espacio_minimo_mb=config.servidor.espacio_minimo_mb,
         db_path=db_path,
+        exige_servidor=exige_servidor,
     )
     diagnostico.comprobaciones.insert(
         0,
@@ -801,6 +817,22 @@ def comprobar_arranque(
 # saberlo el número de proceso no basta.
 
 NOMBRE_FICHERO_PID = "lanzador.pid"
+
+#: El proceso de uvicorn que arrancó **esta** invocación, cuando lo hizo ella. Repara H-44.
+#:
+#: Preguntar «¿sigue vivo?» por número de proceso es lo correcto cuando la marca la dejó otra
+#: invocación —es lo único que se tiene—, pero es la peor forma de preguntarlo cuando el hijo
+#: es tuyo: `Popen.poll()` consulta el handle que ya tienes, reclama al hijo y da una
+#: respuesta exacta, mientras que `OpenProcess` sobre un proceso recién muerto puede seguir
+#: contestando mientras alguien conserve un handle abierto —el aviso que `src/proceso.py`
+#: lleva anotado desde el Paso 6—.
+#:
+#: **El síntoma que lo destapó** (verificación en vivo del 2026-08-18): dos dobles clics
+#: seguidos terminaron con `LANZADOR_APAGADO_INCOMPLETO` y código 40 sobre un servidor que
+#: había muerto —el puerto quedaba libre en 2 s y el proceso ya no existía—. Un lanzador que
+#: informa de una avería inexistente al final de cada sesión enseña a no creerse sus códigos
+#: de salida, que es justo lo contrario de para lo que existen.
+_PROCESO_SERVIDOR: Optional[Any] = None
 
 
 def es_nuestro_proceso(pid: int, instante_creacion: Optional[int]) -> bool:
@@ -950,12 +982,33 @@ def arrancar_servidor(
         iniciado_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     escribir_marca_servidor(marca, db_path)
+
+    global _PROCESO_SERVIDOR
+    _PROCESO_SERVIDOR = proceso
+
     registrar_evento_lanzador(
         "LANZADOR_SERVIDOR_ARRANCADO",
         motivo=f"pid {marca.pid} respondiendo en {tardanza:.1f}s",
         db_path=db_path,
     )
     return marca, tardanza
+
+
+def _vive_el_servidor(marca: MarcaServidor) -> bool:
+    """¿Sigue vivo el servidor de la marca? **Prefiere al hijo propio si lo hay** (H-44).
+
+    Las dos vías contestan a la misma pregunta, pero no con la misma autoridad:
+
+    * `Popen.poll()` consulta el handle que este proceso ya tiene sobre su hijo y lo reclama
+      al morir. Es exacto, y es el único disponible cuando el sistema operativo aún no ha
+      soltado el objeto-proceso del difunto.
+    * `es_nuestro_proceso()` pregunta por PID e instante de creación. Es lo único posible
+      cuando la marca la dejó **otra** invocación —y entonces es correcto, porque quien
+      pregunta desde fuera sí ve morir al proceso—, pero es la vía frágil para el hijo propio.
+    """
+    if _PROCESO_SERVIDOR is not None and getattr(_PROCESO_SERVIDOR, "pid", None) == marca.pid:
+        return _PROCESO_SERVIDOR.poll() is None
+    return es_nuestro_proceso(marca.pid, marca.instante_creacion)
 
 
 def _sigue_vivo(marca: MarcaServidor, plazo: float) -> bool:
@@ -965,10 +1018,10 @@ def _sigue_vivo(marca: MarcaServidor, plazo: float) -> bool:
     """
     inicio = time.monotonic()
     while time.monotonic() - inicio < plazo:
-        if not es_nuestro_proceso(marca.pid, marca.instante_creacion):
+        if not _vive_el_servidor(marca):
             return False
         time.sleep(0.1)
-    return es_nuestro_proceso(marca.pid, marca.instante_creacion)
+    return _vive_el_servidor(marca)
 
 
 def apagar_servidor(
@@ -985,7 +1038,7 @@ def apagar_servidor(
     if marca is None:
         return "sin_marca"
 
-    if not es_nuestro_proceso(marca.pid, marca.instante_creacion):
+    if not _vive_el_servidor(marca):
         # El proceso murió por su cuenta, o su número lo heredó otro. En ambos casos aquí no
         # hay nada nuestro que apagar; lo único pendiente es retirar la marca.
         borrar_marca_servidor(db_path)
@@ -1000,6 +1053,9 @@ def apagar_servidor(
             db_path=db_path,
         )
         raise ApagadoIncompleto(f"El servidor (pid {marca.pid}) sigue vivo tras los tres niveles.")
+
+    global _PROCESO_SERVIDOR
+    _PROCESO_SERVIDOR = None
 
     borrar_marca_servidor(db_path)
     registrar_evento_lanzador("LANZADOR_APAGADO", motivo=f"nivel alcanzado: {nivel}", db_path=db_path)
@@ -1018,6 +1074,13 @@ def _apagar_por_niveles(marca: MarcaServidor, config: ConfiguracionLanzador) -> 
     # Nivel 2 — CTRL_BREAK_EVENT al grupo. Medido el 2026-08-13: apaga uvicorn en 0,3 s.
     # `CTRL_C_EVENT` **no** sirve: queda deshabilitado en un grupo creado con
     # CREATE_NEW_PROCESS_GROUP, comprobado el mismo día.
+    #
+    # ⚠️ **Y sin consola este nivel no existe** (medido el 2026-08-18): lanzado desde el
+    # `.vbs` con `pythonw.exe`, `os.kill(pid, CTRL_BREAK_EVENT)` falla con «WinError 6,
+    # controlador no válido», porque no hay consola a la que enviar el evento. Es decir: en
+    # el caso normal del doble clic, la escalera real tiene **dos** peldaños, el endpoint y
+    # `TerminateProcess`. Se conserva porque sí funciona cuando el lanzador corre con
+    # consola, y porque un nivel que falla en voz alta es mejor que uno que no está.
     try:
         os.kill(marca.pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
         if not _sigue_vivo(marca, config.apagado.gracia_senal_segundos):
@@ -1440,7 +1503,11 @@ def registrar_evento_lanzador(
         print(f"[!] No se pudo registrar el evento {accion}: {e}", file=sys.stderr)
 
 
-def comunicar_fallo_fatal(diagnostico: DiagnosticoArranque, titulo: str = "Ecosistema de Licitaciones") -> int:
+def comunicar_fallo_fatal(
+    diagnostico: DiagnosticoArranque,
+    titulo: str = "Ecosistema de Licitaciones",
+    db_path: Optional[str] = None,
+) -> int:
     """Comunica un fallo anterior a que exista el Cockpit y devuelve el código de salida.
 
     Aplica la tabla de canales del contrato: **con escritorio**, diálogo nativo; **sin
@@ -1458,17 +1525,400 @@ def comunicar_fallo_fatal(diagnostico: DiagnosticoArranque, titulo: str = "Ecosi
         registrar_evento_lanzador(
             "LANZADOR_DEGRADADO",
             motivo="se pidió comunicar un fallo fatal con un diagnóstico satisfactorio",
+            db_path=db_path,
         )
         return ERROR_NO_PREVISTO
 
     resumen = diagnostico.resumen()
     print(resumen, file=sys.stderr)
-    registrar_evento_lanzador("LANZADOR_HEALTHCHECK_FALLIDO", motivo=resumen.replace("\n", " | "))
+    registrar_evento_lanzador(
+        "LANZADOR_HEALTHCHECK_FALLIDO",
+        motivo=resumen.replace("\n", " | "),
+        db_path=db_path,
+    )
 
     if not avisar_fallo_fatal(titulo, resumen):
         registrar_evento_lanzador(
             "LANZADOR_GUI_OMITIDA",
             motivo="sin sesión interactiva: el aviso viaja por código de salida y registro",
+            db_path=db_path,
         )
 
     return diagnostico.codigo_salida
+
+
+# ==============================================================================
+# Apertura del Cockpit (Capa 10, Paso 7)
+# ==============================================================================
+#
+# La segunda —y última— llamada gráfica de la capa, así que **pasa por
+# `es_sesion_interactiva()`** igual que el diálogo de error. Con eso, auditar la invariante
+# central sobre este fichero es mirar dos funciones y no todo el módulo.
+#
+# **El perfil aislado no es una comodidad estética, y esto está medido** (2026-08-18, Edge y
+# Chrome, los dos igual):
+#
+#   · con perfil propio, el proceso sigue vivo mientras la ventana está abierta;
+#   · al cerrarse la ventana, muere en 0,4 s;
+#   · **con una instancia previa del mismo perfil, el proceso nuevo delega y muere en 0,2 s.**
+#
+# La tercera medición es la que gobierna el diseño. En un equipo con el navegador ya abierto
+# —el caso normal—, usar el perfil del usuario haría que el proceso lanzado muriera al
+# instante; el lanzador lo leería como *"han cerrado el Cockpit"* y apagaría el servidor
+# recién arrancado delante de quien acaba de hacer doble clic. Con `--user-data-dir` propio la
+# ventana es nuestra, y el proceso vive mientras quede **alguna** ventana de ese perfil
+# abierta, de modo que dos dobles clics seguidos tampoco se pisan.
+
+NOMBRE_PERFIL_COCKPIT = "perfil_cockpit"
+
+#: Rutas habituales de los dos navegadores que admiten `--app`. Se pregunta primero al
+#: registro de Windows, que es donde consta la instalación de verdad; esto es la red por si
+#: el registro no contesta. Chrome antes que Edge, como el diseño de la capa los nombra.
+NAVEGADORES_CONOCIDOS = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+)
+
+
+class ModoApertura(str, Enum):
+    """Cómo acabó el intento de abrir el Cockpit. **Gobierna el apagado**, así que no es un
+    dato informativo: de aquí sale si hay una ventana que vigilar, una que no podemos
+    vigilar o ninguna en absoluto."""
+
+    #: Ventana propia en modo aplicación: hay un proceso al que esperar.
+    APLICACION = "APLICACION"
+    #: Se abrió en el navegador por defecto: hay ventana, pero ningún proceso que vigilar.
+    NAVEGADOR_POR_DEFECTO = "NAVEGADOR_POR_DEFECTO"
+    #: No hay escritorio. La invariante central actuó y quedó registrada.
+    OMITIDA_SIN_ESCRITORIO = "OMITIDA_SIN_ESCRITORIO"
+    #: `abrir_navegador: false`. Es una preferencia declarada, no la invariante.
+    OMITIDA_POR_CONFIGURACION = "OMITIDA_POR_CONFIGURACION"
+
+
+@dataclass
+class AperturaCockpit:
+    modo: ModoApertura
+    proceso: Optional[Any] = None
+    detalle: str = ""
+
+    @property
+    def hay_ventana_vigilable(self) -> bool:
+        """Ventana nuestra, con un proceso cuyo final significa *"han cerrado el Cockpit"*."""
+        return self.modo is ModoApertura.APLICACION and self.proceso is not None
+
+    @property
+    def hay_ventana_sin_vigilar(self) -> bool:
+        """Hay una ventana abierta delante de alguien, pero nada a lo que esperar."""
+        return self.modo is ModoApertura.NAVEGADOR_POR_DEFECTO
+
+
+def _ruta_en_registro(ejecutable: str) -> Optional[str]:
+    """Ruta declarada en `App Paths`, que es donde consta la instalación de verdad."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+
+        for raiz in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                clave = rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{ejecutable}"
+                with winreg.OpenKey(raiz, clave) as abierta:
+                    valor, _ = winreg.QueryValueEx(abierta, None)
+                    if valor:
+                        return str(valor).strip('"')
+            except OSError:
+                continue
+    except Exception:
+        return None
+    return None
+
+
+def localizar_navegador() -> Optional[str]:
+    """Chrome o Edge, o `None` si no hay ninguno —y entonces se degrada la apariencia."""
+    for ejecutable in ("chrome.exe", "msedge.exe"):
+        ruta = _ruta_en_registro(ejecutable)
+        if ruta and os.path.isfile(ruta):
+            return ruta
+    for ruta in NAVEGADORES_CONOCIDOS:
+        if os.path.isfile(ruta):
+            return ruta
+    return None
+
+
+def ruta_perfil_cockpit(db_path: Optional[str] = None) -> str:
+    """Perfil aislado del navegador, junto al resto de los datos del sistema."""
+    return os.path.join(os.path.dirname(_ruta_base(db_path)), NOMBRE_PERFIL_COCKPIT)
+
+
+def abrir_cockpit(
+    config: ConfiguracionLanzador,
+    db_path: Optional[str] = None,
+    localizador=localizar_navegador,
+) -> AperturaCockpit:
+    """Abre el Cockpit y devuelve **qué clase de ventana quedó abierta**.
+
+    Degradar la apariencia es aceptable; no abrir nada, no. Por eso sin Chrome ni Edge se
+    cae al navegador por defecto, aunque eso signifique perder la ventana limpia y —lo que
+    de verdad importa aquí— el proceso al que esperar para saber cuándo apagar.
+    """
+    url = f"http://{config.servidor.host}:{config.servidor.puerto}/"
+
+    if not config.cockpit.abrir_navegador:
+        # **No emite `LANZADOR_GUI_OMITIDA`**, y es deliberado: ese evento significa una sola
+        # cosa —que la invariante central suprimió una llamada gráfica por no haber
+        # escritorio—. Si significara además "el fichero decía que no", dejaría de servir
+        # para auditar la invariante, que es para lo único que existe.
+        return AperturaCockpit(ModoApertura.OMITIDA_POR_CONFIGURACION,
+                               detalle="config: abrir_navegador: false")
+
+    if not es_sesion_interactiva():
+        registrar_evento_lanzador(
+            "LANZADOR_GUI_OMITIDA",
+            motivo="sin sesión interactiva: no se abre el Cockpit",
+            db_path=db_path,
+        )
+        return AperturaCockpit(ModoApertura.OMITIDA_SIN_ESCRITORIO, detalle="sin escritorio")
+
+    ejecutable = localizador()
+    fallo = "no se encontró Chrome ni Edge"
+    if ejecutable:
+        perfil = ruta_perfil_cockpit(db_path)
+        orden = [
+            ejecutable,
+            f"--app={url}",
+            f"--user-data-dir={perfil}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        try:
+            os.makedirs(perfil, exist_ok=True)
+            proceso = subprocess.Popen(orden, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return AperturaCockpit(
+                ModoApertura.APLICACION, proceso,
+                f"{os.path.basename(ejecutable)} en modo aplicación (perfil propio)",
+            )
+        except Exception as e:
+            # C2: no se degrada en silencio. El motivo viaja hasta el evento del apagado
+            # diferido, y el estado resultante —`NAVEGADOR_POR_DEFECTO`— es distinguible del
+            # éxito, que es lo que la convención exige.
+            fallo = f"no se pudo lanzar {os.path.basename(ejecutable)} ({type(e).__name__}: {e})"
+            print(f"[!] {fallo}; se abre en el navegador por defecto", file=sys.stderr)
+
+    try:
+        import webbrowser
+
+        webbrowser.open(url)
+        return AperturaCockpit(ModoApertura.NAVEGADOR_POR_DEFECTO, detalle=fallo)
+    except Exception as e:
+        registrar_evento_lanzador(
+            "LANZADOR_DEGRADADO",
+            motivo=f"no se pudo abrir el Cockpit por ningún medio ({type(e).__name__}: {e})",
+            db_path=db_path,
+        )
+        print(f"[-] No se pudo abrir el Cockpit: {e}", file=sys.stderr)
+        return AperturaCockpit(ModoApertura.OMITIDA_POR_CONFIGURACION, detalle=str(e))
+
+
+# ==============================================================================
+# El orquestador (Capa 10, Paso 7)
+# ==============================================================================
+#
+# Lo que faltaba para que las piezas de los Pasos 2 a 6 fueran un sistema: quien recorre la
+# máquina de estados del contrato y traduce el resultado a un código de salida.
+#
+# Tres reglas gobiernan lo que sigue, y las tres vienen del contrato, no de aquí:
+#
+# 1. **Sólo se apaga lo que encendió ESTA invocación.** Si el puerto ya tenía nuestra API
+#    viva, se reutiliza y no se toca al terminar, aunque exista fichero de marca de un
+#    lanzador anterior (transición prohibida nº 4, leída en su sentido estricto: ante la
+#    duda no se mata).
+#
+# 2. **En modo completo el Cockpit se abre ANTES de prospectar.** El contrato no fija el
+#    orden, y la corrida real del 2026-08-12 tardó 255 s: prospectar primero serían cuatro
+#    minutos de pantalla en blanco tras el doble clic, que es exactamente el síntoma que la
+#    Consideración 6 existe para evitar. Abriendo primero se ven los datos de ayer al
+#    instante y la corrida ocurre mientras la persona mira.
+#
+# 3. **El apagado nunca interrumpe una prospección en curso.** Si la ventana se cierra a
+#    mitad de la corrida, se termina la corrida y se apaga después: el pipeline borra
+#    ficheros antes de tocar la base, así que matarlo a mitad deja el fichero fuera y la fila
+#    sin marcar. Es el aviso que la Capa 9 le dejó a esta capa.
+
+
+class ModoInvocacion(str, Enum):
+    """Los tres modos del contrato. Cada uno es un contrato distinto sobre qué le está
+    permitido hacer a la invocación."""
+
+    COMPLETO = "completo"
+    PIPELINE = "pipeline"
+    COCKPIT = "cockpit"
+
+    @property
+    def necesita_servidor(self) -> bool:
+        """El modo del despertador **no levanta la API**: prospectar habla con SQLite."""
+        return self is not ModoInvocacion.PIPELINE
+
+    @property
+    def prospecta(self) -> bool:
+        return self is not ModoInvocacion.COCKPIT
+
+
+def _degradar(codigo: int, motivo: str, db_path: Optional[str] = None) -> int:
+    """Termina en `DEGRADADO` registrando la causa, y **nunca con código cero**.
+
+    La transición prohibida nº 5 convertida en función: por aquí no hay forma de salir con
+    un `0`. Un lanzador que siempre devuelve `0` deja ciego al Programador de tareas, que es
+    la única señal que verá quien revise por qué una noche no se prospectó.
+    """
+    if codigo == EXITO:
+        codigo = ERROR_NO_PREVISTO
+    registrar_evento_lanzador(
+        "LANZADOR_DEGRADADO", motivo=f"{motivo} (código {codigo})", db_path=db_path
+    )
+    return codigo
+
+
+def orquestar(
+    modo: ModoInvocacion = ModoInvocacion.COMPLETO,
+    ruta_config: Optional[str] = None,
+    db_path: Optional[str] = None,
+    comando_pipeline: Optional[List[str]] = None,
+) -> int:
+    """Recorre `COMPROBANDO → ARRANCANDO → OPERATIVO → DETENIENDO` y devuelve el código."""
+
+    # ---------- COMPROBANDO ----------
+    config, diagnostico = comprobar_arranque(
+        ruta_config, db_path, exige_servidor=modo.necesita_servidor
+    )
+
+    if modo.necesita_servidor and diagnostico.estado_puerto is EstadoPuerto.AJENO:
+        # Se registra aquí y no dentro del healthcheck porque comprobar no deja rastro
+        # (Paso 2): quien decide dejarlo es el llamador.
+        puerto = config.servidor.puerto if config else "?"
+        registrar_evento_lanzador(
+            "LANZADOR_PUERTO_OCUPADO_AJENO",
+            motivo=f"el puerto {puerto} lo ocupa un proceso ajeno",
+            db_path=db_path,
+        )
+
+    if not diagnostico.satisfactorio or config is None:
+        # `comunicar_fallo_fatal` ya elige el canal según haya escritorio o no, y registra
+        # tanto el fallo como la omisión del diálogo.
+        return _degradar(
+            comunicar_fallo_fatal(diagnostico, db_path=db_path),
+            "healthcheck insatisfactorio",
+            db_path,
+        )
+
+    registrar_evento_lanzador(
+        "LANZADOR_INICIADO",
+        motivo=f"modo {modo.value}, configuración v{config.version}",
+        db_path=db_path,
+    )
+
+    # ---------- ARRANCANDO ----------
+    servidor_propio = False
+    if modo.necesita_servidor:
+        if diagnostico.estado_puerto is EstadoPuerto.NUESTRA_API:
+            # Reutilizar es más seguro que arrancar: la alternativa a reutilizarla no es
+            # levantar otra, es no arrancar.
+            registrar_evento_lanzador(
+                "LANZADOR_PUERTO_REUTILIZADO",
+                motivo=f"API propia viva en {config.servidor.host}:{config.servidor.puerto}; "
+                       "no se arranca ni se apagará al terminar",
+                db_path=db_path,
+            )
+        else:
+            try:
+                arrancar_servidor(config, db_path)
+            except ServidorNoRespondio as e:
+                return _degradar(SERVIDOR_NO_RESPONDE, str(e), db_path)
+            servidor_propio = True
+
+    # ---------- OPERATIVO ----------
+    apertura = AperturaCockpit(ModoApertura.OMITIDA_POR_CONFIGURACION, detalle="modo sin Cockpit")
+    if modo.necesita_servidor:
+        apertura = abrir_cockpit(config, db_path)
+
+    codigo_pipeline = EXITO
+    if modo.prospecta:
+        codigo_pipeline = prospectar(db_path, comando_pipeline)
+
+    # ---------- DETENIENDO ----------
+    codigo_apagado = EXITO
+    if servidor_propio:
+        if apertura.hay_ventana_vigilable:
+            # Sin tope, y a propósito: cuánto dura el trabajo lo decide la persona que tiene
+            # el Cockpit abierto, no un plazo inventado (Regla 4).
+            try:
+                apertura.proceso.wait()
+            except Exception:
+                pass
+
+        if apertura.hay_ventana_sin_vigilar:
+            # Hay una ventana delante de alguien y ningún proceso al que esperar: apagar
+            # sería cerrarle el Cockpit en las narices. Se deja vivo y **consta**, que es la
+            # diferencia entre una degradación y un silencio (C2). La invocación siguiente
+            # lo reutilizará.
+            registrar_evento_lanzador(
+                "LANZADOR_APAGADO_DIFERIDO",
+                motivo=f"el Cockpit se abrió sin ventana propia ({apertura.detalle}): "
+                       "el servidor queda vivo y se reutilizará en el próximo arranque",
+                db_path=db_path,
+            )
+        else:
+            try:
+                apagar_servidor(config, db_path)
+            except ApagadoIncompleto:
+                codigo_apagado = APAGADO_INCOMPLETO
+
+    # ---------- DETENIDO ----------
+    if codigo_pipeline == PIPELINE_OMITIDO:
+        # Omisión deliberada: ni éxito ni avería, y **no** es una terminación degradada.
+        return PIPELINE_OMITIDO
+    if codigo_pipeline != EXITO:
+        return _degradar(codigo_pipeline, "la prospección no se completó", db_path)
+    if codigo_apagado != EXITO:
+        return _degradar(codigo_apagado, "el servidor no quedó apagado", db_path)
+    return EXITO
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """Punto de entrada del lanzador. Lo invocan `Incoop.vbs` y la tarea programada."""
+    analizador = argparse.ArgumentParser(
+        prog="python -m src.lanzador",
+        description="Lanzador y Despertador del Ecosistema de Licitaciones (Capa 10).",
+    )
+    analizador.add_argument(
+        "--modo",
+        choices=[m.value for m in ModoInvocacion],
+        default=ModoInvocacion.COMPLETO.value,
+        help="completo: servidor + Cockpit + prospección (doble clic). "
+             "pipeline: sólo prospección, sin servidor ni pantalla (despertador). "
+             "cockpit: abrir la pantalla sin prospectar.",
+    )
+    analizador.add_argument(
+        "--config", default=None,
+        help="Ruta alternativa de config/lanzador.yaml. Sin ella se usa la del proyecto.",
+    )
+    argumentos = analizador.parse_args(argv)
+
+    try:
+        return orquestar(ModoInvocacion(argumentos.modo), ruta_config=argumentos.config)
+    except Exception as e:
+        # C2 cumplido: se registra con su tipo y el estado resultante —código 1— es
+        # distinguible del éxito. El `1` está reservado justo a esto: lo que el contrato no
+        # previó, que es información por sí misma.
+        detalle = f"error no previsto ({type(e).__name__}: {e})"
+        print(f"[-] {detalle}", file=sys.stderr)
+        registrar_evento_lanzador("LANZADOR_DEGRADADO", motivo=detalle)
+        if not avisar_fallo_fatal("Ecosistema de Licitaciones", detalle):
+            registrar_evento_lanzador(
+                "LANZADOR_GUI_OMITIDA",
+                motivo="sin sesión interactiva: el error no previsto viaja por código y registro",
+            )
+        return ERROR_NO_PREVISTO
+
+
+if __name__ == "__main__":
+    sys.exit(main())

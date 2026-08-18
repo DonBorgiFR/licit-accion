@@ -1,21 +1,21 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
-> **Estado del producto: Beta 0.4 (2026-08-17).** **Las Capas 1 a 9 están completadas y
-> validadas**, y la Capa 10 —el lanzador silencioso— es la activa, con sus **Pasos 1 a 6
-> cerrados**: el Cockpit ya se sirve desde FastAPI sin Node.js, el servidor se arranca y se apaga
-> solo, y el pipeline se ejecuta respetando el cerrojo y devolviendo un código de salida honesto.
-> La **Capa 11** —despliegue en servidor— está **anotada como alcance, no diseñada**. El
-> 2026-08-12 se ejecutó la **primera corrida real del pipeline completo**: 12 expedientes captados,
-> 88 documentos detectados, 63 pliegos descargados y leídos, 10 análisis semánticos del LLM y 0
-> errores.
+> **Estado del producto: Beta 0.5 (2026-08-18).** **Las Capas 1 a 9 están completadas y
+> validadas**, y la Capa 10 —el lanzador silencioso— es la activa, con sus **Pasos 1 a 7
+> cerrados**: **el sistema ya se usa con un doble clic**. Un icono en el escritorio arranca el
+> ecosistema sin consola, abre el Cockpit en una ventana de aplicación —servido por FastAPI, sin
+> Node.js— y prospecta por debajo respetando el cerrojo; al cerrar la ventana, el servidor se apaga
+> solo y el equipo queda como estaba. La **Capa 11** —despliegue en servidor— está **anotada como
+> alcance, no diseñada**. El 2026-08-18 el doble clic ejecutó una **corrida real completa**: 154,55
+> segundos, 15 expedientes nuevos, 36 documentos descargados, 5 análisis del LLM y 0 errores.
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, con la suite en **419/419**. De **41 hallazgos** catalogados, **39 están
+> están cerrados, con la suite en **464/464**. De **44 hallazgos** catalogados, **42 están
 > cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10— y **H-41**,
-> un crash nativo del pipeline sobre datos reales, sin asignar. El esquema
-> vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit compila limpio con `tsc -b`
-> en modo estricto y su bundle está al día.
+> un crash nativo del pipeline sobre datos reales, sin asignar y que el 2026-08-18 **no se
+> reprodujo**. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
+> compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra
 > ficheros del disco** según la política de retención. Es deliberado y está auditado en la tabla
@@ -1163,7 +1163,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 6 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.1.0** desde el 2026-08-17. **El Cockpit ya se sirve desde FastAPI, el servidor se arranca y se apaga solo, y el pipeline se ejecuta respetando el cerrojo.** La tarea activa es el **Paso 7**, el lanzador silencioso `.vbs` y los accesos directos. Suite: **419/419**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 7 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.2.0** desde el 2026-08-18. **El sistema ya se usa con un doble clic**: icono en el escritorio, sin consola, Cockpit en ventana de aplicación y prospección por debajo. La tarea activa es el **Paso 8**, el despertador. Suite: **464/464**.
 
 ### 🎯 Objetivo
 
@@ -1286,8 +1286,9 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 | Artefacto | Qué es | Por qué |
 |---|---|---|
-| `Incoop.vbs` | Envoltorio silencioso de Windows | Ejecuta el orquestador con la ventana oculta. Es el fichero del doble clic. |
-| `src/lanzador.py` | Orquestador real | Toda la lógica vive en Python y es comprobable; el VBS sólo lo invoca sin consola. |
+| `Incoop.vbs` | Envoltorio silencioso de Windows | 🟢 Paso 7. Ejecuta el orquestador con la ventana oculta. Es el fichero del doble clic. |
+| `src/lanzador.py` | Orquestador real | 🟢 Paso 7. Toda la lógica vive en Python y es comprobable; el VBS sólo lo invoca sin consola. |
+| `Incoop.ico` + `tools/crear_accesos_directos.py` | Icono y accesos directos | 🟢 Paso 7. Alta y baja idempotentes en escritorio y menú de inicio. Lo que se hace a mano no se documenta ni se reproduce. |
 | `config/lanzador.yaml` | Configuración versionada | Puerto, tope de espera, apertura del navegador y hora del despertador. Sin valores por defecto. |
 | `data/lanzador.pid` | Marca del servidor propio | 🟢 Paso 5. Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
 | Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
@@ -1504,24 +1505,50 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 #### **Fase 3: Ergonomía silenciosa y despertador**
 
-7. **Paso 7 — Lanzador Silencioso VBS, Modo Aplicación y Accesos Directos (`Incoop.vbs`)**: 💤
-   - Envoltorio de una docena de líneas que invoca el orquestador con la ventana oculta. **Toda la
-     lógica se queda en Python**: VBS no se puede probar con la suite, así que sólo hace de puerta.
-   - Accesos directos con icono para escritorio y menú de inicio, y ruta absoluta anclada a la raíz
-     del proyecto *(lección de H-18: el directorio de trabajo de un acceso directo no es el que
-     uno cree)*.
-   - **El Cockpit se abre en modo aplicación**, no como una pestaña más. Localizado el ejecutable
-     de Chrome o Edge, se lanza con `--app=http://127.0.0.1:<puerto>`: ventana limpia, sin barra de
-     direcciones ni pestañas, con aspecto de programa de escritorio. Si no aparece ninguno de los
-     dos, se cae a `webbrowser.open()` — degradar la apariencia es aceptable; no abrir nada, no.
-   - La apertura del navegador pasa por `es_sesion_interactiva()`, como cualquier otra llamada
-     gráfica.
+7. **Paso 7 — Lanzador Silencioso VBS, Modo Aplicación y Accesos Directos (`Incoop.vbs`)**: 🟢 **Completado el 2026-08-18.** Suite: **464/464**.
+   - **Faltaba el orquestador, y ningún paso lo tenía asignado.** Los Pasos 2 a 6 dejaron las
+     piezas —comprobar, configurar, servir, prospectar, apagar— pero nadie las recorría: el `.vbs`
+     no tenía a qué llamar. `orquestar()` y `main()` recorren ahora la máquina de estados según
+     `--modo {completo,pipeline,cockpit}` y traducen el resultado al mapa de códigos de salida. Con
+     ellos se emiten por fin los **tres eventos del contrato que ningún código emitía**:
+     `LANZADOR_INICIADO`, `LANZADOR_PUERTO_REUTILIZADO` y `LANZADOR_PUERTO_OCUPADO_AJENO`.
+   - **El Cockpit se abre antes de prospectar** *(decisión de dirección, 2026-08-18)*. La corrida
+     real tarda dos minutos y medio: prospectar primero sería dejar la pantalla en blanco todo ese
+     rato tras el doble clic. Se abre con los datos de ayer y la corrida ocurre debajo, con un
+     **indicador nuevo en la cabecera** que dice si hay prospección en marcha y cuándo termina.
+   - **El navegador se abre en modo aplicación y con perfil propio, y el perfil no es estética.**
+     Medido en Edge y Chrome: con una instancia previa del mismo perfil, el proceso lanzado delega
+     y **muere en 0,2 s**; como su final es lo que el lanzador lee como *"han cerrado el Cockpit"*,
+     usar el perfil del usuario habría apagado el servidor recién arrancado delante de él.
+   - **El ciclo se cierra solo**: al cerrar la ventana, apagado ordenado y equipo como estaba.
+     Verificado en vivo, el nivel 1 —el endpoint— en ~1 s. Sin ventana propia que vigilar
+     —navegador por defecto— **no se apaga y consta** (`LANZADOR_APAGADO_DIFERIDO`).
+   - **Al modo «sólo pipeline» no se le exige lo que no usa**: un bundle sin compilar o un puerto
+     ocupado por un tercero no pueden costar una noche sin prospectar.
+   - `Incoop.vbs` **sin una sola línea de lógica** y en ASCII puro, con un único diálogo: el que
+     avisa de que no se ha podido arrancar Python, que es lo único de lo que Python no puede
+     avisar. Y `tools/crear_accesos_directos.py` da de alta y de baja los dos accesos —escritorio
+     y menú de inicio— con el icono de Incoop, preguntando a Windows dónde están esas carpetas
+     *(con OneDrive, el escritorio real no está donde uno cree)*.
+   - **Tres defectos encontrados arrancando la aplicación, los tres latentes desde capas
+     anteriores**: **H-42** —la API perdía la conexión al cambiar de hilo y el Cockpit se pintaba
+     a cero: 16 de 40 peticiones concurrentes daban 500, y 80 de 80 correctas tras repararlo—,
+     **H-43** —un `RUNNING` no dice si hay alguien prospectando: el indicador anunciaba una corrida
+     viva sobre un cadáver de ayer— y **H-44** —el lanzador informaba de una avería inexistente al
+     cerrar, con código 40 sobre un servidor que sí había muerto—.
+   - **Verificado con el doble clic de verdad** *(Convención C7)*: sin consola, Cockpit en ventana
+     de aplicación, prospección real de **154,55 s con 15 expedientes nuevos, 36 documentos, 5
+     análisis y 0 errores**, cifras de pantalla comparadas una a una con la consulta directa, y
+     apagado limpio al cerrar.
 
 8. **Paso 8 — El Despertador: Tarea Programada de Windows**: 💤
    - Herramienta del proyecto para **registrar y dar de baja** la tarea, no configuración a mano
      por la interfaz gráfica: lo que se hace a mano no se documenta ni se reproduce.
    - Ejecuta el modo **sólo pipeline** —prospectar de madrugada no debe abrir un navegador en una
-     sesión que nadie está mirando—.
+     sesión que nadie está mirando—, **invocando Python directamente y nunca el `.vbs`** *(hereda
+     del Paso 7)*: la lanzadera contiene un diálogo para el caso de que Python no arranque, y en la
+     Session 0 ese diálogo esperaría para siempre. Es la invariante central vista desde el atajo
+     que parecía cómodo.
    - **La casilla *"ejecutar tanto si el usuario ha iniciado sesión como si no"* es la decisión
      crítica del paso.** Marcarla es lo correcto para una tarea nocturna, y es a la vez lo que
      lleva el proceso a la Session 0. La prueba que lo cierra no es que la tarea se registre, sino
@@ -1613,14 +1640,15 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ### 🛠️ Herramientas y Código a Crear
 
-- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟡 Healthcheck, `es_sesion_interactiva()`, estados del puerto, configuración y supervisor hechos (Pasos 2, 3 y 5); falta el orquestador.
+- `src/lanzador.py`: orquestador, healthcheck de arranque en frío y supervisor de procesos. 🟢 Completo desde el Paso 7.
 - `config/lanzador.yaml`: configuración versionada del lanzador. 🟢 v1.0.0 (Paso 3).
-- `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 💤
+- `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 🟢 Paso 7.
+- `Incoop.ico` y `tools/crear_accesos_directos.py`: icono y accesos directos idempotentes. 🟢 Paso 7.
 - `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 🟢 Paso 4.
-- `frontend/src/components/`: distintivo visible cuando la última corrida falló o quedó degradada. 💤
+- `frontend/src/components/ProspeccionIndicator.tsx`: estado de la prospección en la cabecera. 🟢 Paso 7. El distintivo de **fallo** sigue siendo del Paso 9.
 - `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 56 regresiones de los Pasos 2 a 5.
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 116 regresiones de los Pasos 2 a 7.
 
 ---
 

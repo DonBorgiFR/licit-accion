@@ -1573,9 +1573,122 @@ ficheros *antes* de tocar la base, así que una interrupción deja el fichero fu
 marcar—. Aquí no pasó (`purgas` a 0, no llegó a esa fase), pero un crash sistemático en la fase
 documental sí podría alcanzarla.
 
+> 📌 **Dato nuevo del 2026-08-18 (verificación del Paso 7): no se reprodujo.** El doble clic
+> lanzó una corrida real completa —**154,55 s, 15 expedientes nuevos, 36 documentos
+> descargados, 5 análisis del LLM, 0 errores**— que terminó `COMPLETED`. No demuestra que
+> esté arreglado, porque nada se ha tocado: demuestra que **no es sistemático**, y por tanto
+> que depende de un documento concreto o de una fase que esa noche sí se recorrió. Refuerza
+> la conclusión de que hace falta registrar qué fichero se va a procesar **antes** de abrirlo.
+
 **Reparación: sin asignar.** No pertenece a la Capa 10, que arranca procesos y no lee pliegos.
 Procede decidir si se abre como tarea propia o se atiende dentro del Paso 10, que es el que
 cierra el ecosistema y escribe el manual de operación.
+
+---
+
+## Hallazgos de la verificación en vivo del Paso 7 — 2026-08-18 (Capa 10, Paso 7)
+
+> **Los tres salieron de arrancar la aplicación y mirar la pantalla, no de leer código.** Es la
+> cuarta vez que ocurre —H-21, H-22 y H-23 en el Paso D8; H-38 al escribir la configuración; H-40
+> al implementar el cerrojo—, y los tres estaban **latentes desde una capa anterior**: la suite
+> los daba por buenos porque ninguno rompe nada. Dos de ellos mienten en pantalla y el tercero
+> miente en el código de salida.
+
+### H-42 · La API pierde la conexión al cambiar de hilo, y el Cockpit se pinta a cero 🟢 CERRADO (Capa 10, Paso 7)
+
+**Detectado el 2026-08-18**, al abrir el Cockpit con el lanzador nuevo: la pantalla mostraba
+`0 €` y `0 expedientes` con 48 expedientes en la base. La API, consultada a mano, devolvía los
+datos correctos.
+
+**Medido, no supuesto**: 40 peticiones concurrentes contra la API real → **16 respuestas 500 y 2
+respuestas 503**. Tras la reparación, **80 de 80 correctas** en dos vueltas.
+
+**La causa no es SQLite, es FastAPI.** El error era
+`SQLite objects created in a thread can only be used in that same thread`, y viene de que
+`get_db()` es un **generador síncrono**: el framework lo ejecuta en un hilo del threadpool y
+ejecuta el endpoint que consume esa conexión en **otro** hilo del mismo pool. Con poca carga
+suele tocar el mismo hilo y no se nota — por eso llevaba latente desde la Capa 7 y sólo apareció
+al añadir un tercer sondeo al Cockpit.
+
+**Reparación**: `sqlite3.connect(..., check_same_thread=False)` en `Memoria.conectar()`. Lo que se
+desactiva es **una comprobación de Python, no una protección de SQLite**: la conexión se usa de
+forma secuencial dentro de una sola petición, y este intérprete trae SQLite compilado con
+`THREADSAFE=1` y `sqlite3.threadsafety == 3` —modo serializado—, comprobado antes de tocar nada.
+
+**Regresiones**: dos en `tests/test_concurrencia_sqlite.py`, una sobre la conexión y otra sobre
+el inyector real `get_db()`. **Comprobado que fallan sin la reparación**, que es lo que
+distingue una regresión de un adorno.
+
+> ⚠️ **La primera versión de esa regresión no protegía nada, y merece quedar escrito.** Abría la
+> conexión "en otro hilo" llamando a `Memoria.conectar()` dentro del hilo… pero `conectar()` es
+> un *contextmanager*: allí sólo se crea el generador, y la conexión no nace hasta el
+> `__enter__()`, que ocurría en el hilo principal. La prueba pasaba con y sin reparación —medía
+> su propio andamiaje—. Es literalmente la trampa que `src/proceso.py` dejó anotada en el Paso 6.
+
+### H-43 · Un `RUNNING` no dice si hay alguien prospectando 🟢 CERRADO (Capa 10, Paso 7)
+
+**Detectado el 2026-08-18**, mirando el indicador nuevo de la cabecera: anunciaba
+**«Prospección en curso»** sobre la corrida id 4, cuyo proceso había muerto el día anterior.
+
+**Por qué no es cosmético**: una fila `RUNNING` se queda igual cuando una corrida muere a mitad
+—un apagón, un cierre de sesión, el crash de H-41—, de modo que servir el estado a secas
+convierte un cadáver en un aviso girando **indefinidamente**. Es la familia de H-21: no rompe
+nada y miente en pantalla. Y afectaba también al historial de prospecciones de la pantalla de
+Administración, que existe desde la Capa 9.
+
+**Reparación**: `Memoria.listar_ejecuciones()` devuelve `duenyo_vivo`, y el esquema de la API lo
+transporta hasta el Cockpit. **No se añade criterio nuevo**: la respuesta la da
+`motivo_ejecucion_huerfana()`, exactamente la misma función con la que el cerrojo de ejecución
+decide si puede arrancar (esquema v8, H-40). Un solo juicio y no dos, o el lanzador y la pantalla
+acabarían contando cosas distintas del mismo hecho.
+
+`None` significa **«no se puede saber»** —fila anterior a v8, o un instante de creación que el
+sistema no deja consultar— y el Cockpit lo dice con esas palabras en vez de elegir por el lector
+entre «en curso» y «rota».
+
+**Verificado en vivo**: sobre la corrida huérfana real, el indicador pasó a decir «Prospección
+interrumpida» con el motivo; tras la corrida siguiente, «Datos al día · 15 expedientes nuevos».
+**Regresiones**: cinco en `tests/test_capa10_lanzador.py`.
+
+> 📌 **Alcance declarado**: este juicio sólo es válido preguntado **desde la máquina que ejecuta
+> el pipeline**, que es el diseño de hoy —API y pipeline conviven en `127.0.0.1`—. El día que se
+> separen (Capa 11), tendrá que responderlo quien corra el pipeline, no quien sirva la pantalla.
+> Queda anotado en el propio esquema para que no se descubra allí.
+
+### H-44 · El lanzador informaba de una avería inexistente al cerrar 🟢 CERRADO (Capa 10, Paso 7)
+
+**Detectado el 2026-08-18**, haciendo doble clic dos veces: **las dos sesiones terminaron con
+`LANZADOR_APAGADO_INCOMPLETO` y código de salida 40** sobre un servidor que sí había muerto —el
+puerto quedaba libre en dos segundos y el proceso ya no figuraba en el sistema—.
+
+**Por qué importa**: la Consideración 11 de la capa dice que el código de salida es información y
+no un formalismo. Un lanzador que informa de una avería inexistente **al final de cada sesión**
+enseña a no creerse sus códigos, y el día que el 40 sea verdad nadie lo mirará. Además, la
+excepción impedía retirar el fichero de marca, que quedaba señalando a un proceso muerto.
+
+**La causa: se preguntaba por número de proceso teniendo el objeto del hijo.** `es_nuestro_proceso()`
+consulta el sistema operativo por PID e instante de creación —lo correcto cuando la marca la dejó
+**otra** invocación—, pero es la vía frágil para el hijo propio: mientras alguien conserve un
+handle abierto sobre un proceso, Windows mantiene vivo su objeto-proceso y `OpenProcess` sigue
+contestando. Es el aviso que `src/proceso.py` lleva anotado desde el Paso 6, aplicado ahora al
+supervisor del Paso 5.
+
+**Reparación**: el supervisor recuerda el `Popen` del servidor que arrancó **esta** invocación y
+le pregunta con `poll()`, que consulta el handle propio y reclama al hijo al morir. Si la marca es
+de otra invocación no hay hijo al que preguntar, y entonces se sigue usando el PID, que allí sí es
+correcto.
+
+**Verificado en vivo**: el mismo escenario que había fallado dos veces —lanzado por el `.vbs` bajo
+`pythonw`, con un segundo navegador sondeando— pasó a apagar **por el nivel 1 en ~1 s**, con la
+marca retirada y código 0. **Regresiones**: cuatro en `tests/test_capa10_lanzador.py`.
+
+> 🔬 **Hallazgo colateral, medido y ahora escrito en el código: el nivel 2 no existe sin consola.**
+> Lanzado desde el `.vbs` con `pythonw.exe`, `os.kill(pid, CTRL_BREAK_EVENT)` falla con
+> **WinError 6, «controlador no válido»**, porque no hay consola a la que enviar el evento. Es
+> decir: en el caso normal —el doble clic— la escalera de apagado tiene **dos** peldaños reales,
+> el endpoint y `TerminateProcess`, no tres. El Paso 5 midió el nivel 2 con consola y era cierto;
+> lo que no se había medido es el escenario para el que existe la capa. Se conserva el nivel
+> porque sí funciona con consola, y porque un nivel que falla en voz alta es mejor que uno ausente.
 
 ---
 

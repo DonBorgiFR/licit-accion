@@ -6,6 +6,7 @@
 import React from 'react';
 import { LayoutDashboard, FileText, Radio, Building2, Settings2 } from 'lucide-react';
 import { HealthIndicator } from './HealthIndicator';
+import { ProspeccionIndicator } from './ProspeccionIndicator';
 import { cn } from '../lib/utils';
 
 export type ActiveTab = 'kpis' | 'licitaciones' | 'centinela' | 'admin';
@@ -95,8 +96,9 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
             </button>
           </nav>
 
-          {/* Sensor de Salud de la API */}
+          {/* Sensor de Salud de la API y estado de la prospección */}
           <div className="flex items-center gap-3">
+            <ProspeccionIndicator />
             <HealthIndicator />
           </div>
         </div>
