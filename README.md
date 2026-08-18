@@ -12,9 +12,11 @@
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
 > están cerrados, con la suite en **464/464**. De **44 hallazgos** catalogados, **42 están
-> cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10— y **H-41**,
-> un crash nativo del pipeline sobre datos reales, sin asignar y que el 2026-08-18 **no se
-> reprodujo**. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
+> cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
+> —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y los
+> tres de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
+> devuelven 404 y 500)*, **H-46** *(la purga documental se lanza con un solo clic)* y **H-47** *(el
+> Funnel se llena de licitaciones fuera del ámbito de Incoop)*. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
 > compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra

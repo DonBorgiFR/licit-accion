@@ -227,7 +227,23 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 > ejecutarse— **sigue implementada y no se ha relajado ni una línea**. Lo que cambia es sólo
 > cuánto duele perder la base de pruebas, no lo que el código tiene permitido hacer.
 
-**Dos hallazgos abiertos:**
+**Cinco hallazgos abiertos** *(tres nuevos, de la revisión funcional con dirección del
+2026-08-18; su evidencia completa está en el dosier de auditoría)*:
+
+* **H-45 · El Centinela no está vacío: está ciego.** Las dos fuentes oficiales devuelven error
+  —DOGC **404**, BOPB **500**— y llevan así desde antes de hoy. El pipeline degrada correctamente
+  y lo registra; **la pantalla no distingue "no hay alertas" de "no he podido mirar"**. Dos
+  reparaciones distintas: actualizar las URLs en `config/fuentes.yaml` *(fuera del código)* y
+  hacer visible la degradación *(hermano del distintivo del Paso 9)*.
+* **H-46 · La purga documental se ejecuta con un solo clic**, mientras la eliminación de
+  expedientes —en la misma pantalla— exige previsualizar primero. La previsualización de la purga
+  documental **ya existe y la API ya la sirve**: la pantalla no la usa.
+* **H-47 · El Funnel se llena de licitaciones fuera de ámbito.** De 19 expedientes vivos, **3 son
+  catalanes y 3 de Madrid**. El perfil comercial está bien —premia la geografía con +40/+35/+20—
+  pero **la geografía suma puntos y no descarta nada**, y dos de las tres fuentes son estatales.
+  Decisión de dirección pendiente: filtrar en pantalla, filtrar al ingerir o subir el umbral.
+
+**Dos hallazgos abiertos de antes:**
 
 * **H-39**, con sitio y fecha asignados. `data/pipeline.jsonl` mezcla dos esquemas de evento
   incompatibles desde la Capa 7 —el pipeline y el lanzador escriben `action`, la API escribe

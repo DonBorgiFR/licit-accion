@@ -1692,6 +1692,112 @@ marca retirada y código 0. **Regresiones**: cuatro en `tests/test_capa10_lanzad
 
 ---
 
+## Hallazgos de la revisión funcional con dirección — 2026-08-18
+
+> **Salieron de mirar el sistema terminado con quien lo va a usar**, no de una prueba ni de leer
+> código. Los tres primeros no son defectos de programación: son defectos de **lo que el sistema
+> hace con lo que sabe**, y sólo se ven cuando alguien que conoce el negocio mira la pantalla.
+
+### H-45 · El Centinela no está vacío: está ciego 🔴 ABIERTO (sin asignar)
+
+**Detectado el 2026-08-18.** El canal Centinela del Cockpit no muestra **ni una sola alerta**, y la
+base confirma **0 filas** en `boletines_alertas`. No es que no haya novedades: **las dos fuentes
+oficiales devuelven error**, y así consta en el registro de la corrida real de hoy:
+
+```
+[!] Modo Degradado (DOGC): HTTP Error 404 en 'https://dogc.gencat.cat/es/rss/index.html'
+[!] Modo Degradado (BOPB): HTTP Error 500 en 'https://bop.diba.cat/rss'
+```
+
+**El pipeline se comporta correctamente**: reintenta tres veces, declara modo degradado y sigue
+—Regla 5 y Convención C2 funcionando—. El defecto está **en la pantalla**: un canal vacío por no
+haber novedades y un canal vacío por no poder consultarlas **se ven exactamente igual**, y el
+segundo caso lleva así desde que las URLs dejaron de responder. Es la familia de H-21: no rompe
+nada, y una persona concluye *"no hay oportunidades tempranas"* cuando lo cierto es *"llevo semanas
+sin poder mirar"*.
+
+**Dos reparaciones distintas, y conviene no confundirlas:**
+
+1. **Las URLs** *(fuera del código)*: el DOGC sirve hoy su sindicación en otra dirección y el BOPB
+   responde 500 en la suya. Hay que localizar los canales vigentes y actualizarlos en
+   `config/fuentes.yaml`, que es donde ya viven — no hay nada codificado a fuego.
+2. **La honestidad de la pantalla** *(dentro del código)*: el Cockpit debe distinguir *"no hay
+   alertas"* de *"la última consulta a las fuentes falló"*. La información existe —el pipeline la
+   registra en `pipeline.jsonl` con su evento de degradación—, simplemente no llega a la pantalla.
+   Es hermano del distintivo que el **Paso 9 de la Capa 10** ya tiene asignado para las corridas
+   fallidas, y lo natural es resolverlos juntos.
+
+### H-46 · La purga documental se ejecuta con un solo clic 🔴 ABIERTO (sin asignar)
+
+**Detectado el 2026-08-18**, revisando la pantalla de Administración con dirección. El botón
+**«Liberar peso documental»** lanza la purga **inmediatamente**: sin previsualización, sin
+confirmación y sin decir qué va a borrar. La mutación envía `confirmar: true` de antemano.
+
+**Contrasta con su vecina de la misma pantalla**, la eliminación de expedientes, que sí está
+construida en dos tiempos —nace deshabilitada y sólo se activa tras previsualizar (Capa 9, Paso 9)—.
+La incoherencia es el hallazgo: **dos operaciones destructivas, en la misma pantalla, con
+salvaguardas radicalmente distintas**, y la más accesible es la que borra ficheros del disco.
+
+**Matices que acotan la gravedad, y que no la anulan:**
+
+* La purga documental **sólo alcanza documentos que han cumplido su plazo de retención** y jamás
+  toca la memoria comercial: no puede destruir información de negocio.
+* Pero **sí borra ficheros del disco de forma irreversible**, y el Depurador ya tiene una
+  previsualización de purga documental implementada y expuesta por la API desde el Paso 7 de la
+  Capa 9 — es decir, **la mitad honesta existe y la pantalla no la usa**.
+* El aviso *"Nada se borra a ciegas"* está impreso junto a la sección, pero en texto pequeño y
+  referido a la otra operación. Un aviso que describe lo que hace el botón de al lado es peor que
+  ninguno.
+
+**Reparación propuesta**: aplicar a la purga documental el mismo patrón de dos tiempos que ya usa
+la eliminación, apoyándose en la previsualización que ya sirve la API. Sin asignar; encaja
+naturalmente en el Paso 9 de la Capa 10 o en una revisión de la pantalla de Administración.
+
+### H-47 · El Funnel se llena de licitaciones fuera del ámbito de Incoop 🔴 ABIERTO (sin asignar)
+
+**Detectado el 2026-08-18** por dirección, mirando el Funnel: *"detecta muchas cosas de fuera de
+Catalunya y veo pocas cerca de la zona"*. **Medido**, y es cierto:
+
+| | |
+|---|---|
+| Expedientes vivos en el canal principal | **19** |
+| De ellos, en Catalunya (`ES51*`) | **3** |
+| De ellos, en Madrid (`ES300`) | 3 |
+| Resto | Canarias, Andalucía, Asturias, Extremadura, Alicante… |
+
+**La causa no es el perfil comercial, que está bien construido.** `config/perfil_incoop.yaml`
+declara la presencia histórica real —Solsona, Terrassa, Súria, Sant Martí de Tous, Sant Cugat,
+Viladecans, Montmeló, Sant Adrià— y el Filtro premia la geografía con **+40** (municipio
+histórico), **+35** (Barcelona y área metropolitana) y **+20** (resto de Catalunya). Funciona: el
+expediente mejor puntuado de la base (**71 puntos**) es catalán.
+
+**La causa es que la geografía suma puntos pero no descarta nada.** Dos de las tres fuentes de
+`config/fuentes.yaml` son **estatales** —PCSP Estatal y CCAA Agregadas—, de modo que entra España
+entera, se persiste entera y se muestra entera. El ranking acierta; lo que no existe es un criterio
+de **ámbito**.
+
+> 📌 **Contraste con la realidad del negocio** *(revisado con dirección el 2026-08-18, en la unidad
+> compartida de servicios activos, sólo lectura)*: los **63 servicios activos** de Incoop son
+> escoles bressol i llars d'infants, ludoteques, casals infantils i de barri, dinamització juvenil,
+> acció comunitària, centres de dia i PFI — y **todos en Catalunya**: Barcelona (Guinardó,
+> Teixonera, Sant Andreu, Ciutat Vella, Sants, La Mina), L'Hospitalet, Terrassa, Sabadell, Solsona,
+> Súria, Montmeló, Llinars, Vilanova del Camí, Sant Martí de Tous. Frente a eso, el Funnel de hoy
+> ofrece limpieza de oficinas en Valdemoro, archivo en Madrid y consultoría en Tenerife.
+
+**Tres reparaciones posibles, y son decisión de dirección porque cambian qué ve el negocio:**
+
+1. **Filtrar en la pantalla**, con Catalunya por defecto y un interruptor para ver el resto. No se
+   pierde ni un dato y el efecto es inmediato.
+2. **Filtrar al ingerir**, declarando el ámbito en configuración versionada. Es lo más limpio, y
+   el riesgo es dejar fuera una oportunidad legítima de fuera de zona.
+3. **Subir el umbral de persistencia**, que hoy deja entrar todo lo que no excluye una regla dura.
+
+**Relacionado, y pendiente desde el 2026-08-07**: la revisión de cobertura de CPVs quedó aplazada
+*"hasta rehacer el cruce tras la primera ejecución real"*. Ya hay datos reales — y ahora también el
+catálogo de servicios activos, que dice qué CPVs debería estar persiguiendo el sistema.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
