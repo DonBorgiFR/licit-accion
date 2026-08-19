@@ -16,12 +16,13 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-19)
 
-La sesión **cerró H-48, H-49, H-47 y H-50** y **avanzó el Bloque 3 hasta su Paso 6**. La suite
-está en **552/552**. **La tarea siguiente es el Paso 7**: el cierre del bloque.
+La sesión **cerró H-48, H-49, H-47, H-50 y H-51**, y **cerró entero el Bloque 3 — Identidad y
+foco**, sus siete pasos. La suite está en **553/553**. **La tarea siguiente es el Paso 8 de la
+Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
-> 📌 **Lee [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) antes de tocar el frontend.** Están las
-> seis decisiones de dirección ya tomadas y la medición de contraste que las sostiene. No hace
-> falta rediseñar nada: hay que implementar los Pasos 5, 6 y 7.
+> 📌 **Lee [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) antes de tocar el frontend.** Está
+> **cerrado**, con las seis decisiones de dirección y la medición de contraste que las sostiene.
+> No hace falta rediseñar nada; lo que hay ahí es por qué la pantalla es como es.
 
 **Lo que ya se puede hacer con el sistema, y antes no:**
 
@@ -36,7 +37,7 @@ está en **552/552**. **La tarea siguiente es el Paso 7**: el cierre del bloque.
 * **Saber si el pliego se ha leído**, en tres estados y en cada fila. Antes el trabajo del
   Analista sólo se notaba porque **no** aparecía una advertencia.
 
-**Lo que todavía no**: el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
+**Lo que sigue**: la **Capa 10, Paso 8**, que espera desde el 2026-08-18.
 
 > 🔑 **Lo más transferible de la sesión, y no es técnico: dirección paró un paso que estaba en el
 > plan y tenía razón.** El Paso 3 de la reparación —rescatar 45 lotes archivados por error— se
@@ -69,15 +70,18 @@ está en **552/552**. **La tarea siguiente es el Paso 7**: el cierre del bloque.
 > texto al lado no es una advertencia.** Está escrito en la cabecera de `frontend/src/index.css`,
 > que es donde lo verá quien vaya a añadir un color.
 
-> ⚠️ **En qué estado queda la base.** **68 expedientes, 18 vivos**, esquema **v8**, retención
-> **v1.2.0**. La corrida real id 7 del 2026-08-19 (46,47 s) **conservó 13 licitaciones con plazo
-> abierto que el código anterior habría archivado**. Los **45 lotes archivados por error antes de
-> la reparación siguen archivados**, por decisión de dirección: son material de prueba y lo que
-> había que arreglar era dejar de perderlas. El Funnel **se irá llenando solo** con cada corrida.
+> ⚠️ **En qué estado queda la base** *(medido en el cierre del bloque, 2026-08-19)*: **74
+> expedientes, 24 vivos** —9 de ellos catalanes—, esquema **v8**, retención **v1.2.0**. En disco,
+> **207,1 MB**: 292 pliegos (125,8 MB), 12 copias (71,4 MB), base (9,0 MB) y rastro JSONL (0,9 MB).
+> **La reparación de H-48 está funcionando**: la corrida id 7 conservó 13 licitaciones con plazo
+> abierto que el código anterior habría archivado, y de las cuatro corridas posteriores —ids 8 a
+> 11, la última a las 13:21— el Funnel ha pasado de 18 vivos a **24 sin perder ninguno**. Los **45
+> lotes archivados por error antes de la reparación siguen archivados**, por decisión de dirección:
+> son material de prueba y lo que había que arreglar era dejar de perderlas.
 
 > 🐛 **H-41 sigue abierto y sin asignar** —el crash nativo del pipeline—, pero no se reprodujo en
-> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 se cerró con el Paso 5 y H-50 con el
-> Paso 6.**
+> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 se cerró con el Paso 5, H-50 con el
+> Paso 6 y H-51 con el Paso 7.**
 
 > 🔑 **El hallazgo más incómodo de la sesión, y no es técnico: una creencia equivocada del usuario
 > resultó ser un defecto del producto.** El contrato del Bloque 3 anotaba como carencia que
@@ -94,14 +98,14 @@ está en **552/552**. **La tarea siguiente es el Paso 7**: el cierre del bloque.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **552/552**. **H-48, H-49, H-47 y H-50 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel y el comando roto que recomendaba el Cockpit—, y **la tarea activa es el Bloque 3 — Identidad y foco, por su Paso 7**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **49 hallazgos catalogados, 46 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **553/553**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **50 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 552/552
+python -m pytest tests/ -q          # debe dar 553/553
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -167,7 +171,20 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
 
 ---
 
-### ⏭️ Tarea activa: Bloque 3 — Identidad y foco (contrato validado el 2026-08-19)
+### ✅ Cerrado el 2026-08-19: Bloque 3 — Identidad y foco (referencia, ya no es tarea)
+
+> **Los siete pasos, hechos y verificados contra la aplicación arrancada.** Lo que sigue queda
+> como referencia de **por qué la pantalla es como es**: casi todas las decisiones salieron de
+> medir, no de diseñar, y varias son contraintuitivas hasta que se ve el número.
+>
+> **Las cuatro promesas del apartado H del contrato, comprobadas una a una en el cierre:**
+>
+> | Lo prometido | Cómo se comprobó |
+> |---|---|
+> | Reconocer a Incoop antes de leer nada | Isotipo, marca compuesta con texto y las cinco tintas de la paleta sobre `#0E0D14` |
+> | Leer los títulos, con el completo en la ficha | 188 caracteres en la tabla, **1.663 en el tooltip y en la ficha**: el original nunca se toca |
+> | El Funnel de su ámbito, el resto a un clic | 9 de 24 con Catalunya puesta, cuadrando cabecera y desglose en los dos estados |
+> | Ver el trabajo del Analista, y que se diga cuando no lo hay | 7 «Pliego leído» y 2 «Sin analizar» en la base real, más la lectura degradada probada en copia |
 
 > **Contrato**: [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) v1.0.0, con las seis decisiones de
 > dirección ya tomadas y la medición de contraste que sostiene el fondo oscuro. **Léelo antes de
@@ -223,7 +240,10 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
 
 > ⚠️ **Dos cosas que sólo se vieron mirando, y una de ellas es un dato sucio.** *(1)* Los
 > separadores `·` de la línea de metadatos quedaron a **1,23** de contraste: no fallan como texto
-> —son decoración— pero **tampoco separaban**, y la línea se leía corrida. Token propio a 2,64.
+> —son decoración— pero **tampoco separaban**, y la línea se leía corrida. Token propio a **2,45**
+> *(corregido en el Paso 7: aquí se anotó 2,64, que es su contraste contra el fondo de página; el
+> separador vive sobre la tarjeta, y ahí da 2,45 — el mismo error de superficie que el Paso 3 había
+> documentado un paso antes)*.
 > *(2)* La base trae **`Consultoria` y `Consultoría` como sectores distintos**, el mismo con y sin
 > tilde: es la familia de H-27 en el vocabulario de sectores. La tabla **unifica lo que pinta**,
 > pero el dato sigue sucio y su arreglo es del Filtro, no de la pantalla.
@@ -243,7 +263,33 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
   **tres estados a la vez**: 7 «Pliego leído» y 2 «Sin analizar» en la base real, más una lectura
   degradada sembrada **en una copia**. 14 regresiones en `tests/test_bloque3_analisis.py`. Suite
   **552/552**.
-* **Paso 7** ⬜ — cierre: suite, C7 con la aplicación arrancada y documentos. **Es la tarea siguiente.**
+* **Paso 7** 🟢 — **cierre del bloque, hecho el 2026-08-19. Cierra H-51.** Suite **553/553**,
+  bundle recompilado, y una auditoría C7 sobre **las cuatro pantallas y la ficha**, no sólo sobre
+  lo tocado en el bloque: cada cifra visible contrastada con su consulta directa a la base.
+  Verificadas las cuatro promesas del apartado H del contrato. Documentos al día.
+
+> ⚠️ **Un defecto real, y de los que sólo aparecen sumando a mano lo que hay en pantalla (H-51).**
+> Administración mostraba Pliegos 125,8 + Copias 71,4 + Base 9,0 = **206,2 MB** y, debajo, un
+> **Total de 207,1**. La diferencia eran los `registros_bytes` del rastro JSONL: la API los enviaba
+> y ninguna tarjeta los pintaba. Es 0,4 %, y aun así es H-08 otra vez —un total con un sumando
+> invisible— en la única pantalla desde la que se **borra**. Reparado con una cuarta tarjeta, sin
+> calcular nada nuevo, y con una regresión que exige que el total sea la suma **y** que los cuatro
+> sumandos existan en la respuesta.
+
+> ⚠️ **Y dos correcciones a este mismo fichero, que es la otra mitad del cierre.** *(1)* El acta
+> daba la base en **68 expedientes y 18 vivos**; hay **74 y 24**, porque tras la corrida id 7 se
+> ejecutaron otras cuatro. *(2)* El Paso 4 anotó el token separador en **2,64** de contraste: es
+> **2,45**, porque vive sobre la tarjeta (`bg-surface`) y no sobre el fondo de página. Es
+> decoración y no incumple ningún umbral, pero **es exactamente el error que el Paso 3 había
+> documentado un paso antes** para `ink-faint` —medir un color contra el fondo y no contra la
+> superficie donde de verdad aparece—. Escribir la lección no basta para no repetirla.
+
+> 🔑 **Lo que el cierre confirma sobre el método, y va más allá de este bloque.** Ninguno de los
+> tres hallazgos del Paso 7 salió de la suite, que estaba en verde: salieron de **sumar tres
+> números de una pantalla**, de **comparar el acta con la base** y de **rehacer el auditor de
+> contraste** al ver que daba un fallo imposible (Tailwind v4 devuelve los colores en `oklab` y el
+> script los leía como RGB — el «fallo» de 1,17 era del auditor, no de la pantalla). **Una
+> herramienta de verificación también es código sin revisar.**
 
 > 🔑 **El Paso 6 no era «pintar un distintivo»: eran dos estados fundidos en uno y un tercero que
 > no existía.** La pantalla manejaba «hay análisis» y «no hay análisis fiable». Eso juntaba *no se
@@ -368,7 +414,10 @@ duración intacta.
 
 ---
 
-### ⏸️ En pausa: Capa 10 — El Lanzador y Despertador, Paso 8
+### ⏭️ Tarea activa: Capa 10 — El Lanzador y Despertador, Paso 8
+
+> **Retomada el 2026-08-19** al cerrar el Bloque 3. Llevaba en pausa desde el 2026-08-18, cuando
+> dirección antepuso las cuatro carencias que se veían al mirar el sistema terminado.
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
@@ -758,7 +807,7 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **49 hallazgos catalogados, 46 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+De la remediación, ninguno. **50 hallazgos catalogados, 47 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
 
 > **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 

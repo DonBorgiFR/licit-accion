@@ -10,9 +10,9 @@
 > segundos, 15 expedientes nuevos, 36 documentos descargados, 5 análisis del LLM y 0 errores.
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
-> **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, y el **Bloque 3** (identidad y foco) va por su Paso 6, con la suite en
-> **552/552**. De **49 hallazgos** catalogados, **46 están
+> **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
+> **3 (identidad y foco)** están cerrados, con la suite en
+> **553/553**. De **50 hallazgos** catalogados, **47 están
 > cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
 > —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y dos
 > de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
@@ -1664,9 +1664,23 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 ## 🎨 Bloque 3: Identidad y Foco (revisión funcional con dirección)
 
-* **Estado actual**: 📋 **Apunte de alcance del 2026-08-18, pendiente de plan.** Es la **tarea
-  activa** por decisión de dirección, por delante del Paso 8 de la Capa 10, que queda en pausa.
-  Sin plan validado no se implementa (Reglas 8 y 9).
+* **Estado actual**: 🟢 **CERRADO el 2026-08-19**, sus siete pasos, con contrato validado en
+  [`.agents/CONTRATO_BLOQUE_3.md`](.agents/CONTRATO_BLOQUE_3.md). Se antepuso al Paso 8 de la Capa
+  10 por decisión de dirección del 2026-08-18; cerrado el bloque, la Capa 10 vuelve a ser la tarea
+  activa. Cerró **H-47**, **H-50** y **H-51**, y dejó la suite en **553/553**.
+
+  **Los siete pasos**: contrato · título legible (`titulo_legible()`, tope 200 medido) · paleta de
+  tres capas y fondo oscuro (463 clases migradas) · jerarquía de la tabla (el título manda, el
+  score deja de mentir, el sector se pinta) · ámbito territorial con interruptor (`ES51%`, Funnel y
+  KPIs a la vez) · análisis semántico en tres estados · cierre con auditoría C7 de las cuatro
+  pantallas.
+
+  > 🔑 **La lección del bloque, y no es de diseño: casi todo salió de medir, no de decidir.** El
+  > fondo oscuro, porque de los cinco colores de la marca sólo 2 superan el umbral sobre blanco y
+  > los 5 sobre `#0E0D14`. El tope de 200 caracteres, porque con 120 se recortaba el 57 % de
+  > títulos que ya eran correctos. La letra oscura sobre los botones de acento, porque el blanco da
+  > 2,34. Y las tres capas de color separadas **por forma y no por tono**, porque medidos quedaban
+  > a 1-5 grados unos de otros.
 
 ### 🎯 Objetivo
 

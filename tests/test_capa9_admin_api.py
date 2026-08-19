@@ -79,6 +79,33 @@ def test_el_almacenamiento_distingue_lo_purgable_de_lo_que_no_lo_es(client, base
     assert datos["purgable_bytes"] < datos["total_bytes"], "La base no entra en lo purgable"
 
 
+def test_el_total_de_ocupacion_es_exactamente_la_suma_de_sus_partes(client, base_api):
+    """H-51. El Total no puede tener sumandos que la pantalla no enseñe.
+
+    **Detectado el 2026-08-19 mirando la pantalla**, en el cierre del Bloque 3: Administración
+    mostraba Pliegos 125,8 + Copias 71,4 + Base de datos 9,0 = **206,2 MB** y, debajo, un Total
+    de **207,1 MB**. La diferencia exacta eran los `registros_bytes` —el rastro JSONL—, que la
+    API sí enviaba y ninguna tarjeta pintaba.
+
+    Nadie decide nada por 0,9 MB. Pero una cifra de cabecera que no cuadra con su desglose es el
+    defecto de H-08 y H-21, y es literalmente la comprobación mínima que exige la Convención C7.
+    Esta regresión ata las dos mitades: que el total sea la suma, y que **los cuatro sumandos
+    existan en la respuesta** — que es lo que permite a la pantalla enseñarlos todos.
+    """
+    carpeta = os.path.join(os.path.dirname(base_api.db_path), "documents")
+    os.makedirs(carpeta, exist_ok=True)
+    with open(os.path.join(carpeta, "pliego.pdf"), "wb") as fichero:
+        fichero.write(b"x" * 1024)
+
+    datos = client.get("/api/v1/admin/almacenamiento").json()
+
+    partes = ("documentos_bytes", "copias_bytes", "base_datos_bytes", "registros_bytes")
+    for parte in partes:
+        assert parte in datos, f"Falta {parte}: el total tendría un sumando invisible"
+
+    assert datos["total_bytes"] == sum(datos[p] for p in partes)
+
+
 def test_el_almacenamiento_mide_los_documentos_donde_el_lector_los_deja(client, base_api):
     """Los pliegos viven junto a la base, no en `data/` sin más.
 

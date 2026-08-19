@@ -2025,6 +2025,38 @@ herramienta de auditoría. El README queda corregido en sus seis apariciones. Do
 día, que es justo lo que pasó) y otra impide que la documentación vuelva a ofrecer la forma rota
 en un bloque copiable.
 
+### H-51 · El Total de ocupación en disco no cuadraba con su desglose 🟢 CERRADO (2026-08-19)
+
+**Detectado el 2026-08-19** en el cierre del Bloque 3 (Paso 7), haciendo literalmente la
+comprobación mínima que exige la Convención C7: *"que cada cifra de cabecera cuadre con su
+desglose"*. La pantalla de Administración mostraba:
+
+| Tarjeta | Valor |
+|---|---|
+| Pliegos | 125,8 MB |
+| Copias | 71,4 MB |
+| Base de datos | 9,0 MB |
+| **Suma de lo visible** | **206,2 MB** |
+| **Total** | **207,1 MB** |
+
+**La diferencia son exactamente los `registros_bytes`** —963.737 bytes del rastro JSONL—, que
+`Depurador.medir_almacenamiento()` calcula, la API envía y **ninguna tarjeta pintaba**. El total
+tenía un sumando invisible.
+
+**Por qué se anota siendo 0,9 MB sobre 207.** Porque nadie decide nada por un 0,4 %, pero es el
+mismo defecto de H-08 y H-21 —un contador sobre una población distinta a su propio desglose— en la
+única pantalla del sistema desde la que se **borra**. Y porque llevaba ahí desde la Capa 9 sin que
+lo viera ni la suite ni la revisión: sólo aparece sumando las tres tarjetas a mano.
+
+**Reparado el mismo día**: cuarta tarjeta *Registros · rastro JSONL · no purgable*, sin calcular
+nada nuevo —el dato ya viajaba en la respuesta—. Regresión en `tests/test_capa9_admin_api.py`, y
+ata las dos mitades: que el total **sea** la suma y que **los cuatro sumandos existan** en la
+respuesta, que es lo que permite a la pantalla enseñarlos todos.
+
+> 🔑 **Lo transferible: la comprobación que lo encontró no fue leer código ni ejecutar la suite.**
+> Fue sumar tres números de una pantalla y compararlos con el cuarto que había debajo. Es el sexto
+> defecto de esta clase en el proyecto y el que menos costaba encontrar.
+
 ---
 
 ## Registro de decisiones tomadas

@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Database,
   FileText,
+  ScrollText,
   HardDrive,
   History,
   Lock,
@@ -165,8 +166,13 @@ export const AdminPanel: React.FC = () => {
         </CardHeader>
         <CardContent>
           {almacenamiento.isLoading && <p className="text-sm text-ink-faint">Midiendo…</p>}
+          {/* H-51: el Total incluía `registros_bytes` y el desglose no lo pintaba, así que las
+              tres tarjetas sumaban 206,2 MB bajo un total de 207,1. Nadie decide nada por 0,9 MB,
+              pero una cabecera que no cuadra con su desglose es exactamente el defecto que este
+              proyecto lleva persiguiendo desde H-08 y H-21, y la comprobación mínima que exige la
+              Convención C7. El dato ya viajaba en la respuesta: sólo faltaba enseñarlo. */}
           {alm && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="rounded-xl border border-line p-4">
                 <div className="flex items-center gap-2 text-xs font-semibold text-ink-faint">
                   <FileText className="w-3.5 h-3.5" /> Pliegos
@@ -188,6 +194,13 @@ export const AdminPanel: React.FC = () => {
                 </div>
                 <p className="mt-1 text-xl font-bold text-atencion">{formatearBytes(alm.base_datos_bytes)}</p>
                 <p className="text-xs text-atencion font-medium">Memoria comercial · no purgable</p>
+              </div>
+              <div className="rounded-xl border border-line p-4">
+                <div className="flex items-center gap-2 text-xs font-semibold text-ink-faint">
+                  <ScrollText className="w-3.5 h-3.5" /> Registros
+                </div>
+                <p className="mt-1 text-xl font-bold text-ink">{formatearBytes(alm.registros_bytes)}</p>
+                <p className="text-xs text-ink-faint">Rastro JSONL · no purgable</p>
               </div>
               <div className="rounded-xl border border-line p-4">
                 <div className="flex items-center gap-2 text-xs font-semibold text-ink-faint">

@@ -1,6 +1,6 @@
 # Contrato de Servicio — Bloque 3: Identidad y Foco
 
-**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 validado el 2026-08-19 · **Pasos 2 a 6 hechos**, Paso 7 es la tarea siguiente
+**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 **CERRADO el 2026-08-19**, sus siete pasos
 **Origen**: revisión funcional con dirección del 2026-08-18 · **Precede a**: Capa 10, Paso 8
 
 > **Qué persigue este bloque.** Nueve capas se han invertido en que el motor sea honesto; ninguna
@@ -227,7 +227,7 @@ motor.
 | **4** | 🟢 **Hecho el 2026-08-19.** La columna de identificador desaparece y su ancho pasa al título; el id baja a pie de fila; el score se lee como magnitud con el acento reservado a la prioridad **Alta**; el sector se pinta por fin | Navegador real: 6 columnas en vez de 7, título a 15 px en 3 líneas con el completo en el tooltip, **0 fallos de contraste**. Suite **518/518** |
 | **5** | 🟢 **Hecho el 2026-08-19. Cierra H-47.** Criterio único y versionado en `src/__init__.py` (`AMBITOS`, `clausula_ambito()`, `VERSION_AMBITO`), consumido por el Funnel y por los KPIs; parámetro `ambito` en `/licitaciones` y `/kpis`; interruptor en barra propia bajo la cabecera, fuera de las dos pestañas que gobierna | Suite **538/538** (20 regresiones nuevas). Contra la base real: **24 → 9 expedientes** y **7.294.613,49 € → 2.770.211,81 €**, con la cabecera cuadrando con su desglose en los dos estados. 0 errores de consola y 0 fallos de contraste en la barra nueva |
 | **6** | 🟢 **Hecho el 2026-08-19. Cierra H-50.** `estado_lectura_pliego()` y `VERSION_LECTURA` en `src/__init__.py`, servidos como campo computado `estado_lectura`; el Cockpit los pinta encabezando la columna de Cláusulas & Riesgo y en la ficha, desde un componente único. Corregido el texto que recomendaba un comando roto | Navegador real con los **tres estados a la vez**: 7 «Pliego leído» y 2 «Sin analizar» de la base real, más una «Lectura degradada» sembrada en una copia, con su causa a la vista. 0 errores de consola, contraste 8,08 / 7,20 / 10,01. Suite **552/552** (14 regresiones nuevas) |
-| **7** | Cierre: suite completa, C7 con la aplicación arrancada, documentos al día | 552/552 más lo nuevo |
+| **7** | 🟢 **Hecho el 2026-08-19. Cierra H-51.** Auditoría C7 sobre **las cuatro pantallas y la ficha**, no sólo sobre lo tocado; corregido el Total de ocupación en disco, que tenía un sumando invisible; documentos y acta al día | Suite **553/553**. **0 fallos de contraste** en las cuatro pantallas con el auditor rehecho, 0 errores de consola, 0 peticiones fallidas. Las cuatro promesas del apartado H, comprobadas una a una |
 
 **El orden no es arbitrario**: el Paso 2 es el único que toca datos, y todo lo demás los muestra.
 Los Pasos 3 a 6 son de pantalla y se verifican mirándola, no sólo con la suite — que es la lección
@@ -247,3 +247,26 @@ la lógica de un componente y no sólo su color, **el alcance se ha desbordado y
   completo.
 * Que el Funnel enseñe **lo que es de su ámbito**, con el resto a un clic.
 * Que el trabajo del Analista **se vea** — y que cuando no lo haya, se diga.
+
+### ✅ Comprobado en el cierre (2026-08-19)
+
+| Lo prometido | Cómo se comprobó |
+|---|---|
+| Reconocer a Incoop | Isotipo, marca compuesta con texto y las cinco tintas sobre `#0E0D14`. Ningún fondo claro superviviente: los tres que detecta el barrido son los puntos de sector de 6 px, que es su oficio |
+| Leer los títulos | **188 caracteres en la tabla, 1.663 en el tooltip y en la ficha.** El campo `titulo` nunca se modificó |
+| El Funnel de su ámbito | 9 de 24 con Catalunya puesta, y la cifra de cabecera cuadrando con su desglose en **los dos** estados del interruptor |
+| Ver el trabajo del Analista | 7 «Pliego leído» y 2 «Sin analizar» sobre la base real; la «Lectura degradada» probada sembrándola en una **copia**, con su causa a la vista |
+
+> ⚠️ **Lo que el cierre encontró, porque mirar la pantalla sigue siendo lo que encuentra cosas.**
+> *(1)* **H-51**: el Total de ocupación en disco no cuadraba con su desglose —206,2 visibles bajo un
+> total de 207,1—, porque los `registros_bytes` viajaban en la respuesta y no se pintaban.
+> Reparado. *(2)* El acta daba la base en 68 expedientes y 18 vivos; son **74 y 24**. *(3)* El
+> contraste del token separador se anotó en 2,64 y es **2,45**: se midió contra el fondo de página
+> y el separador vive sobre la tarjeta — **el mismo error que el Paso 3 había documentado un paso
+> antes** para `ink-faint`. Escribir la lección no basta para no repetirla.
+>
+> Y una cuarta, sobre las herramientas: el auditor de contraste dio un fallo imposible de 1,17
+> sobre un texto perfectamente legible. **El defecto era del auditor**: Tailwind v4 devuelve los
+> colores en `oklab` y el script los leía como RGB. Rehecho con conversión oklab→sRGB y composición
+> por capas, las cuatro pantallas dan **0 fallos**. Una herramienta de verificación también es
+> código sin revisar.
