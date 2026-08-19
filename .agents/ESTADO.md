@@ -14,90 +14,76 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-18)
+## ▶️ Para retomar (sesión del 2026-08-19)
 
-La sesión cerró el **Paso 7 de la Capa 10**, y con él **el sistema pasa a usarse con un doble
-clic**. El contrato sube a **v1.2.0**. **La tarea siguiente es el Paso 8**, el despertador — que
-arrastra una cuestión abierta de dirección, abajo.
+La sesión **cerró H-48 y H-49** —dos defectos que escondían oportunidades vivas— y **avanzó el
+Bloque 3 hasta su Paso 4**. La suite está en **518/518**. **La tarea siguiente es el Paso 5 del
+Bloque 3**: el filtro de ámbito.
+
+> 📌 **Lee [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) antes de tocar el frontend.** Están las
+> seis decisiones de dirección ya tomadas y la medición de contraste que las sostiene. No hace
+> falta rediseñar nada: hay que implementar los Pasos 5, 6 y 7.
 
 **Lo que ya se puede hacer con el sistema, y antes no:**
 
-* **Abrirlo con un icono del escritorio**, sin consola y sin escribir un comando.
-* Verlo en una **ventana de aplicación** —sin barra de direcciones ni pestañas—, con los datos de
-  ayer al instante mientras la prospección del día ocurre por debajo.
-* **Saber si hay una prospección en marcha** y cuándo ha terminado, mirando la cabecera.
-* **Cerrar la ventana y que el equipo quede como estaba**: el servidor se apaga solo, de forma
-  ordenada, y sólo si lo encendió esa misma invocación.
+* **Ver oportunidades que antes desaparecían solas.** El sistema daba por expiradas las
+  licitaciones que salían de la ventana del feed, sin mirar su plazo. Ya no.
+* **Leer los títulos.** La tabla muestra un título derivado y legible; el íntegro sigue en la ficha.
+* **Reconocer a Incoop al abrir**: fondo oscuro, la marca en la cabecera y una paleta medida.
+* **Ver el sector de cada licitación**, que se calculaba desde la Capa 5 y no pintaba nadie.
 
-**Lo que todavía no**: la tarea programada (Paso 8), el aviso en pantalla de una corrida fallida
-(Paso 9) y el cierre con `MANUAL.md` (Paso 10).
+**Lo que todavía no**: el filtro de Catalunya (Paso 5), el análisis semántico a la vista (Paso 6) y
+el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
 
-> 🔑 **Lo más transferible de la sesión: el Paso 7 empezó descubriendo que faltaba una pieza que
-> ningún paso tenía asignada.** Los Pasos 2 a 6 dejaron cinco piezas excelentes —comprobar,
-> configurar, servir, prospectar, apagar— y **nadie las recorría**: no existía el orquestador, de
-> modo que el `.vbs` del Paso 7 no tenía a qué llamar. No estaba oculto —la tabla de artefactos del
-> README decía *"falta el orquestador"*— pero ningún paso lo reclamaba como suyo. **Un plan por
-> pasos puede dejar huecos entre los pasos**, y el sitio donde se ven es el primer paso que intenta
-> usar el conjunto.
+> 🔑 **Lo más transferible de la sesión, y no es técnico: dirección paró un paso que estaba en el
+> plan y tenía razón.** El Paso 3 de la reparación —rescatar 45 lotes archivados por error— se
+> escribió en el contrato con **la cifra de 19,99 M€ delante**, tratada como negocio perdido cuando
+> en una beta son **datos de prueba** perdidos. Contradecía de frente una decisión vigente del
+> 2026-08-17 y aun así se implementó, porque estaba en el plan. Se retiró entero. **Un plan validado
+> no exime de preguntarse para qué sirve cada paso, y una cifra grande es justo lo que anestesia esa
+> pregunta.**
 
-> ⚠️ **Tres defectos encontrados arrancando la aplicación, y ninguno lo habría visto la suite.**
-> Es la cuarta vez que ocurre —H-21/22/23 en el Paso D8, H-38 al escribir la configuración, H-40 al
-> implementar el cerrojo—, y los tres llevaban latentes desde una capa anterior:
->
-> * **H-42 · La API perdía la conexión al cambiar de hilo.** El Cockpit se pintaba a cero con 48
->   expedientes en la base. **Medido: 16 de 40 peticiones concurrentes devolvían 500**; tras
->   repararlo, 80 de 80 correctas. La causa no era SQLite sino FastAPI: `get_db()` es un generador
->   síncrono, así que el framework abre la conexión en un hilo del threadpool y ejecuta el endpoint
->   en otro. Latente desde la Capa 7; salió al añadir un tercer sondeo a la pantalla.
-> * **H-43 · Un `RUNNING` no dice si hay alguien prospectando.** El indicador nuevo anunciaba una
->   corrida viva sobre la que murió el día anterior. Se repara publicando el juicio que ya existía
->   —`motivo_ejecucion_huerfana()`, el del cerrojo del Paso 6— en vez de inventar otro.
-> * **H-44 · El lanzador informaba de una avería inexistente al cerrar.** Dos dobles clics
->   terminaron con código 40 sobre un servidor que sí había muerto. Preguntaba al sistema por PID
->   teniendo el objeto del hijo; ahora pregunta con `poll()`, que es exacto.
+> ⚠️ **Tres veces en esta sesión un contrato validado resultó estar equivocado, y las tres sólo se
+> vio al escribir el código que debía obedecerlo.** *(1)* El rescate iba a reutilizar
+> `Depurador.rescatar()`, que estampa `rescatado_at` y **exime del archivado para siempre**: habría
+> dejado 45 licitaciones inmortales en el Funnel. *(2)* H-49 se iba a reparar «colapsando espacios»
+> del identificador: medido, detectaba **0 duplicados de 63**, porque `EXPEDIENT 214` sigue sin ser
+> `EXPEDIENT214`. *(3)* El título derivado se iba a persistir en columna con esquema v9, y no
+> procede. **Ninguna de las tres se habría detectado leyendo el contrato.**
 
-> 🔬 **Y una medición que conviene no perder: el nivel 2 del apagado no existe sin consola.** Bajo
-> `pythonw.exe` —el `.vbs`, es decir, **el caso normal**— `CTRL_BREAK_EVENT` falla con WinError 6.
-> El Paso 5 lo midió con consola y acertó; lo que no se había medido es el escenario para el que
-> existe la capa. La escalera real del doble clic tiene **dos** peldaños: el endpoint y
-> `TerminateProcess`. **Medir en el entorno de la prueba no es medir en el de producción.**
+> ⚠️ **Y cinco defectos que sólo aparecieron mirando la pantalla, no con la suite en verde.** Es el
+> patrón de siempre en este proyecto. Los tres del Paso 3 del Bloque 3: **el texto blanco sobre los
+> botones de color era ilegible** (2,34 sobre el cian, cuando el mínimo es 4,5 — la tinta oscura da
+> 8,25); **`ink-faint` se eligió contra el fondo** y no contra la tarjeta donde de verdad vive, así
+> que se quedaba en 3,53; y **mi propio script de migración generó 18 clases inválidas**
+> (`bg-acento/10/40`) que Tailwind no pinta y que **compilaban sin una sola queja**. Más los
+> separadores invisibles y el score que mentía, del Paso 4.
 
-> ⚠️ **En qué estado queda la base, para que nadie se asuste al abrirla.**
->
-> **63 expedientes**, de los cuales **15 vivos y 48 archivados** *(rectificado el 2026-08-19: la
-> nota decía 19 y 44, escritos antes de que la corrida 6 del 18-08 a las 08:49 archivara cuatro
-> más)*.
->
-> ❌ **Y la explicación que seguía era falsa, conviene no arrastrarla.** Decía que la caída de PBL
-> de 20,7 M€ a 5,9 M€ **no era un defecto**, sino el Depurador archivando por plazo vencido. **No
-> era eso.** Se archivaron **45 lotes con la fecha límite todavía por llegar**, por valor de
-> **19.986.870,63 €**, porque desaparecieron del feed y nadie miró el calendario. Es **H-48**, y
-> con él **H-49**: los dos están medidos en el dosier. La cifra de 5,9 M€ es correcta; lo que
-> estaba mal era darla por buena.
->
-> **La corrida huérfana id 4 ya no existe como tal**: la reclamó su dueño legítimo —
-> `iniciar_ejecucion()`— al arrancar la corrida 5, y quedó cerrada como `FAILED`. Es el diseño del
-> Paso 6 funcionando sobre datos reales sin que nadie tocara la fila a mano.
->
-> 🐛 **H-41 sigue abierto pero se comportó**: la corrida real de esta sesión —154,55 s, 36
-> documentos, 5 análisis— terminó `COMPLETED` sin reventar. No demuestra que esté arreglado, porque
-> no se ha tocado nada: demuestra que **no es sistemático**.
+> 🎨 **La regla del sistema de color, que salió de medir y no de diseñar.** Separar la capa de marca
+> de la semántica **por tono es imposible**: quedan a 1-5 grados —rojo alarma contra rojo teja,
+> ámbar contra amarillo—. Lo que las separa es **la forma**: un punto de color significa siempre
+> **categoría**; un estado lleva siempre **palabra** y nunca es un punto suelto. **Lo que no lleva
+> texto al lado no es una advertencia.** Está escrito en la cabecera de `frontend/src/index.css`,
+> que es donde lo verá quien vaya a añadir un color.
 
-> 📋 **La Capa 11 existe en el README, y NO es una tarea.** El 2026-08-13 se anotó un apunte de
-> alcance sobre el despliegue en servidor —VPS, Docker, `cron` y Basic Auth— para pasar de una
-> instalación por PC a un sistema compartido. **No está diseñada ni pautada, y no se abre hasta
-> cerrar la Capa 10** (Regla 11). Lo que sí conviene leer antes de tocar nada de la 10 son los
-> **cuatro compromisos que esa capa obligaría a revisar** —la seguridad basada en `127.0.0.1`, las
-> rutas absolutas de los documentos, el alcance del cerrojo y por qué `es_sesion_interactiva()` ya
-> está preparada—, porque afectan a decisiones que se están tomando ahora. **Se añade un quinto
-> desde hoy**: el juicio `duenyo_vivo` de H-43 sólo vale preguntado desde la máquina que ejecuta el
-> pipeline.
+> ⚠️ **En qué estado queda la base.** **68 expedientes, 18 vivos**, esquema **v8**, retención
+> **v1.2.0**. La corrida real id 7 del 2026-08-19 (46,47 s) **conservó 13 licitaciones con plazo
+> abierto que el código anterior habría archivado**. Los **45 lotes archivados por error antes de
+> la reparación siguen archivados**, por decisión de dirección: son material de prueba y lo que
+> había que arreglar era dejar de perderlas. El Funnel **se irá llenando solo** con cada corrida.
 
----
+> 🐛 **H-41 sigue abierto y sin asignar** —el crash nativo del pipeline—, pero no se reprodujo en
+> las corridas de hoy. Y quedan **H-39, H-45, H-46 y H-47**, este último resuelto en cuanto se
+> cierre el Paso 5.
+
+> 📌 **Dos apuntes menores anotados hoy, ninguno urgente**: la base guarda `Consultoria` y
+> `Consultoría` como **sectores distintos** —familia de H-27, y su arreglo es del Filtro, no de la
+> pantalla—; y `frontend/dist` está en el `.gitignore`, así que **el bundle compilado viaja por
+> OneDrive y no por git**, que es como ya estaba antes de esta sesión.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **518/518**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. **H-48 y H-49 se cerraron el 2026-08-19.** De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **518/518**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
