@@ -16,8 +16,12 @@ from typing import Dict, Any, List, Optional, Tuple
 # La definición canónica vive en el paquete raíz. Se reexporta aquí porque
 # `src/api/dependencies.py` ya importaba PROJECT_ROOT desde este módulo.
 from src import (
+    AMBITOS,
     ESTADOS_OPERATIVOS_VALIDOS,
     PROJECT_ROOT,
+    VERSION_AMBITO,
+    AmbitoDesconocido,
+    clausula_ambito,
     grafia_canonica_estado,
     normalizar_estado_operativo,
     ruta_proyecto,
@@ -603,19 +607,28 @@ SQL_CREATE_INDICES = [
 # los KPIs históricos". La memoria comercial cuenta esté archivada o no; el archivado
 # gobierna qué se ve en el canal principal, no qué ha ocurrido. `vista_analisis_CAC` ya se
 # comportaba así, de modo que las dos vistas discrepaban sobre qué es la población histórica.
-SQL_CREATE_VIEW_WIN_RATE = """
-CREATE VIEW IF NOT EXISTS vista_win_rate AS
-SELECT 
-    COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('adjudicada', 'adjudicada_incoop') OR LOWER(empresa_adjudicataria) LIKE '%incoop%' THEN 1 END), 0) AS ganadas,
-    COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('perdida', 'adjudicada_competencia') OR (LOWER(empresa_adjudicataria) NOT LIKE '%incoop%' AND empresa_adjudicataria IS NOT NULL) THEN 1 END), 0) AS perdidas,
-    COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) = 'presentada' THEN 1 END), 0) AS pendientes_resolucion,
-    COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('adjudicada', 'adjudicada_incoop', 'perdida', 'adjudicada_competencia', 'presentada') THEN 1 END), 0) AS total_presentadas,
+# Las cinco columnas del win rate, en un punto único. La vista y la consulta filtrada por
+# ámbito (Bloque 3, Paso 5) las comparten: escribir dos veces el mismo criterio comercial es
+# exactamente la deriva que este proyecto lleva persiguiendo desde la auditoría —bastaría con
+# que alguien añadiera un estado a una de las dos copias para que el Cockpit diera un win rate
+# distinto según si el interruptor de Catalunya está puesto—. La vista se queda intacta en su
+# significado; lo único que cambia es de dónde sale su texto.
+SQL_COLUMNAS_WIN_RATE = """
+    COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('adjudicada', 'adjudicada_incoop') OR LOWER(l.empresa_adjudicataria) LIKE '%incoop%' THEN 1 END), 0) AS ganadas,
+    COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('perdida', 'adjudicada_competencia') OR (LOWER(l.empresa_adjudicataria) NOT LIKE '%incoop%' AND l.empresa_adjudicataria IS NOT NULL) THEN 1 END), 0) AS perdidas,
+    COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) = 'presentada' THEN 1 END), 0) AS pendientes_resolucion,
+    COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('adjudicada', 'adjudicada_incoop', 'perdida', 'adjudicada_competencia', 'presentada') THEN 1 END), 0) AS total_presentadas,
     ROUND(
-        CAST(COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('adjudicada', 'adjudicada_incoop') OR LOWER(empresa_adjudicataria) LIKE '%incoop%' THEN 1 END), 0) AS REAL) /
-        NULLIF(COALESCE(COUNT(CASE WHEN LOWER(estado_operativo) IN ('adjudicada', 'adjudicada_incoop', 'perdida', 'adjudicada_competencia', 'presentada') THEN 1 END), 0), 0) * 100,
+        CAST(COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('adjudicada', 'adjudicada_incoop') OR LOWER(l.empresa_adjudicataria) LIKE '%incoop%' THEN 1 END), 0) AS REAL) /
+        NULLIF(COALESCE(COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('adjudicada', 'adjudicada_incoop', 'perdida', 'adjudicada_competencia', 'presentada') THEN 1 END), 0), 0) * 100,
         2
     ) AS tasa_exito_porcentaje
-FROM lotes;
+"""
+
+SQL_CREATE_VIEW_WIN_RATE = f"""
+CREATE VIEW IF NOT EXISTS vista_win_rate AS
+SELECT {SQL_COLUMNAS_WIN_RATE}
+FROM lotes l;
 """
 
 SQL_CREATE_VIEW_ANALISIS_CAC_TEMPLATE = """
@@ -3193,62 +3206,108 @@ class Memoria:
                 cursor = conn.execute(sql, params)
                 return cursor.rowcount > 0
 
-    def obtener_resumen_kpis(self, conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    def obtener_resumen_kpis(
+        self,
+        ambito: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None
+    ) -> Dict[str, Any]:
         """
         Obtiene un resumen estructurado de las métricas de negocio agregadas (KPIs) para la API y Cockpit Visual.
+
+        `ambito` filtra por territorio (H-47, Bloque 3, Paso 5) y por defecto no filtra nada.
+        **Obedecen al ámbito todas las cifras que salen de un expediente**, incluidas las de
+        memoria comercial: si el volumen licitado bajara a la fracción catalana mientras el
+        win rate siguiera contando toda España, la pantalla estaría mezclando dos poblaciones
+        sin decirlo — que es literalmente el defecto de H-08 y H-21, el más repetido de este
+        proyecto. La única cifra que NO obedece es la de alertas tempranas: el Centinela lee
+        DOGC y BOPB, que ya son catalanes de origen, así que filtrarla sería una redundancia
+        que además sugeriría una criba donde no la hay.
         """
         def _ejecutar_kpis(c: sqlite3.Connection) -> Dict[str, Any]:
             cur = c.cursor()
-            
+
+            # El criterio de ámbito vive en `src/__init__.py`, en un punto único y versionado.
+            # Un ámbito no reconocido levanta aquí y no llega a consultar nada.
+            sql_ambito, par_amb = clausula_ambito(ambito, columna="e.nuts")
+
+            # LEFT JOIN y no INNER, aunque `expedientes` sea la tabla padre: sin ámbito el
+            # recuento tiene que salir EXACTAMENTE igual que antes de este paso, y un INNER
+            # descartaría en silencio cualquier lote huérfano. Con ámbito, el WHERE sobre
+            # `e.nuts` ya lo excluye por sí solo. Un único camino de código, sin ramas.
+            join_exp = "LEFT JOIN expedientes e ON e.id = l.expediente_id"
+            y_ambito = f" AND {sql_ambito}" if sql_ambito else ""
+            donde_ambito = f" WHERE {sql_ambito}" if sql_ambito else ""
+
             # Total expedientes vivos. La tabla `expedientes` no tiene `deleted_at`: el
             # archivado lógico vive en `lotes`, así que un expediente cuyos lotes están todos
             # archivados es un expediente archivado. Un COUNT(*) plano los seguía contando y
             # el Cockpit mostraba "51 Expedientes" sobre un desglose que sólo sumaba 22 lotes.
             # Es el mismo defecto de poblaciones mezcladas que H-08, en el último contador
             # que se le escapó a aquella corrección.
-            cur.execute("""
-                SELECT COUNT(DISTINCT expediente_id) FROM lotes WHERE deleted_at IS NULL;
-            """)
+            cur.execute(f"""
+                SELECT COUNT(DISTINCT l.expediente_id)
+                FROM lotes l {join_exp}
+                WHERE l.deleted_at IS NULL{y_ambito};
+            """, par_amb)
             total_exp = cur.fetchone()[0] or 0
-            
+
             # Total lotes
-            cur.execute("SELECT COUNT(*) FROM lotes WHERE deleted_at IS NULL;")
+            cur.execute(f"""
+                SELECT COUNT(*)
+                FROM lotes l {join_exp}
+                WHERE l.deleted_at IS NULL{y_ambito};
+            """, par_amb)
             total_lotes = cur.fetchone()[0] or 0
-            
-            # Todas las métricas de conversión proceden de la misma vista y de la
-            # misma población (lotes no archivados). Antes se mezclaba esta consulta
-            # con una vista sin filtro de soft-delete y el win rate era imposible.
-            cur.execute("""
-                SELECT ganadas, perdidas, pendientes_resolucion, tasa_exito_porcentaje
-                FROM vista_win_rate;
-            """)
-            row_wr = cur.fetchone() or (0, 0, 0, 0.0)
+
+            # Métricas de conversión. Las columnas son las MISMAS que las de `vista_win_rate`
+            # —salen de `SQL_COLUMNAS_WIN_RATE`, la constante compartida— para que no exista
+            # una segunda definición de «ganada» capaz de derivar de la primera.
+            #
+            # Sin filtro de `deleted_at`, deliberadamente (H-30): la memoria comercial cuenta
+            # esté archivada o no. El archivado gobierna qué se ve en el canal principal, no
+            # qué ha ocurrido. El ámbito, en cambio, sí se aplica: una adjudicación de Aragón
+            # no pertenece al mismo relato que un funnel filtrado a Catalunya.
+            cur.execute(f"""
+                SELECT {SQL_COLUMNAS_WIN_RATE}
+                FROM lotes l {join_exp}{donde_ambito};
+            """, par_amb)
+            row_wr = cur.fetchone() or (0, 0, 0, 0, 0.0)
             ganadas = row_wr[0] or 0
             perdidas = row_wr[1] or 0
             presentadas = row_wr[2] or 0
-            win_rate = float(row_wr[3] or 0.0)
-            cur.execute("""
+            win_rate = float(row_wr[4] or 0.0)
+
+            cur.execute(f"""
                 SELECT
-                    COUNT(CASE WHEN LOWER(estado_operativo) IN ('nueva', 'estudiando') THEN 1 END),
-                    COALESCE(SUM(pbl), 0.0)
-                FROM lotes WHERE deleted_at IS NULL;
-            """)
+                    COUNT(CASE WHEN LOWER(l.estado_operativo) IN ('nueva', 'estudiando') THEN 1 END),
+                    COALESCE(SUM(l.pbl), 0.0)
+                FROM lotes l {join_exp}
+                WHERE l.deleted_at IS NULL{y_ambito};
+            """, par_amb)
             estudio, volumen_pbl = cur.fetchone()
             estudio = estudio or 0
             volumen_pbl = float(volumen_pbl or 0.0)
-            
-            # Avales / Garantías retenidas de la vista
-            cur.execute("SELECT COALESCE(SUM(importe_garantia_retenida), 0.0) FROM vista_garantias_activas;")
+
+            # Avales / Garantías retenidas de la vista. La vista ya trae `expediente_id`, así
+            # que el ámbito se aplica sin duplicar su criterio de selección de lotes.
+            cur.execute(f"""
+                SELECT COALESCE(SUM(g.importe_garantia_retenida), 0.0)
+                FROM vista_garantias_activas g
+                LEFT JOIN expedientes e ON e.id = g.expediente_id{donde_ambito};
+            """, par_amb)
             row_gar = cur.fetchone()
             garantias = float(row_gar[0]) if (row_gar and row_gar[0] is not None) else 0.0
-            
-            # Alertas tempranas activas
+
+            # Alertas tempranas activas. **No obedecen al ámbito, y es decisión escrita**
+            # (contrato del Bloque 3, apartado E): el Centinela sólo lee DOGC y BOPB, que son
+            # catalanes de origen. Filtrarlas por NUTS sugeriría una criba que no existe, y
+            # además una alerta temprana no cuelga de ningún expediente: aún no lo hay.
             cur.execute("""
-                SELECT COUNT(*) FROM boletines_alertas 
+                SELECT COUNT(*) FROM boletines_alertas
                 WHERE UPPER(estado_operativo) IN ('NUEVA_FASE_TEMPRANA', 'EN_ESTUDIO_PROACTIVO');
             """)
             alertas_activas = cur.fetchone()[0] or 0
-            
+
             return {
                 "total_expedientes": total_exp,
                 "total_lotes": total_lotes,
@@ -3259,7 +3318,12 @@ class Memoria:
                 "win_rate_porcentaje": win_rate,
                 "volumen_total_pbl": volumen_pbl,
                 "capital_garantias_retenidas": garantias,
-                "alertas_tempranas_activas": alertas_activas
+                "alertas_tempranas_activas": alertas_activas,
+                # La respuesta declara sobre qué población habla. No es adorno: si un día la
+                # API ignorase el parámetro, el Cockpit enseñaría 24 expedientes bajo el
+                # rótulo de Catalunya y nadie tendría forma de notarlo. Así, sí.
+                "ambito": (str(ambito).strip().lower() if ambito else None),
+                "version_ambito": VERSION_AMBITO,
             }
 
         if conn is not None:
@@ -3278,6 +3342,7 @@ class Memoria:
         subrogacion_critica: Optional[bool] = None,
         estado: Optional[str] = None,
         incluir_archivadas: bool = False,
+        ambito: Optional[str] = None,
         conn: Optional[sqlite3.Connection] = None
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
@@ -3288,6 +3353,13 @@ class Memoria:
         tabla con la que se decide a qué concurso presentarse y no debe arrastrar histórico.
         Mismo criterio y mismo patrón que el filtro de auditoría que el Paso D5/D9 añadió al
         Centinela para las alertas descartadas por reglas.
+
+        `ambito` filtra por territorio sobre `expedientes.nuts` (H-47, Bloque 3, Paso 5) y
+        **por defecto no filtra nada**: quien decide mostrar sólo Catalunya es la pantalla,
+        no esta capa. Es deliberadamente lo contrario que `incluir_archivadas`, porque lo
+        archivado es un concepto de negocio y el ámbito una preferencia de quien mira. Un
+        ámbito no reconocido levanta `AmbitoDesconocido`: nunca se degrada a «devuelve todo»,
+        que el consumidor no podría distinguir de un resultado real (Convención C2).
         """
         def _ejecutar_listar(c: sqlite3.Connection):
             c.row_factory = sqlite3.Row
@@ -3317,6 +3389,13 @@ class Memoria:
             if estado:
                 where_clauses.append("LOWER(sub.estado_operativo) = ?")
                 params.append(estado.strip().lower())
+
+            # Ámbito territorial (H-47). El criterio vive en `src/__init__.py`, en un punto
+            # único y versionado: no se escribe el patrón NUTS aquí ni en la API.
+            sql_ambito, params_ambito = clausula_ambito(ambito, columna="e.nuts")
+            if sql_ambito:
+                where_clauses.append(sql_ambito)
+                params.extend(params_ambito)
 
             where_str = " AND ".join(where_clauses)
 

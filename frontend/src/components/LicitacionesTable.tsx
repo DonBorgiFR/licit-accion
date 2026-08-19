@@ -30,6 +30,12 @@ import { EstadoLicitacion, type Licitacion } from '../types/api';
 
 interface LicitacionesTableProps {
   onSelectLicitacion?: (id: string) => void;
+  /**
+   * Ámbito territorial en vigor (H-47). Llega desde `App` porque el interruptor gobierna
+   * también el Dashboard de KPIs: no es un filtro de esta tabla, es el alcance de la
+   * pantalla. Por eso no está entre los filtros que limpia «Limpiar Filtros».
+   */
+  ambito?: string;
 }
 
 /**
@@ -82,6 +88,7 @@ const etiquetaSector = (sector: string): string =>
 
 export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
   onSelectLicitacion,
+  ambito,
 }) => {
   const { toast } = useToast();
 
@@ -96,6 +103,13 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
   // esta tabla es con la que se decide a qué concurso presentarse.
   const [incluirArchivadas, setIncluirArchivadas] = useState<boolean>(false);
 
+  // Al mover el interruptor de ámbito hay que volver a la primera página. Con Catalunya
+  // puesta el listado pasa de 24 expedientes a 9: quien estuviera en la página 3 se quedaría
+  // mirando una tabla vacía sin nada que explicara por qué.
+  React.useEffect(() => {
+    setPage(1);
+  }, [ambito]);
+
   // Consulta TanStack Query Server-Side
   const { data, isLoading, isError, isFetching, refetch } = useLicitacionesQuery({
     page,
@@ -105,6 +119,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
     subrogacion_critica: subrogacionCritica ? true : undefined,
     estado: estado || undefined,
     incluir_archivadas: incluirArchivadas ? true : undefined,
+    ambito,
   });
 
   // Mutación Optimista de Estado Operativo

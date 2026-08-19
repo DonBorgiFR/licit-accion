@@ -101,7 +101,7 @@ export function useMutateEstadoLicitacion(
     onSettled: () => {
       // Revalidar tablas y resumen de KPIs
       queryClient.invalidateQueries({ queryKey: ['licitaciones'] });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.kpis });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.kpisTodos });
     },
   });
 }
@@ -169,7 +169,7 @@ export function useMutateEstadoAlerta(
 
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['alertas-tempranas'] });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.kpis });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.kpisTodos });
     },
   });
 }

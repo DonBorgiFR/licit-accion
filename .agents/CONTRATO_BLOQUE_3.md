@@ -1,6 +1,6 @@
 # Contrato de Servicio — Bloque 3: Identidad y Foco
 
-**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 validado el 2026-08-19 · **Pasos 2, 3 y 4 hechos**, Paso 5 es la tarea siguiente
+**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 validado el 2026-08-19 · **Pasos 2, 3, 4 y 5 hechos**, Paso 6 es la tarea siguiente
 **Origen**: revisión funcional con dirección del 2026-08-18 · **Precede a**: Capa 10, Paso 8
 
 > **Qué persigue este bloque.** Nueve capas se han invertido en que el motor sea honesto; ninguna
@@ -155,6 +155,19 @@ ilegible y escondiendo lo legible.**
 > el ámbito es una **preferencia de quien mira**. Una API que esconde por gusto propio acaba
 > produciendo la clase de sorpresa que este proyecto lleva cuatro capas persiguiendo.
 
+> ⚠️ **Precisado al implementarlo (2026-08-19): qué KPIs obedecen, y qué pasa con un ámbito mal
+> escrito.** El contrato decía «y en los KPIs» sin decir cuáles. **Obedecen todos los que salen de
+> un expediente**, win rate y avales incluidos: dejar la memoria comercial global mientras el
+> volumen licitado baja a la fracción catalana sería mezclar dos poblaciones en la misma pantalla,
+> que es H-08 y H-21 otra vez. Como `vista_win_rate` es un agregado global sin `expediente_id`, la
+> consulta filtrada y la vista **comparten ahora la constante `SQL_COLUMNAS_WIN_RATE`**, para que
+> no existan dos definiciones de «ganada». Y el vocabulario de ámbitos es **cerrado**: un valor no
+> reconocido devuelve **400**, nunca la población entera bajo el rótulo equivocado (Convención C2).
+>
+> Dos datos que sólo aparecieron al medir: **`ES51` existe en la base sin el quinto dígito** (4
+> expedientes), así que el criterio tiene que ser un prefijo y no una igualdad contra las cuatro
+> provincias — familia de H-49; y **`nuts` está poblado en 74 de 74** filas, confirmado.
+
 **Efecto que conviene ver escrito**: con el filtro puesto, el Funnel enseñará una fracción de lo
 que hay. **Es lo correcto y era el objetivo** — pasar de parecer lleno y ajeno a parecer pertinente.
 
@@ -190,7 +203,7 @@ motor.
 | **2** | 🟢 **Hecho el 2026-08-19.** `titulo_legible()` en `src/__init__.py`, campo computado `titulo_corto` en la API junto al `titulo` íntegro, y el informe CSV usando la misma función | **518/518** (17 regresiones nuevas). Sobre los 68 títulos reales: máximo **1.663 → 200**, ninguno por encima del tope, **47 llegan enteros** y **0 palabras partidas**. Comprobado también contra la API levantada |
 | **3** | 🟢 **Hecho el 2026-08-19.** Paleta de tres capas en `index.css` (`@theme`), **463 clases migradas** por mapa explícito, cabecera con el isotipo, y App en fondo `#0E0D14` | Navegador real: **0 fallos de contraste** en las cuatro pantallas y en la ficha, 0 errores de consola, ningún fondo claro superviviente. Suite **518/518** |
 | **4** | 🟢 **Hecho el 2026-08-19.** La columna de identificador desaparece y su ancho pasa al título; el id baja a pie de fila; el score se lee como magnitud con el acento reservado a la prioridad **Alta**; el sector se pinta por fin | Navegador real: 6 columnas en vez de 7, título a 15 px en 3 líneas con el completo en el tooltip, **0 fallos de contraste**. Suite **518/518** |
-| **5** | El ámbito: parámetro, KPIs e interruptor | Suite + comprobado contra la base real |
+| **5** | 🟢 **Hecho el 2026-08-19. Cierra H-47.** Criterio único y versionado en `src/__init__.py` (`AMBITOS`, `clausula_ambito()`, `VERSION_AMBITO`), consumido por el Funnel y por los KPIs; parámetro `ambito` en `/licitaciones` y `/kpis`; interruptor en barra propia bajo la cabecera, fuera de las dos pestañas que gobierna | Suite **538/538** (20 regresiones nuevas). Contra la base real: **24 → 9 expedientes** y **7.294.613,49 € → 2.770.211,81 €**, con la cabecera cuadrando con su desglose en los dos estados. 0 errores de consola y 0 fallos de contraste en la barra nueva |
 | **6** | El análisis visible, con sus tres estados | Navegador real sobre expedientes con y sin análisis |
 | **7** | Cierre: suite completa, C7 con la aplicación arrancada, documentos al día | 501/501 más lo nuevo |
 

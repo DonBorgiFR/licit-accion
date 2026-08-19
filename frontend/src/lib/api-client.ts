@@ -157,8 +157,8 @@ export async function getHealth(): Promise<HealthResponse> {
 /**
  * Obtiene el resumen analítico de KPIs globales contra GET /api/v1/kpis.
  */
-export async function getKPIs(): Promise<KPISummary> {
-  return request<KPISummary>('/kpis');
+export async function getKPIs(ambito?: string): Promise<KPISummary> {
+  return request<KPISummary>(`/kpis${buildQueryString({ ambito })}`);
 }
 
 /**

@@ -307,6 +307,13 @@ class KPISummarySchema(BaseModel):
     volumen_total_pbl: float = Field(0.0, description="Importe total acumulado en PBL (€)")
     capital_garantias_retenidas: float = Field(0.0, description="Avales inmovilizados en caja (€)")
     alertas_tempranas_activas: int = Field(0, description="Alertas proactivas de boletines vigentes")
+    #: Ámbito territorial sobre el que se han calculado estas cifras. `None` es «todo».
+    #: Viaja en la respuesta para que la pantalla pueda rotular la población de la que
+    #: habla y, sobre todo, para que un día en que la API ignorase el parámetro se pueda
+    #: notar: sin este campo, el Cockpit enseñaría los expedientes de toda España bajo el
+    #: rótulo de Catalunya sin que nada chirriase.
+    ambito: Optional[str] = Field(None, description="Ámbito territorial aplicado (None = sin filtro)")
+    version_ambito: str = Field("", description="Versión del criterio de ámbito (Regla 4)")
 
     model_config = ConfigDict(from_attributes=True)
 

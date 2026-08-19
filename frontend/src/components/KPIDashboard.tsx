@@ -24,8 +24,13 @@ import { Button } from './ui/Button';
 import { Skeleton } from './ui/Skeleton';
 import { formatCurrency, formatPercent } from '../lib/utils';
 
-export const KPIDashboard: React.FC = () => {
-  const { data, isLoading, isError, refetch, isFetching } = useKPIsQuery();
+interface KPIDashboardProps {
+  /** Ámbito territorial en vigor (H-47). `undefined` es «todo el Estado». */
+  ambito?: string;
+}
+
+export const KPIDashboard: React.FC<KPIDashboardProps> = ({ ambito }) => {
+  const { data, isLoading, isError, refetch, isFetching } = useKPIsQuery(ambito);
 
   if (isLoading) {
     return (
@@ -88,8 +93,17 @@ export const KPIDashboard: React.FC = () => {
           </h2>
           <p className="text-xs text-ink-faint mt-0.5">
             {/* Sin número de versión: aquí era decorativo y quedó desfasado al migrar a v6.
-                La versión real se consulta en el autodiagnóstico de la cabecera. */}
-            Métricas consolidadas en tiempo real desde SQLite (WAL Mode).
+                La versión real se consulta en el autodiagnóstico de la cabecera.
+
+                El ámbito se lee de la RESPUESTA y no del estado de la pantalla, a propósito:
+                así el rótulo declara la población que de verdad se ha contado. Si un día la
+                API ignorase el parámetro, aquí se vería —y no al revés, que es como estos
+                defectos llegan a producción (H-08, H-21). */}
+            Métricas consolidadas en tiempo real desde SQLite (WAL Mode)
+            {data?.ambito === 'catalunya'
+              ? ' · Ámbito: Catalunya'
+              : ' · Ámbito: todo el Estado'}
+            .
           </p>
         </div>
 

@@ -11,6 +11,7 @@ import sqlite3
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
+from src import AMBITOS, AmbitoDesconocido
 from src.api.schemas import LicitacionSchema, PaginatedResponse, APIErrorResponse, TransicionEstadoLicitacionSchema
 from src.api.dependencies import get_db, trazabilidad_api
 from src.memoria import Memoria
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/licitaciones", tags=["Funnel Licitaciones PSCP"])
     response_model=PaginatedResponse[LicitacionSchema],
     responses={
         200: {"model": PaginatedResponse[LicitacionSchema], "description": "Listado paginado de licitaciones devuelto correctamente"},
+        400: {"model": APIErrorResponse, "description": "Ámbito territorial no reconocido"},
         503: {"model": APIErrorResponse, "description": "Error al consultar la base de datos SQLite"}
     },
     summary="Listado Paginado y Filtrable de Licitaciones (PSCP/PCSP)",
@@ -40,6 +42,10 @@ def list_licitaciones(
         False,
         description="Incluir los expedientes que el Depurador sacó del canal principal (auditoría y rescate)"
     ),
+    ambito: Optional[str] = Query(
+        None,
+        description=f"Ámbito territorial ({', '.join(sorted(AMBITOS))}). Sin valor, no filtra."
+    ),
     db: sqlite3.Connection = Depends(get_db)
 ):
     """
@@ -48,6 +54,11 @@ def list_licitaciones(
     `incluir_archivadas` es la única vía desde la interfaz para llegar a lo archivado. Por
     defecto no se incluyen: el Funnel decide a qué concurso presentarse y no debe arrastrar
     histórico. Las filas devueltas viajan marcadas con `archivada` (Capa 9, H-32).
+
+    `ambito` filtra por territorio (H-47) y **llega sin valor por defecto**: sin pedirlo, la
+    API devuelve todo. Quien decide mostrar sólo Catalunya es la pantalla, con el interruptor
+    puesto de inicio. Es deliberadamente lo contrario que `incluir_archivadas`, porque lo
+    archivado es un concepto de negocio y el ámbito una preferencia de quien mira.
     """
     try:
         memoria = Memoria()
@@ -60,6 +71,7 @@ def list_licitaciones(
             subrogacion_critica=subrogacion_critica,
             estado=estado,
             incluir_archivadas=incluir_archivadas,
+            ambito=ambito,
             conn=db
         )
         
@@ -88,7 +100,7 @@ def list_licitaciones(
             "API_LICITACIONES_LISTED",
             {"page": page, "limit": limit, "search": search, "returned_items": len(items_schema),
              "total_count": total_count, "filas_descartadas": len(descartados),
-             "incluir_archivadas": incluir_archivadas},
+             "incluir_archivadas": incluir_archivadas, "ambito": ambito},
             estado="INFO"
         )
         
@@ -99,6 +111,14 @@ def list_licitaciones(
             limit=limit,
             total_pages=total_pages
         )
+    except AmbitoDesconocido as e:
+        # 400 y no 503, y desde luego no «devolver todo»: un ámbito mal escrito es un error
+        # del que pide, y responder con la población entera bajo el rótulo equivocado sería
+        # exactamente la degradación silenciosa que prohíbe la Convención C2.
+        trazabilidad_api.registrar_evento(
+            "API_LICITACIONES_AMBITO_INVALIDO", {"ambito": ambito, "error": str(e)}, estado="WARNING"
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         trazabilidad_api.registrar_evento("API_LICITACIONES_LIST_FAILED", {"error": str(e)}, estado="ERROR")
         raise HTTPException(

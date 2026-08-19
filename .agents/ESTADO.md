@@ -17,8 +17,8 @@
 ## ▶️ Para retomar (sesión del 2026-08-19)
 
 La sesión **cerró H-48 y H-49** —dos defectos que escondían oportunidades vivas— y **avanzó el
-Bloque 3 hasta su Paso 4**. La suite está en **518/518**. **La tarea siguiente es el Paso 5 del
-Bloque 3**: el filtro de ámbito.
+Bloque 3 hasta su Paso 5**, que **cierra H-47**. La suite está en **538/538**. **La tarea siguiente
+es el Paso 6 del Bloque 3**: hacer visible el análisis semántico.
 
 > 📌 **Lee [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) antes de tocar el frontend.** Están las
 > seis decisiones de dirección ya tomadas y la medición de contraste que las sostiene. No hace
@@ -31,9 +31,12 @@ Bloque 3**: el filtro de ámbito.
 * **Leer los títulos.** La tabla muestra un título derivado y legible; el íntegro sigue en la ficha.
 * **Reconocer a Incoop al abrir**: fondo oscuro, la marca en la cabecera y una paleta medida.
 * **Ver el sector de cada licitación**, que se calculaba desde la Capa 5 y no pintaba nadie.
+* **Mirar sólo Catalunya**, con un interruptor para ver el resto. Es lo primero que se ve al
+  abrir, y gobierna el Funnel y los KPIs a la vez. Medido contra la base real: el Cockpit pasa de
+  **24 expedientes y 7.294.613,49 €** a **9 y 2.770.211,81 €**.
 
-**Lo que todavía no**: el filtro de Catalunya (Paso 5), el análisis semántico a la vista (Paso 6) y
-el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
+**Lo que todavía no**: el análisis semántico a la vista (Paso 6) y el cierre del bloque (Paso 7).
+Detrás sigue esperando la **Capa 10, Paso 8**.
 
 > 🔑 **Lo más transferible de la sesión, y no es técnico: dirección paró un paso que estaba en el
 > plan y tenía razón.** El Paso 3 de la reparación —rescatar 45 lotes archivados por error— se
@@ -73,8 +76,7 @@ el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
 > había que arreglar era dejar de perderlas. El Funnel **se irá llenando solo** con cada corrida.
 
 > 🐛 **H-41 sigue abierto y sin asignar** —el crash nativo del pipeline—, pero no se reprodujo en
-> las corridas de hoy. Y quedan **H-39, H-45, H-46 y H-47**, este último resuelto en cuanto se
-> cierre el Paso 5.
+> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 quedó cerrado con el Paso 5.**
 
 > 📌 **Dos apuntes menores anotados hoy, ninguno urgente**: la base guarda `Consultoria` y
 > `Consultoría` como **sectores distintos** —familia de H-27, y su arreglo es del Filtro, no de la
@@ -83,14 +85,14 @@ el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **518/518**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **538/538**. **H-48, H-49 y H-47 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado y el ámbito del Funnel—, y **la tarea activa es el Bloque 3 — Identidad y foco, por su Paso 6**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 45 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 518/518
+python -m pytest tests/ -q          # debe dar 538/538
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -217,9 +219,46 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
 > tilde: es la familia de H-27 en el vocabulario de sectores. La tabla **unifica lo que pinta**,
 > pero el dato sigue sucio y su arreglo es del Filtro, no de la pantalla.
 
-* **Paso 5** ⬜ — el ámbito: parámetro, KPIs e interruptor. **Es la tarea siguiente.**
-* **Paso 6** ⬜ — el análisis visible, con sus tres estados.
+* **Paso 5** 🟢 — **el ámbito, hecho el 2026-08-19. Cierra H-47.** El criterio —`nuts LIKE
+  'ES51%'`— vive en un punto único y versionado (`AMBITOS`, `clausula_ambito()`, `VERSION_AMBITO`
+  en `src/__init__.py`); lo consumen `listar_expedientes_paginados()` y `obtener_resumen_kpis()`, y
+  la API lo expone en `/licitaciones` y `/kpis`. La pantalla lo gobierna desde una **barra propia
+  bajo la cabecera**, fuera de las dos pestañas que manda. Verificado en vivo contra la base real:
+  **24 → 9 expedientes** y **7.294.613,49 € → 2.770.211,81 €**, con la cifra de cabecera y su
+  desglose cuadrando en los dos estados del interruptor. 20 regresiones en
+  `tests/test_bloque3_ambito.py`. Suite **538/538**.
+* **Paso 6** ⬜ — el análisis visible, con sus tres estados. **Es la tarea siguiente.**
 * **Paso 7** ⬜ — cierre: suite, C7 con la aplicación arrancada y documentos.
+
+> 🔑 **La decisión del Paso 5 que más código costó, y no era la del filtro: qué KPIs obedecen.**
+> Lo evidente es filtrar el volumen licitado y los expedientes vivos. Lo que no es evidente es el
+> **win rate**, que sale de `vista_win_rate` — un agregado global sin `expediente_id`, imposible de
+> filtrar por join. La tentación era dejarlo global: total, hoy vale cero. Dirección eligió lo
+> contrario, y es lo correcto: si el volumen bajara a la fracción catalana mientras el win rate
+> contara toda España, **la pantalla mezclaría dos poblaciones sin decirlo**, que es exactamente
+> H-08 y H-21 otra vez. La consulta filtrada y la vista comparten ahora la constante
+> `SQL_COLUMNAS_WIN_RATE`: **no puede haber dos definiciones de «ganada»** que deriven una de otra.
+
+> ⚠️ **La trampa del paso, y es de las que llegan a producción sin hacer ruido.** Un ámbito mal
+> escrito —`ambito=cataluña`, con eñe, que es como se escribe en castellano— podía tratarse como
+> «sin filtro» y devolver los 24 expedientes de toda España **bajo el rótulo de Catalunya**. Nadie
+> lo notaría: la pantalla estaría llena y el texto diría lo contrario. Por eso el vocabulario es
+> **cerrado** y un valor no reconocido es un **400** con la lista de válidos, nunca una degradación
+> silenciosa (Convención C2). Y por eso la respuesta de `/kpis` **declara su propio ámbito**: si un
+> día la API ignorase el parámetro, se vería en la pantalla en vez de en la base.
+
+> ⚠️ **Un dato que sólo se vio al medir, y que habría roto el filtro «obvio»: `ES51` existe en la
+> base sin el quinto dígito**, en 4 expedientes. Un criterio escrito como igualdad contra las
+> cuatro provincias catalanas los habría dejado fuera sin fallar en nada. Es la familia de H-49
+> —dos grafías del mismo dato que no coinciden— y por eso el criterio es un **prefijo**. De paso
+> quedó comprobado que el campo correcto es `nuts` y no `localidad`: poblado en **74 de 74** filas
+> sin un solo nulo, frente al `N/A` que `localidad` trae en la mitad.
+
+> 📌 **Hay dos definiciones de Catalunya en el proyecto, y es deliberado.**
+> `config/perfil_incoop.yaml` lista los NUTS catalanes para el **scoring**; `AMBITOS` declara
+> `ES51%` para la **pantalla**. Cubren lo mismo, pero hacen oficios distintos: aquél puntúa una
+> oportunidad, éste decide qué se enseña. El contrato prohíbe expresamente que el filtro de
+> pantalla toque la ingesta o el scoring. Si un día hay que unificarlos, es una tarea del Filtro.
 
 > 🔑 **La decisión del Paso 2 que conviene no revisar: el título derivado NO se persiste.** Se
 > recomendó al principio guardarlo en columna con esquema v9 y backfill, y **se retiró antes de
@@ -438,11 +477,10 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 * **H-46 · La purga documental se ejecuta con un solo clic**, mientras la eliminación de
   expedientes —en la misma pantalla— exige previsualizar primero. La previsualización de la purga
   documental **ya existe y la API ya la sirve**: la pantalla no la usa.
-* **H-47 · El Funnel se llena de licitaciones fuera de ámbito.** De 15 expedientes vivos, **3 son
-  catalanes y 3 de Madrid** *(eran 19 al anotarlo el 18-08)*. **H-48 lo agrava**: la fuente catalana
-  se archiva entera en cada corrida, así que el desequilibrio es peor de lo que este recuento sugiere. El perfil comercial está bien —premia la geografía con +40/+35/+20—
-  pero **la geografía suma puntos y no descarta nada**, y dos de las tres fuentes son estatales.
-  Decisión de dirección pendiente: filtrar en pantalla, filtrar al ingerir o subir el umbral.
+* ~~**H-47 · El Funnel se llena de licitaciones fuera de ámbito.**~~ **Cerrado el 2026-08-19** con
+  el Paso 5 del Bloque 3: se filtra en la pantalla, Catalunya de inicio y un interruptor para el
+  resto, sin tocar la ingesta ni el scoring. Reparado H-48, el recuento real quedó en **9 catalanes
+  de 24 vivos**.
 
 **Dos hallazgos abiertos de antes:**
 
@@ -678,7 +716,7 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **48 hallazgos catalogados, 44 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+De la remediación, ninguno. **48 hallazgos catalogados, 45 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
 
 > **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 

@@ -11,12 +11,14 @@
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, con la suite en **464/464**. De **44 hallazgos** catalogados, **42 están
+> están cerrados, y el **Bloque 3** (identidad y foco) va por su Paso 5, con la suite en
+> **538/538**. De **48 hallazgos** catalogados, **45 están
 > cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
-> —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y los
-> tres de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
-> devuelven 404 y 500)*, **H-46** *(la purga documental se lanza con un solo clic)* y **H-47** *(el
-> Funnel se llena de licitaciones fuera del ámbito de Incoop)*. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
+> —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y dos
+> de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
+> devuelven 404 y 500)* y **H-46** *(la purga documental se lanza con un solo clic)*. El tercero,
+> **H-47** *(el Funnel se llenaba de licitaciones fuera del ámbito de Incoop)*, **quedó cerrado el
+> 2026-08-19**. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
 > compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra
@@ -1685,9 +1687,11 @@ usuario y no como proyecto.
      real son las primeras once palabras y el resto es el cuerpo del acuerdo del pleno. Hace falta
      **derivar un título legible** —hasta el primer punto, o el objeto del contrato— conservando el
      texto completo aparte, porque también lo sufren la ficha de detalle y los informes.
-2. **El Funnel ofrece lo que no es su negocio** (H-47). De 19 expedientes vivos, 3 catalanes y 3 de
-   Madrid, mientras los 63 servicios activos reales de Incoop están todos en Catalunya. El perfil
-   comercial está bien y premia la geografía; lo que no existe es un criterio de **ámbito**.
+2. ~~**El Funnel ofrece lo que no es su negocio**~~ (H-47). De 19 expedientes vivos, 3 catalanes y
+   3 de Madrid, mientras los 63 servicios activos reales de Incoop están todos en Catalunya. El
+   perfil comercial está bien y premia la geografía; lo que no existía era un criterio de
+   **ámbito**. **Reparado el 2026-08-19** (Paso 5): filtro de pantalla `nuts LIKE 'ES51%'`, con
+   Catalunya de inicio y un interruptor para el resto, gobernando el Funnel y los KPIs a la vez.
 3. **El análisis semántico no se ve.** Funciona y está integrado desde la Capa 5 —33 análisis
    completados sobre 176 documentos con texto en la base actual—, pero queda enterrado en la ficha
    de detalle. Tanto, que dirección llegó a creer que había que ejecutarlo a mano.

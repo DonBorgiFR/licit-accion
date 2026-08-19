@@ -1753,7 +1753,7 @@ salvaguardas radicalmente distintas**, y la más accesible es la que borra fiche
 la eliminación, apoyándose en la previsualización que ya sirve la API. Sin asignar; encaja
 naturalmente en el Paso 9 de la Capa 10 o en una revisión de la pantalla de Administración.
 
-### H-47 · El Funnel se llena de licitaciones fuera del ámbito de Incoop 🔴 ABIERTO (sin asignar)
+### H-47 · El Funnel se llena de licitaciones fuera del ámbito de Incoop 🟢 CERRADO (2026-08-19)
 
 **Detectado el 2026-08-18** por dirección, mirando el Funnel: *"detecta muchas cosas de fuera de
 Catalunya y veo pocas cerca de la zona"*. **Medido**, y es cierto:
@@ -1795,6 +1795,20 @@ de **ámbito**.
 **Relacionado, y pendiente desde el 2026-08-07**: la revisión de cobertura de CPVs quedó aplazada
 *"hasta rehacer el cruce tras la primera ejecución real"*. Ya hay datos reales — y ahora también el
 catálogo de servicios activos, que dice qué CPVs debería estar persiguiendo el sistema.
+
+> ✅ **Cerrado el 2026-08-19 con la vía 1** (Bloque 3, Paso 5). Dirección eligió filtrar en la
+> pantalla: `nuts LIKE 'ES51%'`, Catalunya de inicio y un interruptor para ver el resto, gobernando
+> a la vez el Funnel y los KPIs. **No se toca la ingesta ni el scoring**, así que no se pierde un
+> solo dato y la decisión es reversible. Medido sobre la base real: de **24 expedientes vivos y
+> 7.294.613,49 €**, el Funnel pasa a enseñar **9 y 2.770.211,81 €**.
+>
+> Dos cosas que la implementación añadió al diagnóstico:
+>
+> * **`nuts` es el campo correcto y `localidad` no lo era**: está poblado en **74 de 74** filas sin
+>   un solo nulo, frente al `N/A` que `localidad` trae en la mitad.
+> * **`ES51` aparece en la base sin el quinto dígito**, en 4 expedientes. Un criterio escrito como
+>   igualdad contra las cuatro provincias los habría dejado fuera — la misma familia de defecto que
+>   H-49: dos grafías del mismo dato que no coinciden. Por eso el criterio es un prefijo.
 
 ---
 

@@ -34,7 +34,14 @@ export const queryClient = new QueryClient({
 
 export const QUERY_KEYS = {
   health: ['health'] as const,
-  kpis: ['kpis'] as const,
+  // El ámbito forma parte de la clave: sin él, cambiar el interruptor devolvería la caché
+  // de la población anterior y el Dashboard enseñaría las cifras de toda España bajo el
+  // rótulo de Catalunya. Es el mismo motivo por el que `licitaciones` lleva sus filtros.
+  kpis: (ambito?: string) => ['kpis', ambito ?? null] as const,
+  //: Prefijo para invalidar **todas** las variantes de ámbito a la vez tras una mutación.
+  //: `kpis(undefined)` sólo alcanzaría a la de «sin filtro», y el Dashboard se quedaría con
+  //: las cifras viejas justo en el estado en que el usuario lo mira: con Catalunya puesta.
+  kpisTodos: ['kpis'] as const,
   // Administración y Depurador (Capa 9, Paso 9)
   almacenamiento: ['admin', 'almacenamiento'] as const,
   retencion: ['admin', 'retencion'] as const,

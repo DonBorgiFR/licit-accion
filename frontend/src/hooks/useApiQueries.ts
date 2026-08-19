@@ -52,11 +52,12 @@ export function useHealthQuery() {
  * Hook para obtener el resumen global de métricas del Funnel comercial y Working Capital.
  * Smart Polling cada 30 segundos.
  */
-export function useKPIsQuery() {
+export function useKPIsQuery(ambito?: string) {
   return useQuery({
-    queryKey: QUERY_KEYS.kpis,
-    queryFn: getKPIs,
+    queryKey: QUERY_KEYS.kpis(ambito),
+    queryFn: () => getKPIs(ambito),
     refetchInterval: 30 * 1000,
+    placeholderData: keepPreviousData, // Evita el parpadeo al mover el interruptor de ámbito
   });
 }
 

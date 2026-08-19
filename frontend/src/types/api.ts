@@ -210,6 +210,14 @@ export interface KPISummary {
   volumen_total_pbl: number;
   capital_garantias_retenidas: number;
   alertas_tempranas_activas: number;
+  /**
+   * Ámbito territorial sobre el que se han calculado estas cifras. `null` es «todo».
+   * Viaja en la respuesta para que la pantalla rotule la población de la que habla: sin
+   * él, una API que ignorase el parámetro enseñaría toda España bajo el rótulo de
+   * Catalunya sin que nada chirriase.
+   */
+  ambito: string | null;
+  version_ambito: string;
 }
 
 // ==============================================================================
@@ -257,6 +265,13 @@ export interface LicitacionesQueryParams {
    * se decide a qué concurso presentarse y no debe arrastrar histórico.
    */
   incluir_archivadas?: boolean;
+  /**
+   * Ámbito territorial (H-47). Sin valor, la API devuelve todo: quien decide mostrar sólo
+   * Catalunya es la pantalla, con el interruptor puesto de inicio. Es deliberadamente lo
+   * contrario que `incluir_archivadas`, porque lo archivado es un concepto de negocio y el
+   * ámbito una preferencia de quien mira.
+   */
+  ambito?: string;
 }
 
 export interface AlertasQueryParams {

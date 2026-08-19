@@ -149,6 +149,56 @@ def titulo_legible(titulo, tope: int = TOPE_TITULO) -> str:
     return recorte.rstrip(" ,;:.·-—") + "…"
 
 
+#: Versión del criterio de ámbito territorial (Regla 4). Se declara aquí porque el criterio
+#: **no se persiste**: no hay columna «es de Catalunya», se decide al leer, igual que el
+#: título derivado. Un cambio del criterio es un cambio de código y de esta versión.
+VERSION_AMBITO = "1.0.0"
+
+#: Ámbitos territoriales que la pantalla puede pedir, con su patrón NUTS.
+#:
+#: **Vocabulario cerrado a propósito.** Un ámbito que no esté aquí es un error tipado
+#: (`AmbitoDesconocido`), nunca «devuelve todo»: degradar a un valor por defecto que el
+#: consumidor no puede distinguir de un resultado real está prohibido por la Convención C2.
+#: Escrito mal el nombre, la pantalla enseñaría 24 expedientes diciendo que enseña 9.
+#:
+#: Por qué `nuts` y no `localidad`: medido sobre la base real, `nuts` está poblado en **74 de
+#: 74** filas sin un solo nulo, mientras que `localidad` trae `N/A` en la mitad.
+#:
+#: ⚠️ **Hay una segunda definición de Catalunya en el proyecto, y es deliberado.**
+#: `config/perfil_incoop.yaml` lista `ES51`, `ES511`…`ES514` para el **scoring** comercial.
+#: `ES51%` cubre exactamente esa unión, pero son dos criterios separados porque hacen dos
+#: oficios distintos: aquél puntúa una oportunidad, éste decide qué se enseña. El contrato
+#: del Bloque 3 prohíbe expresamente que el filtro de pantalla toque la ingesta o el scoring.
+AMBITOS = {
+    "catalunya": "ES51%",
+}
+
+
+class AmbitoDesconocido(ValueError):
+    """El ámbito solicitado no está en el vocabulario. Se rechaza, no se ignora."""
+
+
+def clausula_ambito(ambito, columna: str = "e.nuts"):
+    """Traduce un ámbito a su condición SQL. Devuelve `(sql, params)`.
+
+    Sin ámbito devuelve `("", [])`, que es la ausencia de filtro. **Ese es el
+    comportamiento por defecto de la API a propósito**: quien decide mostrar sólo Catalunya
+    es la pantalla, con su interruptor puesto de inicio, no la capa de datos. Es lo contrario
+    que `incluir_archivadas`, y por un motivo: lo archivado es un concepto de negocio —qué
+    está en el canal principal—, mientras el ámbito es una preferencia de quien mira. Una API
+    que esconde por gusto propio produce la clase de sorpresa que este proyecto lleva cuatro
+    capas persiguiendo.
+    """
+    if ambito is None:
+        return "", []
+    clave = str(ambito).strip().lower()
+    if clave not in AMBITOS:
+        raise AmbitoDesconocido(
+            f"Ámbito '{ambito}' no reconocido. Válidos: {', '.join(sorted(AMBITOS))}."
+        )
+    return f"{columna} LIKE ?", [AMBITOS[clave]]
+
+
 def ruta_datos(*partes) -> str:
     """
     Resuelve una ruta **dentro del directorio de datos**: base de datos, documentos
