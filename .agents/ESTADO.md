@@ -418,6 +418,20 @@ duración intacta.
 
 > **Retomada el 2026-08-19** al cerrar el Bloque 3. Llevaba en pausa desde el 2026-08-18, cuando
 > dirección antepuso las cuatro carencias que se veían al mirar el sistema terminado.
+>
+> 📌 **Aplazada a la sesión siguiente por decisión de dirección** *(2026-08-19, final de sesión)*:
+> se cierra el día con el Bloque 3 terminado y no se abre el Paso 8.
+>
+> ⚠️ **Cuidado con el número: esto NO es la Capa 8.** La **Capa 8 es el Cockpit Visual y está
+> cerrada y validada** desde hace tiempo — es la pantalla entera que el Bloque 3 acaba de rehacer
+> por dentro. Lo que espera es el **Paso 8 de la Capa 10**, el despertador. El «8» aparece en los
+> dos sitios y se confunde con facilidad.
+>
+> 🚧 **Y no se puede empezar a codificar nada: hay una decisión de dirección sin tomar.** El Paso 8
+> depende de **si el pipeline debe tener un tope de duración**, ahora que va a lanzarlo una tarea
+> nocturna sin consola delante. No se ha inventado ningún plazo porque la Regla 4 lo prohíbe. El
+> enunciado completo, con las cuatro cosas que hay que decidir, está en el `README.md` dentro del
+> Paso 8. **Es la primera conversación de la sesión siguiente, antes que ningún plan.**
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
