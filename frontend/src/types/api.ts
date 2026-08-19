@@ -147,6 +147,12 @@ export interface Licitacion {
   /** El derivado para leer en la tabla, que sirve la API (Bloque 3, Paso 2). Se calcula
    *  al servir y no se guarda: `titulo` conserva siempre el original. */
   titulo_corto: string;
+  /**
+   * De dónde viene el dictamen: `LEIDO`, `SIN_ANALIZAR` o `DEGRADADO` (Bloque 3, Paso 6).
+   * Lo resuelve la API y no el Cockpit: aquí la clasificación estaba escrita dos veces —en
+   * la tabla y en la ficha— y el frontend no tiene suite que la cubra.
+   */
+  estado_lectura: 'LEIDO' | 'SIN_ANALIZAR' | 'DEGRADADO';
   organo: string;
   localidad?: string | null;
   nuts?: string | null;

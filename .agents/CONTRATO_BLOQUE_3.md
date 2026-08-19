@@ -1,6 +1,6 @@
 # Contrato de Servicio — Bloque 3: Identidad y Foco
 
-**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 validado el 2026-08-19 · **Pasos 2, 3, 4 y 5 hechos**, Paso 6 es la tarea siguiente
+**Versión**: v1.0.0 · **Redactado**: 2026-08-19 · **Estado**: 🟢 validado el 2026-08-19 · **Pasos 2 a 6 hechos**, Paso 7 es la tarea siguiente
 **Origen**: revisión funcional con dirección del 2026-08-18 · **Precede a**: Capa 10, Paso 8
 
 > **Qué persigue este bloque.** Nueve capas se han invertido en que el motor sea honesto; ninguna
@@ -193,6 +193,28 @@ motor.
 > las CCAA). Hacerlo visible mostrará *"sin analizar"* en muchas filas. **Es honesto y es
 > deseable**: hoy esas filas callan, que es peor. Pero no es un fallo del bloque, es su hallazgo.
 
+> ✅ **Medido al implementarlo (2026-08-19), y sale mejor de lo previsto.** De los 24 expedientes
+> vivos, **11 tienen el pliego leído y 13 no**; pero con el filtro de ámbito puesto —que es lo que
+> el usuario ve al abrir— son **7 de 9**. La razón es la misma que anticipaba el aviso: la fuente
+> catalana trae los pliegos y las estatales no, así que filtrar a Catalunya y ver el pliego leído
+> resultan ser el mismo fenómeno visto por dos lados. **No hay ni una lectura degradada** en la
+> base real, así que ese tercer estado se verificó sembrándolo en una **copia**.
+
+> ⚠️ **Precisado al implementarlo: eran dos estados fundidos, no un distintivo que faltaba.** La
+> pantalla manejaba «hay análisis» y «no hay análisis fiable», juntando *no se intentó* con *se
+> intentó y salió mal* bajo la misma etiqueta —«Pliego sin analizar»—, que a la segunda le miente.
+> Y el positivo no existía. Además la clasificación estaba escrita **dos veces** en el Cockpit, que
+> no tiene suite: se traslada al servidor (`estado_lectura_pliego()`, campo computado
+> `estado_lectura`) para que quede cubierta por regresiones. Un `estado_analisis` desconocido se
+> clasifica como **degradado y nunca como leído** (C6); `PENDIENTE` es «sin analizar», porque es la
+> cola con la que el pipeline selecciona trabajo y no un dictamen fallido.
+
+> 🔑 **Y un hallazgo que este apartado dio por explicado y no lo estaba (H-50).** El contrato decía
+> que *"dirección llegó a creer que había que ejecutarlo a mano con un `.py`"* como si fuera un
+> malentendido. **Se lo estaba diciendo la ficha de detalle**, literalmente: *"Puedes ejecutar el
+> motor en CLI con `python src/analista.py`"*. Y ese comando **no arranca** —rompe la Convención
+> C1—. Una creencia equivocada del usuario puede ser un defecto del producto.
+
 ---
 
 ## G · Plan de ejecución en 7 pasos
@@ -204,8 +226,8 @@ motor.
 | **3** | 🟢 **Hecho el 2026-08-19.** Paleta de tres capas en `index.css` (`@theme`), **463 clases migradas** por mapa explícito, cabecera con el isotipo, y App en fondo `#0E0D14` | Navegador real: **0 fallos de contraste** en las cuatro pantallas y en la ficha, 0 errores de consola, ningún fondo claro superviviente. Suite **518/518** |
 | **4** | 🟢 **Hecho el 2026-08-19.** La columna de identificador desaparece y su ancho pasa al título; el id baja a pie de fila; el score se lee como magnitud con el acento reservado a la prioridad **Alta**; el sector se pinta por fin | Navegador real: 6 columnas en vez de 7, título a 15 px en 3 líneas con el completo en el tooltip, **0 fallos de contraste**. Suite **518/518** |
 | **5** | 🟢 **Hecho el 2026-08-19. Cierra H-47.** Criterio único y versionado en `src/__init__.py` (`AMBITOS`, `clausula_ambito()`, `VERSION_AMBITO`), consumido por el Funnel y por los KPIs; parámetro `ambito` en `/licitaciones` y `/kpis`; interruptor en barra propia bajo la cabecera, fuera de las dos pestañas que gobierna | Suite **538/538** (20 regresiones nuevas). Contra la base real: **24 → 9 expedientes** y **7.294.613,49 € → 2.770.211,81 €**, con la cabecera cuadrando con su desglose en los dos estados. 0 errores de consola y 0 fallos de contraste en la barra nueva |
-| **6** | El análisis visible, con sus tres estados | Navegador real sobre expedientes con y sin análisis |
-| **7** | Cierre: suite completa, C7 con la aplicación arrancada, documentos al día | 501/501 más lo nuevo |
+| **6** | 🟢 **Hecho el 2026-08-19. Cierra H-50.** `estado_lectura_pliego()` y `VERSION_LECTURA` en `src/__init__.py`, servidos como campo computado `estado_lectura`; el Cockpit los pinta encabezando la columna de Cláusulas & Riesgo y en la ficha, desde un componente único. Corregido el texto que recomendaba un comando roto | Navegador real con los **tres estados a la vez**: 7 «Pliego leído» y 2 «Sin analizar» de la base real, más una «Lectura degradada» sembrada en una copia, con su causa a la vista. 0 errores de consola, contraste 8,08 / 7,20 / 10,01. Suite **552/552** (14 regresiones nuevas) |
+| **7** | Cierre: suite completa, C7 con la aplicación arrancada, documentos al día | 552/552 más lo nuevo |
 
 **El orden no es arbitrario**: el Paso 2 es el único que toca datos, y todo lo demás los muestra.
 Los Pasos 3 a 6 son de pantalla y se verifican mirándola, no sólo con la suite — que es la lección

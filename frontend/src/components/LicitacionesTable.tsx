@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useLicitacionesQuery } from '../hooks/useApiQueries';
 import { useMutateEstadoLicitacion } from '../hooks/useApiMutations';
+import { LecturaPliegoBadge, normalizarLectura, sinLecturaFiable } from './LecturaPliego';
 import { Card } from './ui/Card';
 import { Badge, ScoreBadge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -330,21 +331,24 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                     semantico ? semantico.revision_precios_permitida : lotePrincipal?.revision_precios
                   );
                   const pmpDias = lotePrincipal?.pmp_dias;
-                  // Los indicadores de riesgo de esta fila no proceden de la lectura del
-                  // pliego en dos casos distintos que llevan al mismo error de juicio:
-                  //   1. La IA lo intentó y falló (modo degradado).
-                  //   2. La IA no llegó a intentarlo: no hay análisis en absoluto.
+                  // De dónde viene el dictamen, en tres estados. **Ya no se calcula aquí**:
+                  // llega resuelto de la API en `estado_lectura`, porque la misma cadena de
+                  // condiciones vivía duplicada en esta tabla y en la ficha de detalle, y el
+                  // Cockpit no tiene suite que la cubra.
                   //
-                  // El segundo faltaba, y es el caso ABRUMADORAMENTE mayoritario en una base
-                  // recién poblada por el Radar. Sin distintivo, la fila mostraba "Sin
-                  // Subrog. · Sin Revisión" —derivado de un rastreo de palabras clave del
-                  // título— con el mismo aspecto que una lectura verificada del documento.
-                  // Convención C3: un dato poco fiable sin distintivo es peor que uno ausente.
-                  const analisisDegradado = Boolean(
-                    !semantico ||
-                      semantico.modo_degradado ||
-                      (semantico.estado_analisis && semantico.estado_analisis !== 'COMPLETADO')
-                  );
+                  // Antes eran dos estados y fundían dos situaciones distintas: *la IA no
+                  // llegó a intentarlo* y *lo intentó y falló* pintaban la misma etiqueta,
+                  // "Pliego sin analizar" — que a la segunda le miente, porque sí se intentó
+                  // y hay una causa registrada. Y faltaba el tercero: cuando el pliego SÍ se
+                  // había leído, la fila no lo decía, así que el trabajo del Analista sólo se
+                  // notaba por la ausencia de una advertencia.
+                  const lectura = normalizarLectura(lic.estado_lectura);
+
+                  // Sin lectura fiable no se afirma la ausencia de una cláusula: los riesgos
+                  // que muestra la fila saldrían de un rastreo de palabras clave del título,
+                  // con el mismo aspecto que una lectura verificada del documento. Convención
+                  // C3: un dato poco fiable sin distintivo es peor que uno ausente.
+                  const analisisDegradado = sinLecturaFiable(lectura);
 
                   // Fuera del canal principal (Capa 9). Sólo puede aparecer si se han
                   // pedido expresamente, pero entonces convive con las vivas en la misma
@@ -434,15 +438,10 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                                 Rectificada
                               </Badge>
                             )}
-                            {analisisDegradado && (
-                              <Badge
-                                variant="warning"
-                                className="text-[10px] py-0"
-                                title="El pliego no ha podido analizarse por IA. Los riesgos mostrados no incluyen la lectura del documento."
-                              >
-                                Pliego sin analizar
-                              </Badge>
-                            )}
+                            {/* El estado de la lectura NO se repite aquí: vive encabezando la
+                                columna de Cláusulas & Riesgo, que es sobre lo que gobierna.
+                                Decirlo en dos sitios de la misma fila es el ruido que los
+                                Pasos 3 y 4 de este bloque se dedicaron a quitar. */}
                           </div>
                         </div>
                       </td>
@@ -466,9 +465,14 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Cláusulas & Riesgo */}
+                      {/* Cláusulas & Riesgo. El estado de la lectura ENCABEZA la columna, y
+                          ese orden es el mensaje: primero de dónde sale lo que vas a leer,
+                          después lo que dice. Sin columna nueva — el Paso 4 bajó la tabla de
+                          siete columnas a seis y esto no lo deshace. */}
                       <td className="p-4 align-top text-center">
                         <div className="flex flex-col items-center gap-1">
+                          <LecturaPliegoBadge estado={lectura} className="mb-0.5" />
+
                           {/* Sin lectura del pliego no se afirma la ausencia de una cláusula:
                               "Sin Subrog." es una conclusión, "Sin datos" es la verdad. */}
                           {subrogacion ? (

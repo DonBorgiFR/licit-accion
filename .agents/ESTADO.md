@@ -16,9 +16,8 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-19)
 
-La sesión **cerró H-48 y H-49** —dos defectos que escondían oportunidades vivas— y **avanzó el
-Bloque 3 hasta su Paso 5**, que **cierra H-47**. La suite está en **538/538**. **La tarea siguiente
-es el Paso 6 del Bloque 3**: hacer visible el análisis semántico.
+La sesión **cerró H-48, H-49, H-47 y H-50** y **avanzó el Bloque 3 hasta su Paso 6**. La suite
+está en **552/552**. **La tarea siguiente es el Paso 7**: el cierre del bloque.
 
 > 📌 **Lee [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) antes de tocar el frontend.** Están las
 > seis decisiones de dirección ya tomadas y la medición de contraste que las sostiene. No hace
@@ -34,9 +33,10 @@ es el Paso 6 del Bloque 3**: hacer visible el análisis semántico.
 * **Mirar sólo Catalunya**, con un interruptor para ver el resto. Es lo primero que se ve al
   abrir, y gobierna el Funnel y los KPIs a la vez. Medido contra la base real: el Cockpit pasa de
   **24 expedientes y 7.294.613,49 €** a **9 y 2.770.211,81 €**.
+* **Saber si el pliego se ha leído**, en tres estados y en cada fila. Antes el trabajo del
+  Analista sólo se notaba porque **no** aparecía una advertencia.
 
-**Lo que todavía no**: el análisis semántico a la vista (Paso 6) y el cierre del bloque (Paso 7).
-Detrás sigue esperando la **Capa 10, Paso 8**.
+**Lo que todavía no**: el cierre del bloque (Paso 7). Detrás sigue esperando la **Capa 10, Paso 8**.
 
 > 🔑 **Lo más transferible de la sesión, y no es técnico: dirección paró un paso que estaba en el
 > plan y tenía razón.** El Paso 3 de la reparación —rescatar 45 lotes archivados por error— se
@@ -76,7 +76,16 @@ Detrás sigue esperando la **Capa 10, Paso 8**.
 > había que arreglar era dejar de perderlas. El Funnel **se irá llenando solo** con cada corrida.
 
 > 🐛 **H-41 sigue abierto y sin asignar** —el crash nativo del pipeline—, pero no se reprodujo en
-> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 quedó cerrado con el Paso 5.**
+> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 se cerró con el Paso 5 y H-50 con el
+> Paso 6.**
+
+> 🔑 **El hallazgo más incómodo de la sesión, y no es técnico: una creencia equivocada del usuario
+> resultó ser un defecto del producto.** El contrato del Bloque 3 anotaba como carencia que
+> *"dirección llegó a creer que había que ejecutarlo a mano con un `.py`"*, dado por malentendido
+> y explicado. Al ir a reescribir el texto de la ficha por otro motivo apareció que **la pantalla
+> se lo estaba diciendo**: *"Puedes ejecutar el motor en CLI con `python src/analista.py`"*. Y el
+> comando ni siquiera arranca —`ModuleNotFoundError: No module named 'src'`, la trampa de C1—, así
+> que el README lo documentaba mal seis veces desde la Capa 5 sin que nadie lo ejecutara. Es H-50.
 
 > 📌 **Dos apuntes menores anotados hoy, ninguno urgente**: la base guarda `Consultoria` y
 > `Consultoría` como **sectores distintos** —familia de H-27, y su arreglo es del Filtro, no de la
@@ -85,14 +94,14 @@ Detrás sigue esperando la **Capa 10, Paso 8**.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **538/538**. **H-48, H-49 y H-47 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado y el ámbito del Funnel—, y **la tarea activa es el Bloque 3 — Identidad y foco, por su Paso 6**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 45 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **552/552**. **H-48, H-49, H-47 y H-50 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel y el comando roto que recomendaba el Cockpit—, y **la tarea activa es el Bloque 3 — Identidad y foco, por su Paso 7**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **49 hallazgos catalogados, 46 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 538/538
+python -m pytest tests/ -q          # debe dar 552/552
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -227,8 +236,41 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
   **24 → 9 expedientes** y **7.294.613,49 € → 2.770.211,81 €**, con la cifra de cabecera y su
   desglose cuadrando en los dos estados del interruptor. 20 regresiones en
   `tests/test_bloque3_ambito.py`. Suite **538/538**.
-* **Paso 6** ⬜ — el análisis visible, con sus tres estados. **Es la tarea siguiente.**
-* **Paso 7** ⬜ — cierre: suite, C7 con la aplicación arrancada y documentos.
+* **Paso 6** 🟢 — **el análisis visible, hecho el 2026-08-19. Cierra H-50.** `estado_lectura_pliego()`
+  en `src/__init__.py` con `VERSION_LECTURA`, servido como campo computado `estado_lectura`; el
+  Cockpit lo pinta encabezando la columna de Cláusulas & Riesgo y en la ficha, con un componente
+  único (`LecturaPliego.tsx`) en vez de la lógica duplicada que había. Verificado en vivo con los
+  **tres estados a la vez**: 7 «Pliego leído» y 2 «Sin analizar» en la base real, más una lectura
+  degradada sembrada **en una copia**. 14 regresiones en `tests/test_bloque3_analisis.py`. Suite
+  **552/552**.
+* **Paso 7** ⬜ — cierre: suite, C7 con la aplicación arrancada y documentos. **Es la tarea siguiente.**
+
+> 🔑 **El Paso 6 no era «pintar un distintivo»: eran dos estados fundidos en uno y un tercero que
+> no existía.** La pantalla manejaba «hay análisis» y «no hay análisis fiable». Eso juntaba *no se
+> intentó* con *se intentó y salió mal*, que exigen decisiones distintas —en la segunda hay una
+> causa registrada en `error_detalle` y un pliego que conviene abrir a mano— y las pintaba con la
+> misma etiqueta, «Pliego sin analizar», que a la segunda le miente. Y faltaba el positivo:
+> **cuando el pliego SÍ se había leído, nadie lo decía.** El trabajo del Analista se manifestaba
+> por la ausencia de una advertencia, que es la definición literal de la queja de dirección.
+
+> 🔑 **Dónde vive la clasificación, y por qué en el servidor.** Estaba escrita **dos veces** en el
+> Cockpit —tabla y ficha—, la misma cadena de tres condiciones copiada. Y **el frontend no tiene
+> suite**: un error ahí sólo se ve mirando la pantalla. Resuelta en la API, los tres estados
+> quedan cubiertos por regresiones, y hay una que comprueba que la tabla y la ficha **no puedan
+> discrepar** sobre el mismo expediente.
+
+> ⚠️ **La cautela que se eligió, y no es la barata: un estado desconocido NO asciende a «leído».**
+> Si mañana aparece un valor de `estado_analisis` que nadie mapeó, tratarlo como bueno enseñaría
+> sus riesgos como si salieran del documento. Es C6 aplicada a la pantalla. En cambio `PENDIENTE`
+> sí es «sin analizar» y no «degradado»: es la **cola** con la que el pipeline selecciona trabajo,
+> no un dictamen fallido, y llamarlo degradado inventaría un intento que no ocurrió.
+
+> 📌 **El estado de la base, mejor de lo que el contrato temía.** El apartado F avisaba de que
+> hacer visible el análisis mostraría *"sin analizar"* en muchas filas. Medido: de los 24
+> expedientes vivos, **11 tienen el pliego leído y 13 no**; pero **filtrado a Catalunya son 7 de
+> 9**. El aviso vale para el listado completo, no para lo que el usuario ve al abrir. Y **no hay
+> ni una lectura degradada** en la base real: ese tercer estado se verificó sembrándolo en una
+> **copia**, nunca en `data/licitaciones.db`.
 
 > 🔑 **La decisión del Paso 5 que más código costó, y no era la del filtro: qué KPIs obedecen.**
 > Lo evidente es filtrar el volumen licitado y los expedientes vivos. Lo que no es evidente es el
@@ -716,7 +758,7 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **48 hallazgos catalogados, 45 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+De la remediación, ninguno. **49 hallazgos catalogados, 46 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
 
 > **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 

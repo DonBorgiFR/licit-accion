@@ -17,6 +17,11 @@ import {
 } from 'lucide-react';
 import { useLicitacionDetailQuery, useAlertaDetailQuery } from '../hooks/useApiQueries';
 import { useMutateEstadoLicitacion, useMutateEstadoAlerta } from '../hooks/useApiMutations';
+import {
+  LecturaPliegoBadge,
+  normalizarLectura,
+  type EstadoLectura,
+} from './LecturaPliego';
 import { Drawer } from './ui/Drawer';
 import { Badge, ScoreBadge, EstadoLicitacionBadge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -124,13 +129,28 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
       alerta?.dictamen_ia_json) as Record<string, any> | null | undefined;
 
     if (!semantico) {
+      // ⚠️ Este texto decía: "Puedes ejecutar el motor en CLI con `python src/analista.py`".
+      // Era el ORIGEN de que dirección creyera que el análisis había que lanzarlo a mano —el
+      // contrato del Bloque 3 lo anota como una creencia equivocada, y resulta que se la
+      // estaba dando la propia pantalla—. Y encima ese comando **no funciona**: rompe con
+      // `ModuleNotFoundError: No module named 'src'`, porque viola la Convención C1. La forma
+      // que sí arranca es `python -m src.analista` (H-50).
       return (
         <Card className="border-dashed border-line bg-surface-2/50">
-          <CardContent className="p-6 text-center space-y-2">
+          <CardContent className="p-6 text-center space-y-3">
             <Brain className="w-8 h-8 text-ink-faint mx-auto" />
-            <h4 className="text-sm font-semibold text-ink-dim">Análisis Semántico Pendiente</h4>
-            <p className="text-xs text-ink-faint max-w-sm mx-auto">
-              Esta licitación no dispone aún de dictamen semántico estructurado. Puedes ejecutar el motor en CLI con <code className="text-acento font-mono">python src/analista.py</code>.
+            <h4 className="text-sm font-semibold text-ink-dim">Sin analizar</h4>
+            <p className="text-xs text-ink-faint max-w-md mx-auto leading-relaxed">
+              Todavía no hay dictamen, y <strong className="text-ink-dim">no hay nada que lanzar
+              a mano</strong>: el motor semántico se ejecuta solo en cada corrida, sobre los
+              expedientes cuyo pliego se ha descargado y cuyo texto se ha extraído. Si aquí no
+              hay dictamen es porque la fuente no trajo el pliego —sólo la catalana lo hace de
+              forma fiable— o porque todavía no le ha tocado el turno.
+            </p>
+            <p className="text-[11px] text-ink-faint/90 max-w-md mx-auto">
+              Para auditar un dictamen concreto desde la consola:{' '}
+              <code className="text-acento font-mono">python -m src.analista --inspeccionar &lt;id&gt;</code>.
+              Es la herramienta de inspección, no el motor.
             </p>
           </CardContent>
         </Card>
@@ -145,13 +165,32 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
     // Un dictamen degradado NO procede de una lectura real del pliego: sus campos
     // de riesgo son valores por defecto. Mostrarlo sin advertencia llevaría a leer
     // "sin subrogación / sin revisión de precios" como si fuera un hallazgo.
-    const esDegradado = Boolean(
-      semantico.modo_degradado ||
+    //
+    // Para una licitación la clasificación llega resuelta de la API (`estado_lectura`), que
+    // es donde está cubierta por regresiones. La rama de abajo es sólo para el dictamen del
+    // Centinela, que tiene otra forma —`dictamen_ia_json`— y no pasa por ese esquema.
+    const lectura: EstadoLectura = licitacion
+      ? normalizarLectura(licitacion.estado_lectura)
+      : semantico.modo_degradado ||
         (semantico.estado_analisis && semantico.estado_analisis !== 'COMPLETADO')
-    );
+      ? 'DEGRADADO'
+      : 'LEIDO';
+    const esDegradado = lectura === 'DEGRADADO';
 
     return (
       <div className="space-y-5">
+        {/* De dónde viene el dictamen, dicho antes que el dictamen. Cuando el pliego SÍ se ha
+            leído la ficha tampoco lo decía: había aviso para lo malo y silencio para lo bueno,
+            así que el trabajo del Analista sólo se notaba por ausencia de advertencia. */}
+        <div className="flex items-center justify-between gap-3">
+          <LecturaPliegoBadge estado={lectura} />
+          {lectura === 'LEIDO' && semantico.modelo_llm && (
+            <span className="text-[10px] font-mono text-ink-faint truncate">
+              {semantico.modelo_llm}
+            </span>
+          )}
+        </div>
+
         {/* Aviso de Modo Degradado (Capa 5, Regla 5) */}
         {esDegradado && (
           <div className="p-4 rounded-xl border-2 border-atencion/35 bg-atencion/12 text-atencion flex items-start gap-3.5">

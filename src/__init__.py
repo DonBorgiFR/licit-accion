@@ -199,6 +199,62 @@ def clausula_ambito(ambito, columna: str = "e.nuts"):
     return f"{columna} LIKE ?", [AMBITOS[clave]]
 
 
+#: Versión del criterio con el que se clasifica la lectura del pliego (Regla 4). No se
+#: persiste —se deriva al servir, como el título y el ámbito—, así que la versión se declara
+#: aquí y un cambio de criterio es un cambio de código.
+VERSION_LECTURA = "1.0.0"
+
+#: Los tres estados de lectura del pliego, y **son tres a propósito**.
+#:
+#: Hasta hoy la pantalla manejaba dos: «hay análisis» y «no hay análisis fiable». Eso fundía
+#: dos situaciones que exigen decisiones distintas de quien mira: *no se intentó* y *se
+#: intentó y salió mal*. A la segunda, decirle «sin analizar» le miente — hay una causa
+#: registrada en `error_detalle` y un pliego que conviene abrir a mano.
+#:
+#: Y faltaba el tercero, que es el que motivó este paso: **cuando el pliego SÍ se ha leído,
+#: la pantalla no lo decía**. El trabajo del Analista se manifestaba sólo por la ausencia de
+#: una advertencia, que es exactamente la queja de dirección: *"el análisis semántico no se
+#: ve"*. Ver `.agents/CONTRATO_BLOQUE_3.md`, apartado F.
+LECTURA_LEIDO = "LEIDO"
+LECTURA_SIN_ANALIZAR = "SIN_ANALIZAR"
+LECTURA_DEGRADADO = "DEGRADADO"
+
+#: Estados de `analisis_semantico.estado_analisis` que significan «todavía no se ha
+#: intentado». `PENDIENTE` es el que usa `obtener_expedientes_pendientes_analisis()` para
+#: seleccionar trabajo: una fila así no es un dictamen fallido, es una cola.
+_ESTADOS_SIN_INTENTAR = {"PENDIENTE", ""}
+
+
+def estado_lectura_pliego(analisis) -> str:
+    """Clasifica de dónde viene —o no viene— el dictamen de una licitación.
+
+    Devuelve `LECTURA_LEIDO`, `LECTURA_SIN_ANALIZAR` o `LECTURA_DEGRADADO`.
+
+    La fuente de verdad es el campo estructurado `estado_analisis`, **nunca** el texto libre
+    del dictamen (Convención C3). `modo_degradado` sólo se consulta si el estado no llegó:
+    es un derivado del mismo dato y no una segunda opinión.
+
+    **Un estado desconocido se clasifica como degradado, no como leído.** Es la aplicación
+    de C6 a la pantalla: lo que no se pudo comprobar no puede afirmarse. Dar por buena una
+    lectura que no sabemos de dónde sale es justo el error que este proyecto lleva nueve
+    capas cerrando — un dictamen sin distintivo induce a decidir sobre él.
+    """
+    if not analisis:
+        return LECTURA_SIN_ANALIZAR
+
+    estado = str(analisis.get("estado_analisis") or "").strip().upper()
+
+    if not estado:
+        # Sin estado no se puede afirmar nada. Si el propio registro se declara degradado,
+        # se le cree; si no, tampoco se le asciende a «leído».
+        return LECTURA_DEGRADADO if analisis.get("modo_degradado") else LECTURA_SIN_ANALIZAR
+    if estado in _ESTADOS_SIN_INTENTAR:
+        return LECTURA_SIN_ANALIZAR
+    if estado == "COMPLETADO":
+        return LECTURA_LEIDO
+    return LECTURA_DEGRADADO
+
+
 def ruta_datos(*partes) -> str:
     """
     Resuelve una ruta **dentro del directorio de datos**: base de datos, documentos

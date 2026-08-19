@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Generic, TypeVar, List, Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
-from src import titulo_legible
+from src import estado_lectura_pliego, titulo_legible
 
 
 # ==============================================================================
@@ -235,6 +235,23 @@ class LicitacionSchema(BaseModel):
         Ver `.agents/CONTRATO_BLOQUE_3.md`, apartado B.
         """
         return titulo_legible(self.titulo)
+
+    @computed_field(
+        description="De dónde viene el dictamen: LEIDO | SIN_ANALIZAR | DEGRADADO"
+    )
+    @property
+    def estado_lectura(self) -> str:
+        """Los tres estados del análisis semántico, resueltos en el servidor.
+
+        **Se calcula aquí y no en el Cockpit a propósito.** La clasificación estaba escrita
+        dos veces en el frontend —tabla y ficha— con la misma cadena de tres condiciones, y
+        el frontend no tiene suite: un error ahí sólo se ve mirando la pantalla. Resuelto en
+        la API, los tres estados quedan cubiertos por regresiones.
+
+        Y fundía dos casos distintos en uno: *no se intentó* y *se intentó y salió mal*
+        pintaban la misma etiqueta. Ver `.agents/CONTRATO_BLOQUE_3.md`, apartado F.
+        """
+        return estado_lectura_pliego(self.analisis_semantico)
 
     # Columnas de `expedientes` con DEFAULT pero sin NOT NULL en el DDL.
     @model_validator(mode="before")

@@ -1984,6 +1984,47 @@ clave —colapsar espacios repetidos y recortar— y evaluar si el UUID de publi
 mejor que el código de expediente para la fuente catalana. **Cuidado**: cambiar la clave primaria
 de expedientes ya ingeridos no es una migración inocente y necesita su propio paso con contrato.
 
+### H-50 · El Cockpit recomendaba un comando que no funciona 🟢 CERRADO (2026-08-19)
+
+**Detectado el 2026-08-19** implementando el Paso 6 del Bloque 3, leyendo el texto que la ficha
+de detalle muestra cuando no hay dictamen. Decía literalmente:
+
+> *"Esta licitación no dispone aún de dictamen semántico estructurado. Puedes ejecutar el motor
+> en CLI con `python src/analista.py`."*
+
+**Dos defectos encadenados, y el segundo explica una anécdota que ya estaba escrita.**
+
+*(1)* **El comando no arranca.** Evidencia reproducible desde la raíz del proyecto:
+
+```
+$ python src/analista.py --help
+ModuleNotFoundError: No module named 'src'
+```
+
+Es exactamente la trampa que la **Convención C1** documenta para el pipeline —*"nunca
+`python src/main.py`"*— aplicada a otro módulo. La forma que sí funciona es
+`python -m src.analista`. El `README.md` lo documentaba mal **seis veces** desde la Capa 5, y
+nadie lo ejecutó nunca tal cual.
+
+*(2)* **El consejo era falso de raíz, y es lo más caro de los dos.** El motor semántico **no se
+lanza a mano**: está integrado en el pipeline desde la Capa 5 y corre solo en cada corrida. Lo
+que vive en `src/analista.py` es la herramienta de **inspección**. El contrato del Bloque 3 anota
+como carencia que *"dirección llegó a creer que había que ejecutarlo a mano con un `.py`"* — y
+resulta que **se lo estaba diciendo la propia pantalla**, en el único sitio donde alguien mira
+cuando echa en falta un análisis.
+
+> 🔑 **Lo transferible: una creencia equivocada del usuario puede ser un defecto del producto.**
+> Se anotó como malentendido y se dio por explicada; la causa estaba escrita en un `.tsx`, y sólo
+> apareció al ir a reescribir ese texto por otro motivo.
+
+**Reparado el 2026-08-19** dentro del Paso 6: el Cockpit explica que el análisis ocurre solo y
+por qué puede faltar, y ofrece `python -m src.analista --inspeccionar <id>` como lo que es, una
+herramienta de auditoría. El README queda corregido en sus seis apariciones. Dos regresiones en
+`tests/test_bloque3_analisis.py`: una ejercita el **arranque real del CLI en subproceso**
+(Convención C4 — una ruta de arranque que ninguna prueba recorre puede estar rota desde el primer
+día, que es justo lo que pasó) y otra impide que la documentación vuelva a ofrecer la forma rota
+en un bloque copiable.
+
 ---
 
 ## Registro de decisiones tomadas

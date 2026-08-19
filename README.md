@@ -11,8 +11,8 @@
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura) y 2 (coherencia de negocio LCSP)
-> están cerrados, y el **Bloque 3** (identidad y foco) va por su Paso 5, con la suite en
-> **538/538**. De **48 hallazgos** catalogados, **45 están
+> están cerrados, y el **Bloque 3** (identidad y foco) va por su Paso 6, con la suite en
+> **552/552**. De **49 hallazgos** catalogados, **46 están
 > cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
 > —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y dos
 > de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
@@ -580,7 +580,7 @@ Analizar semánticamente mediante modelos de lenguaje (LLMs locales o API Cloud)
    - Generación automática del informe comercial en CSV `data/reports/analisis_semantico_summary.csv` (UTF-8 con BOM, delimitador `;` para Excel).
    - Registro del evento JSONL `SEMANTIC_BATCH_COMPLETED` y suite de tests de integración en `tests/test_analista_main.py`.
 9. **Paso 9: Consola de Comando CLI e Inspección de Análisis (`src/analista.py` / CLI)** 🟢 (Completado y Validado):
-   - Implementación de la consola de comando CLI independiente `python src/analista.py` con parseador de argumentos `argparse`.
+   - Implementación de la consola de comando CLI independiente `python -m src.analista` con parseador de argumentos `argparse`.
    - Comandos para autodiagnóstico de conectores LLM (`--healthcheck`), inspección visual de dictámenes en terminal (`--inspeccionar <EXP_ID>`), re-análisis individual (`--reanalizar <EXP_ID>`), procesamiento manual por lotes (`--procesar-lote`) y generación aislada de reportes CSV (`--reporte-csv`).
    - Suite de pruebas unitarias en `tests/test_analista_cli.py`.
 10. **Paso 10: Pruebas de Integración E2E y Cierre Oficial de Capa 5** 🟢 (Completado y Validado):
@@ -589,23 +589,29 @@ Analizar semánticamente mediante modelos de lenguaje (LLMs locales o API Cloud)
 
 ### 💻 Guía de Uso del CLI del Analista IA (`src/analista.py`)
 
-El módulo `src/analista.py` incluye una consola de comandos interactiva que permite auditar y gestionar el análisis semántico de forma independiente al pipeline general:
+El módulo `src/analista.py` incluye una consola de comandos interactiva que permite auditar y gestionar el análisis semántico de forma independiente al pipeline general. **Es una herramienta de inspección, no el motor**: el análisis se ejecuta solo en cada corrida del pipeline, y no hay que lanzarlo a mano para que ocurra.
+
+> ⚠️ **Se invoca con `python -m src.analista`, nunca como `python src/analista.py`** (H-50,
+> corregido el 2026-08-19). La segunda forma rompe con `ModuleNotFoundError: No module named
+> 'src'`: es la misma trampa que la Convención C1 documenta para el pipeline, y esta guía la
+> documentó mal desde la Capa 5. Hay una regresión que ejercita el arranque real del CLI para
+> que no vuelva a romperse en silencio.
 
 ```powershell
 # 1. Autodiagnóstico de proveedores LLM (Ollama, Gemini API, prompts y permisos de log)
-python src/analista.py --healthcheck
+python -m src.analista --healthcheck
 
 # 2. Inspeccionar en consola el dictamen cualitativo completo de una licitación
-python src/analista.py --inspeccionar "2024/00123"
+python -m src.analista --inspeccionar "2024/00123"
 
 # 3. Forzar el re-análisis semántico de una licitación concreta
-python src/analista.py --reanalizar "2024/00123"
+python -m src.analista --reanalizar "2024/00123"
 
 # 4. Procesar en lote manualmente las licitaciones pendientes (con límite de 20)
-python src/analista.py --procesar-lote --limite 20
+python -m src.analista --procesar-lote --limite 20
 
 # 5. Generar o actualizar el informe comercial CSV de análisis semántico
-python src/analista.py --reporte-csv
+python -m src.analista --reporte-csv
 ```
 
 ### 🛠️ Herramientas y Código Desarrollado
@@ -1692,9 +1698,12 @@ usuario y no como proyecto.
    perfil comercial está bien y premia la geografía; lo que no existía era un criterio de
    **ámbito**. **Reparado el 2026-08-19** (Paso 5): filtro de pantalla `nuts LIKE 'ES51%'`, con
    Catalunya de inicio y un interruptor para el resto, gobernando el Funnel y los KPIs a la vez.
-3. **El análisis semántico no se ve.** Funciona y está integrado desde la Capa 5 —33 análisis
-   completados sobre 176 documentos con texto en la base actual—, pero queda enterrado en la ficha
-   de detalle. Tanto, que dirección llegó a creer que había que ejecutarlo a mano.
+3. ~~**El análisis semántico no se ve.**~~ Funciona y está integrado desde la Capa 5 —33 análisis
+   completados sobre 176 documentos con texto en la base actual—, pero quedaba enterrado en la
+   ficha de detalle. Tanto, que dirección llegó a creer que había que ejecutarlo a mano — y
+   resulta que **se lo decía la propia pantalla**, con un comando que además no arranca (H-50).
+   **Reparado el 2026-08-19** (Paso 6): tres estados a la vista en cada fila —pliego leído, sin
+   analizar y lectura degradada—, resueltos en el servidor y con regresiones.
 4. **El Centinela y la purga engañan** (H-45 y H-46). *No se reparan aquí*: encajan en el Paso 9 de
    la Capa 10, que es el que hace hablar a lo que el sistema ya sabe.
 
