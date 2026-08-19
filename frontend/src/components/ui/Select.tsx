@@ -24,8 +24,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           disabled={disabled}
           className={cn(
-            'w-full bg-white text-slate-900 text-sm border border-slate-300 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs cursor-pointer disabled:bg-slate-100 disabled:opacity-60',
-            error && 'border-rose-500 focus:ring-rose-500 focus:border-rose-500',
+            'w-full bg-surface text-ink text-sm border border-line rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-acento focus:border-acento transition-all shadow-xs cursor-pointer disabled:bg-surface-2 disabled:opacity-60',
+            error && 'border-alarma focus:ring-alarma focus:border-alarma',
             className
           )}
           {...props}
@@ -36,7 +36,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && <p className="text-xs text-rose-600 mt-1 font-medium">{error}</p>}
+        {error && <p className="text-xs text-alarma mt-1 font-medium">{error}</p>}
       </div>
     );
   }

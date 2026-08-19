@@ -65,23 +65,23 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           <div
             key={t.id}
             className={cn(
-              'pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-lg animate-in slide-in-from-bottom-5 duration-200 bg-white',
-              t.type === 'success' && 'border-emerald-200 text-slate-800',
-              t.type === 'error' && 'border-rose-200 text-slate-800',
-              t.type === 'info' && 'border-indigo-200 text-slate-800',
-              t.type === 'warning' && 'border-amber-200 text-slate-800'
+              'pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-lg animate-in slide-in-from-bottom-5 duration-200 bg-surface',
+              t.type === 'success' && 'border-conforme/35 text-ink',
+              t.type === 'error' && 'border-alarma/35 text-ink',
+              t.type === 'info' && 'border-acento/35 text-ink',
+              t.type === 'warning' && 'border-atencion/35 text-ink'
             )}
           >
-            {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
-            {t.type === 'error' && <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
-            {(t.type === 'info' || t.type === 'warning') && <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />}
+            {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-conforme shrink-0 mt-0.5" />}
+            {t.type === 'error' && <AlertCircle className="w-5 h-5 text-alarma shrink-0 mt-0.5" />}
+            {(t.type === 'info' || t.type === 'warning') && <Info className="w-5 h-5 text-acento shrink-0 mt-0.5" />}
             <div className="flex-1">
-              <h4 className="text-sm font-semibold text-slate-900">{t.title}</h4>
-              {t.description && <p className="text-xs text-slate-500 mt-0.5">{t.description}</p>}
+              <h4 className="text-sm font-semibold text-ink">{t.title}</h4>
+              {t.description && <p className="text-xs text-ink-faint mt-0.5">{t.description}</p>}
             </div>
             <button
               onClick={() => removeToast(t.id)}
-              className="text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+              className="text-ink-faint hover:text-ink-dim p-0.5 rounded-full"
             >
               <X className="w-4 h-4" />
             </button>

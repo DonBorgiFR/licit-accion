@@ -125,12 +125,12 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
 
     if (!semantico) {
       return (
-        <Card className="border-dashed border-slate-300 bg-slate-50/50">
+        <Card className="border-dashed border-line bg-surface-2/50">
           <CardContent className="p-6 text-center space-y-2">
-            <Brain className="w-8 h-8 text-slate-400 mx-auto" />
-            <h4 className="text-sm font-semibold text-slate-700">Análisis Semántico Pendiente</h4>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Esta licitación no dispone aún de dictamen semántico estructurado. Puedes ejecutar el motor en CLI con <code className="text-indigo-600 font-mono">python src/analista.py</code>.
+            <Brain className="w-8 h-8 text-ink-faint mx-auto" />
+            <h4 className="text-sm font-semibold text-ink-dim">Análisis Semántico Pendiente</h4>
+            <p className="text-xs text-ink-faint max-w-sm mx-auto">
+              Esta licitación no dispone aún de dictamen semántico estructurado. Puedes ejecutar el motor en CLI con <code className="text-acento font-mono">python src/analista.py</code>.
             </p>
           </CardContent>
         </Card>
@@ -154,9 +154,9 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
       <div className="space-y-5">
         {/* Aviso de Modo Degradado (Capa 5, Regla 5) */}
         {esDegradado && (
-          <div className="p-4 rounded-xl border-2 border-orange-300 bg-orange-50 text-orange-900 flex items-start gap-3.5">
-            <div className="p-2 rounded-lg bg-white/80 shadow-xs shrink-0 mt-0.5">
-              <AlertTriangle className="w-5 h-5 text-orange-600" />
+          <div className="p-4 rounded-xl border-2 border-atencion/35 bg-atencion/12 text-atencion flex items-start gap-3.5">
+            <div className="p-2 rounded-lg bg-surface/80 shadow-xs shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5 text-atencion" />
             </div>
             <div className="flex-1">
               <div className="flex items-center justify-between gap-2">
@@ -174,7 +174,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
                 manualmente antes de decidir.
               </p>
               {semantico.error_detalle && (
-                <p className="text-[11px] mt-2 text-orange-700/90 font-mono break-words">
+                <p className="text-[11px] mt-2 text-atencion/90 font-mono break-words">
                   Causa: {semantico.error_detalle}
                 </p>
               )}
@@ -186,13 +186,13 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
         <div
           className={`p-4 rounded-xl border flex items-start gap-3.5 ${
             dictamen === 'RECOMENDADA'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              ? 'bg-conforme/12 border-conforme/35 text-conforme'
               : dictamen === 'DESCARTADA_POR_RIESGO'
-              ? 'bg-rose-50 border-rose-200 text-rose-900'
-              : 'bg-amber-50 border-amber-200 text-amber-900'
+              ? 'bg-alarma/12 border-alarma/35 text-alarma'
+              : 'bg-atencion/12 border-atencion/35 text-atencion'
           }`}
         >
-          <div className="p-2 rounded-lg bg-white/80 shadow-xs shrink-0 mt-0.5">
+          <div className="p-2 rounded-lg bg-surface/80 shadow-xs shrink-0 mt-0.5">
             <Brain className="w-5 h-5 text-current" />
           </div>
           <div className="flex-1">
@@ -232,51 +232,51 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           title={esDegradado ? 'Valores por defecto: el pliego no se ha analizado' : undefined}
         >
           {/* Subrogación (Art. 130 LCSP) */}
-          <Card className="border-slate-200">
+          <Card className="border-line">
             <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+              <div className="flex items-center justify-between text-xs text-ink-faint font-semibold">
                 <span className="flex items-center gap-1">
-                  <Users className="w-3.5 h-3.5 text-slate-400" /> Art. 130 Subrogación
+                  <Users className="w-3.5 h-3.5 text-ink-faint" /> Art. 130 Subrogación
                 </span>
                 <Badge variant={subrogacion.requerida ? 'danger' : 'success'} className="text-[10px]">
                   {subrogacion.requerida ? 'Obligatoria' : 'No Requerida'}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-700 leading-normal">
+              <p className="text-xs text-ink-dim leading-normal">
                 {subrogacion.detalles || subrogacion.motivos || 'Sin absorción contractual de plantilla.'}
               </p>
             </CardContent>
           </Card>
 
           {/* Revisión Precios (Art. 103 LCSP) */}
-          <Card className="border-slate-200">
+          <Card className="border-line">
             <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+              <div className="flex items-center justify-between text-xs text-ink-faint font-semibold">
                 <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Art. 103 Revisión
+                  <ShieldCheck className="w-3.5 h-3.5 text-ink-faint" /> Art. 103 Revisión
                 </span>
                 <Badge variant={revision.permitida ? 'success' : 'warning'} className="text-[10px]">
                   {revision.permitida ? 'Permitida' : 'No Contemplada'}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-700 leading-normal">
+              <p className="text-xs text-ink-dim leading-normal">
                 {revision.formula || revision.detalles || 'Sin fórmula automática de revisión por IPC.'}
               </p>
             </CardContent>
           </Card>
 
           {/* Criterios Adjudicación (Art. 145 LCSP) */}
-          <Card className="border-slate-200">
+          <Card className="border-line">
             <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold">
+              <div className="flex items-center justify-between text-xs text-ink-faint font-semibold">
                 <span className="flex items-center gap-1">
-                  <Award className="w-3.5 h-3.5 text-slate-400" /> Art. 145 Criterios
+                  <Award className="w-3.5 h-3.5 text-ink-faint" /> Art. 145 Criterios
                 </span>
-                <span className="font-mono text-[11px] font-bold text-indigo-600">
+                <span className="font-mono text-[11px] font-bold text-acento">
                   {criterios.peso_formulas || 50}% Form. / {criterios.peso_juicio_valor || 50}% Juicio
                 </span>
               </div>
-              <p className="text-xs text-slate-700 leading-normal">
+              <p className="text-xs text-ink-dim leading-normal">
                 {criterios.resumen || 'Reparto equilibrado entre oferta económica y memoria técnica.'}
               </p>
             </CardContent>
@@ -292,7 +292,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
 
     if (lotes.length === 0) {
       return (
-        <p className="text-xs text-slate-500 italic p-4 text-center">
+        <p className="text-xs text-ink-faint italic p-4 text-center">
           No hay lotes desglosados en este expediente.
         </p>
       );
@@ -301,10 +301,10 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
     return (
       <div className="space-y-4">
         {lotes.map((lote: Lote, idx: number) => (
-          <Card key={lote.id || idx} className="border-slate-200">
-            <CardHeader className="py-3 px-4 bg-slate-50/60">
+          <Card key={lote.id || idx} className="border-line">
+            <CardHeader className="py-3 px-4 bg-surface-2/60">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
+                <span className="text-xs font-bold text-ink">
                   Lote #{lote.lote_numero}: {lote.titulo_lote || 'Lote Único'}
                 </span>
                 <ScoreBadge score={lote.score_total || 0} />
@@ -312,37 +312,37 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
             </CardHeader>
             <CardContent className="p-4 space-y-3">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block uppercase">PBL sin IVA</span>
-                  <span className="font-bold text-slate-900 text-sm">
+                <div className="p-2.5 rounded-lg bg-surface-2 border border-line-soft">
+                  <span className="text-[10px] text-ink-faint block uppercase">PBL sin IVA</span>
+                  <span className="font-bold text-ink text-sm">
                     {formatCurrency(lote.pbl)}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block uppercase">VEC con Prórrogas</span>
-                  <span className="font-bold text-slate-900 text-sm">
+                <div className="p-2.5 rounded-lg bg-surface-2 border border-line-soft">
+                  <span className="text-[10px] text-ink-faint block uppercase">VEC con Prórrogas</span>
+                  <span className="font-bold text-ink text-sm">
                     {formatCurrency(lote.vec)}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                  <span className="text-[10px] text-emerald-700 block uppercase font-sans font-semibold">
+                <div className="p-2.5 rounded-lg bg-conforme/6 border border-conforme/25">
+                  <span className="text-[10px] text-conforme block uppercase font-sans font-semibold">
                     Aval Definitivo (5%)
                   </span>
-                  <span className="font-bold text-emerald-900 text-sm">
+                  <span className="font-bold text-conforme text-sm">
                     {formatCurrency(lote.garantia_definitiva || lote.pbl * 0.05)}
                   </span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                  <span className="text-[10px] text-slate-400 block uppercase">PMP Ayuntamiento</span>
-                  <span className="font-bold text-indigo-600 text-sm">
+                <div className="p-2.5 rounded-lg bg-surface-2 border border-line-soft">
+                  <span className="text-[10px] text-ink-faint block uppercase">PMP Ayuntamiento</span>
+                  <span className="font-bold text-acento text-sm">
                     {lote.pmp_dias !== undefined && lote.pmp_dias !== null ? `${lote.pmp_dias} días` : '—'}
                   </span>
                 </div>
               </div>
 
               {lote.motivos_scoring && (
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-[11px] text-slate-600 leading-relaxed font-sans">
-                  <span className="font-semibold text-slate-800 block mb-1">Desglose de Scoring:</span>
+                <div className="p-3 rounded-lg bg-surface-2 border border-line-soft text-[11px] text-ink-dim leading-relaxed font-sans">
+                  <span className="font-semibold text-ink block mb-1">Desglose de Scoring:</span>
                   {lote.motivos_scoring}
                 </div>
               )}
@@ -370,7 +370,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           <Skeleton className="h-6 w-80" />
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-base font-bold text-slate-900 truncate max-w-lg">
+            <span className="text-base font-bold text-ink truncate max-w-lg">
               {licitacion?.titulo || alerta?.titulo_anuncio || 'Detalle del Registro'}
             </span>
           </div>
@@ -386,7 +386,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
       footer={
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500">Estado:</span>
+            <span className="text-xs font-semibold text-ink-faint">Estado:</span>
             {licitacionId ? (
               <>
               <div className="w-28">
@@ -468,7 +468,7 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
       ) : (
         <div className="space-y-6">
           {/* Header Banner con Badges */}
-          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+          <div className="flex items-center justify-between p-4 bg-surface-2 rounded-xl border border-line">
             <div className="flex items-center gap-3">
               <ScoreBadge score={licitacion?.score_maximo || alerta?.score_temprano || 0} />
               <EstadoLicitacionBadge estado={estadoActual} />
@@ -477,25 +477,25 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
                   href={licitacion?.link || alerta?.url_pdf || alerta?.url_anuncio!}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-acento hover:text-acento"
                 >
                   <ExternalLink className="w-3.5 h-3.5" /> Ficha Oficial
                 </a>
               )}
             </div>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-ink-faint font-mono">
               Publicado: {formatDate(licitacion?.fecha_publicacion || alerta?.fecha_publicacion)}
             </span>
           </div>
 
           {/* Navegación por Secciones dentro del Drawer */}
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+          <div className="flex items-center gap-2 border-b border-line pb-2">
             <button
               onClick={() => setActiveTab('ia')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'ia'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-acento/10 text-acento border border-acento/35'
+                  : 'text-ink-dim hover:bg-surface-2'
               }`}
             >
               <Brain className="w-3.5 h-3.5" /> Dictamen Semántico IA
@@ -506,8 +506,8 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
                 onClick={() => setActiveTab('lotes')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'lotes'
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-acento/10 text-acento border border-acento/35'
+                    : 'text-ink-dim hover:bg-surface-2'
                 }`}
               >
                 <Layers className="w-3.5 h-3.5" /> Lotes & Finanzas ({licitacion?.lotes?.length || 0})
@@ -518,8 +518,8 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
               onClick={() => setActiveTab('notas')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'notas'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-acento/10 text-acento border border-acento/35'
+                  : 'text-ink-dim hover:bg-surface-2'
               }`}
             >
               <FileText className="w-3.5 h-3.5" /> Notas & Seguimiento
@@ -532,18 +532,18 @@ export const DetailDrawer: React.FC<DetailDrawerProps> = ({
           {activeTab === 'lotes' && licitacionId && renderLotesSection()}
 
           {activeTab === 'notas' && (
-            <Card className="border-slate-200">
+            <Card className="border-line">
               <CardContent className="p-4 space-y-3">
-                <label className="text-xs font-semibold text-slate-800 block">
+                <label className="text-xs font-semibold text-ink block">
                   Notas Internas de Prospección (Incoop)
                 </label>
                 <textarea
                   value={notas}
                   onChange={(e) => setNotas(e.target.value)}
                   placeholder="Añade observaciones sobre UTEs, reunión con ayuntamiento, subrogación..."
-                  className="w-full h-36 p-3 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none transition-all placeholder:text-slate-400"
+                  className="w-full h-36 p-3 text-xs bg-surface border border-line rounded-lg focus:ring-2 focus:ring-acento focus:border-acento focus:outline-none transition-all placeholder:text-ink-faint"
                 />
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-ink-faint">
                   Las notas quedan blindadas en SQLite y no se sobrescriben durante la ingesta diaria del Radar.
                 </p>
               </CardContent>

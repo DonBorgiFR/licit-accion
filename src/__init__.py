@@ -11,6 +11,7 @@ o bien `python run.py`.
 """
 
 import os
+import re
 from pathlib import Path
 
 # Raíz del proyecto, deducida de la ubicación de este fichero. Es el único ancla
@@ -89,6 +90,63 @@ def grafia_canonica_estado(estado) -> str:
     `ESTADOS_OPERATIVOS_VALIDOS`, y con un error explícito.
     """
     return ESTADOS_OPERATIVOS_CANONICOS.get(normalizar_estado_operativo(estado), estado)
+
+
+#: Versión del criterio con el que se deriva un título legible (Regla 4). Se declara aquí y no
+#: se estampa por fila **porque el título derivado no se persiste**: se calcula al leer. Ver
+#: `.agents/CONTRATO_BLOQUE_3.md`, apartado B, donde consta por qué se descartó la columna.
+VERSION_TITULO = "1.0.0"
+
+#: Tope de longitud del título derivado, en caracteres. **No es un número elegido a ojo.**
+#: Medido sobre los 63 expedientes reales, ya aplicados los cortes por párrafo y por frase:
+#: con 120 llegan enteros 27 (43 %), con 160 llegan 37 (59 %), con 200 llegan **48 (76 %)** y
+#: con 240 llegan 52 (83 %). Se elige 200 porque por debajo se empieza a recortar títulos que
+#: **ya eran correctos** —los de 125-135 caracteres son títulos de licitación normales y
+#: completos— y el oficio del tope es alcanzar sólo a los quince desbocados.
+TOPE_TITULO = 200
+
+#: Punto final seguido de espacio y mayúscula. El `(?<![A-Z])` evita cortar por una
+#: abreviatura en versales, frecuentes en los pliegos ("S.A. de capital…", "U.T.E. formada…").
+_FIN_DE_FRASE = re.compile(r"(?<![A-Z])\.\s+(?=[A-ZÁÉÍÓÚÀÈÒÏÜÇÑ¿¡])")
+
+#: Por debajo de esto, un punto no delimita una frase sino una sigla o una numeración.
+_MINIMO_FRASE = 30
+
+
+def titulo_legible(titulo, tope: int = TOPE_TITULO) -> str:
+    """Deriva de un título de licitación uno que se pueda leer, sin tocar el original.
+
+    Por qué hace falta: **son dos problemas con el mismo síntoma** y confundirlos lleva a
+    arreglar el que no es. Uno es de presentación —la tabla recorta a dos líneas—; el otro es
+    de datos: la fuente vuelca el anuncio entero en el campo, y el título más largo de la base
+    mide **1.663 caracteres** siendo su título real las primeras veinte palabras. Lo segundo no
+    lo arregla ningún ancho de columna.
+
+    Tres reglas en orden, parando en la primera que deja algo legible:
+
+    1. **El primer párrafo**, que separa el título del cuerpo del anuncio. Sólo alcanza a 5 de
+       63 —los que traen salto de línea—, pero incluye el peor caso de todos.
+    2. **La primera frase**, que es la que más trabaja: casi todos los títulos largos son una
+       frase seguida de la descripción del objeto.
+    3. **El tope**, en frontera de palabra. Nunca parte una palabra: comprobado sobre los 63.
+
+    El original **no se modifica jamás**: sigue íntegro en la base y en la ficha de detalle.
+    """
+    if not titulo:
+        return ""
+    texto = str(titulo).replace("\r\n", "\n")
+    texto = re.sub(r"\s+", " ", texto.split("\n\n")[0].split("\n")[0]).strip()
+    if len(texto) <= tope:
+        return texto
+
+    corte = _FIN_DE_FRASE.search(texto)
+    if corte and _MINIMO_FRASE <= corte.start() <= tope:
+        return texto[: corte.start() + 1]
+
+    recorte = texto[:tope]
+    if " " in recorte:
+        recorte = recorte[: recorte.rindex(" ")]
+    return recorte.rstrip(" ,;:.·-—") + "…"
 
 
 def ruta_datos(*partes) -> str:

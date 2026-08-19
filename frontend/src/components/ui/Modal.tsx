@@ -57,29 +57,29 @@ export const Modal: React.FC<ModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop con Blur */}
       <div
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+        className="fixed inset-0 bg-black/65 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
         onClick={onClose}
       />
 
       {/* Dialog Body */}
       <div
         className={cn(
-          'relative w-full bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200',
+          'relative w-full bg-surface rounded-2xl border border-line shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200',
           maxWidthStyles[maxWidth]
         )}
       >
         {/* Header */}
         {(title || description) && (
-          <div className="flex items-start justify-between p-5 border-b border-slate-100">
+          <div className="flex items-start justify-between p-5 border-b border-line-soft">
             <div>
-              {title && <h3 className="text-lg font-bold text-slate-900">{title}</h3>}
-              {description && <p className="text-xs text-slate-500 mt-1">{description}</p>}
+              {title && <h3 className="text-lg font-bold text-ink">{title}</h3>}
+              {description && <p className="text-xs text-ink-faint mt-1">{description}</p>}
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-full"
+              className="p-1 text-ink-faint hover:text-ink-dim rounded-full"
             >
               <X className="w-5 h-5" />
             </Button>
@@ -91,7 +91,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         {footer && (
-          <div className="p-4 px-6 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="p-4 px-6 bg-surface-2 border-t border-line-soft flex items-center justify-end gap-3">
             {footer}
           </div>
         )}

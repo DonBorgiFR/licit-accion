@@ -19,15 +19,15 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm border border-transparent focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2',
+    'bg-acento hover:bg-acento-fuerte text-sobre-acento font-semibold shadow-sm border border-transparent focus:ring-2 focus:ring-acento focus:ring-offset-2 focus:ring-offset-ground',
   secondary:
-    'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 focus:ring-2 focus:ring-slate-400 focus:ring-offset-2',
+    'bg-surface-2 hover:bg-line text-ink border border-line focus:ring-2 focus:ring-ink-faint focus:ring-offset-2 focus:ring-offset-ground',
   outline:
-    'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2',
+    'bg-surface hover:bg-surface-2 text-ink-dim border border-line shadow-sm focus:ring-2 focus:ring-acento focus:ring-offset-2',
   ghost:
-    'bg-transparent hover:bg-slate-100 text-slate-700 border border-transparent focus:ring-2 focus:ring-slate-300',
+    'bg-transparent hover:bg-surface-2 text-ink-dim border border-transparent focus:ring-2 focus:ring-line',
   danger:
-    'bg-rose-600 hover:bg-rose-700 text-white shadow-sm border border-transparent focus:ring-2 focus:ring-rose-500 focus:ring-offset-2',
+    'bg-alarma hover:bg-alarma-fuerte text-sobre-acento font-semibold shadow-sm border border-transparent focus:ring-2 focus:ring-alarma focus:ring-offset-2 focus:ring-offset-ground',
 };
 
 const sizeStyles: Record<ButtonSize, string> = {

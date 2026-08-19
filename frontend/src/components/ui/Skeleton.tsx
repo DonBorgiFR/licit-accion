@@ -12,7 +12,7 @@ export const Skeleton: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
 }) => {
   return (
     <div
-      className={cn('animate-pulse rounded-md bg-slate-200/80', className)}
+      className={cn('animate-pulse rounded-md bg-line/80', className)}
       {...props}
     />
   );

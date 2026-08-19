@@ -106,7 +106,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
   return (
     <div className="space-y-4">
       {/* Barra Superior de Filtros del Centinela */}
-      <Card className="p-4 bg-white border-slate-200">
+      <Card className="p-4 bg-surface border-line">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           {/* Búsqueda por Texto Libre */}
           <div className="w-full lg:w-72">
@@ -117,7 +117,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              leftIcon={<Search className="w-4 h-4 text-slate-400" />}
+              leftIcon={<Search className="w-4 h-4 text-ink-faint" />}
             />
           </div>
 
@@ -187,7 +187,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                 variant="ghost"
                 size="sm"
                 onClick={handleResetFilters}
-                className="text-slate-500 hover:text-slate-800"
+                className="text-ink-faint hover:text-ink"
               >
                 Limpiar Filtros
               </Button>
@@ -197,11 +197,11 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
       </Card>
 
       {/* Tabla Server-Side de Alertas Tempranas */}
-      <Card className="overflow-hidden border-slate-200">
+      <Card className="overflow-hidden border-line">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr className="bg-surface-2 border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
                 <th className="py-3.5 px-4">Boletín Oficial</th>
                 <th className="py-3.5 px-4">Disposición / Ente Emisor</th>
                 <th className="py-3.5 px-4 text-center">Categoría LCSP</th>
@@ -211,7 +211,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-line-soft text-xs">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <tr key={idx} className="animate-pulse">
@@ -225,9 +225,9 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                 ))
               ) : isError ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500">
-                    <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
-                    <p className="font-semibold text-slate-800">Error al cargar el Canal Centinela</p>
+                  <td colSpan={6} className="p-8 text-center text-ink-faint">
+                    <AlertCircle className="w-8 h-8 text-alarma mx-auto mb-2" />
+                    <p className="font-semibold text-ink">Error al cargar el Canal Centinela</p>
                     <p className="text-xs mt-1">Verifica la conexión con la API RESTful.</p>
                     <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-3">
                       Reintentar
@@ -236,10 +236,10 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                 </tr>
               ) : data?.items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-slate-500">
-                    <Radio className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-semibold text-slate-700">No hay alertas tempranas que coincidan</p>
-                    <p className="text-xs text-slate-400 mt-1">Prueba ajustando los filtros de búsqueda o fuente.</p>
+                  <td colSpan={6} className="p-12 text-center text-ink-faint">
+                    <Radio className="w-8 h-8 text-ink-faint mx-auto mb-2" />
+                    <p className="font-semibold text-ink-dim">No hay alertas tempranas que coincidan</p>
+                    <p className="text-xs text-ink-faint mt-1">Prueba ajustando los filtros de búsqueda o fuente.</p>
                   </td>
                 </tr>
               ) : (
@@ -249,7 +249,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                   return (
                     <tr
                       key={alerta.id_alerta}
-                      className="hover:bg-slate-50/80 transition-colors group"
+                      className="hover:bg-surface-2/80 transition-colors group"
                     >
                       {/* Boletín Oficial */}
                       <td className="p-4 align-top">
@@ -258,11 +258,11 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                             <Badge variant={isDOGC ? 'cyan' : 'indigo'} className="font-mono text-[10px]">
                               {alerta.fuente}
                             </Badge>
-                            <span className="font-mono text-[11px] text-slate-600 font-semibold">
+                            <span className="font-mono text-[11px] text-ink-dim font-semibold">
                               #{alerta.num_boletin}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <span className="text-[10px] text-ink-faint flex items-center gap-1 mt-0.5">
                             <Calendar className="w-3 h-3" />
                             {formatDate(alerta.fecha_publicacion)}
                           </span>
@@ -272,16 +272,16 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                       {/* Disposición / Ente Emisor */}
                       <td className="p-4 align-top max-w-md">
                         <div className="space-y-1">
-                          <h4 className="font-semibold text-slate-900 line-clamp-2 leading-snug">
+                          <h4 className="font-semibold text-ink line-clamp-2 leading-snug">
                             {alerta.titulo_anuncio}
                           </h4>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                          <div className="flex items-center gap-3 text-[11px] text-ink-faint">
                             <span className="flex items-center gap-1 truncate max-w-[200px]">
-                              <Building className="w-3 h-3 text-slate-400 shrink-0" />
+                              <Building className="w-3 h-3 text-ink-faint shrink-0" />
                               {alerta.organo_emisor}
                             </span>
                             {alerta.municipio && (
-                              <span className="text-slate-400 truncate">
+                              <span className="text-ink-faint truncate">
                                 • {alerta.municipio}
                               </span>
                             )}
@@ -333,7 +333,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                             variant="outline"
                             size="sm"
                             onClick={() => onSelectAlerta?.(alerta.id_alerta)}
-                            leftIcon={<Eye className="w-3.5 h-3.5 text-indigo-600" />}
+                            leftIcon={<Eye className="w-3.5 h-3.5 text-acento" />}
                             className="px-2.5 py-1 text-xs"
                           >
                             Detalle
@@ -343,7 +343,7 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
                               href={alerta.url_pdf || alerta.url_anuncio!}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors"
+                              className="p-1.5 text-ink-faint hover:text-acento rounded-lg hover:bg-surface-2 transition-colors"
                               title="Ver Disposición Oficial en PDF/Web"
                             >
                               <ExternalLink className="w-4 h-4" />
@@ -360,10 +360,10 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
         </div>
 
         {/* Paginador Server-Side */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <div className="text-xs text-slate-500 font-mono">
-            Mostrando página <span className="font-bold text-slate-900">{page}</span> de{' '}
-            <span className="font-bold text-slate-900">{totalPages}</span> ({totalItems} alertas proactivas totales)
+        <div className="p-4 bg-surface-2 border-t border-line flex items-center justify-between">
+          <div className="text-xs text-ink-faint font-mono">
+            Mostrando página <span className="font-bold text-ink">{page}</span> de{' '}
+            <span className="font-bold text-ink">{totalPages}</span> ({totalItems} alertas proactivas totales)
           </div>
 
           <div className="flex items-center gap-2">

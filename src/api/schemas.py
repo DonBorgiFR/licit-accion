@@ -10,7 +10,9 @@ la serialización limpia a JSON y la integración automática con OpenAPI 3.1 (/
 from enum import Enum
 from datetime import datetime, timezone
 from typing import Generic, TypeVar, List, Optional, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+from src import titulo_legible
 
 
 # ==============================================================================
@@ -194,7 +196,7 @@ class AnalisisSemanticoResumenSchema(BaseModel):
 class LicitacionSchema(BaseModel):
     """Esquema principal de un Expediente de Licitación de la PSCP / PCSP."""
     id: str = Field(..., description="Número de expediente o código de licitación")
-    titulo: str = Field(..., description="Título del anuncio o licitación")
+    titulo: str = Field(..., description="Título del anuncio o licitación, íntegro tal como llegó de la fuente")
     organo: str = Field(..., description="Órgano de contratación emisor")
     localidad: Optional[str] = Field(None, description="Municipio o localidad de ejecución")
     nuts: Optional[str] = Field(None, description="Código NUTS territorial")
@@ -218,6 +220,21 @@ class LicitacionSchema(BaseModel):
     analisis_semantico: Optional[Dict[str, Any]] = Field(None, description="Dictamen detallado de la IA")
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field(
+        description="Título derivado para leer en pantalla. El completo sigue en `titulo`"
+    )
+    @property
+    def titulo_corto(self) -> str:
+        """El que se pinta en la tabla; `titulo` conserva el original íntegro.
+
+        Se deriva **al servir** y no se guarda en la base a propósito: la regla se va a afinar
+        cuando se vea sobre datos reales, y una columna persistida obligaría a rebackfillar en
+        cada retoque. Además la búsqueda del Funnel debe seguir operando sobre el título
+        completo, para que una licitación se encuentre por una palabra de su cuerpo.
+        Ver `.agents/CONTRATO_BLOQUE_3.md`, apartado B.
+        """
+        return titulo_legible(self.titulo)
 
     # Columnas de `expedientes` con DEFAULT pero sin NOT NULL en el DDL.
     @model_validator(mode="before")

@@ -18,7 +18,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <div className="w-full">
         <div className="relative flex items-center w-full">
           {leftIcon && (
-            <div className="absolute left-3 text-slate-400 pointer-events-none flex items-center justify-center">
+            <div className="absolute left-3 text-ink-faint pointer-events-none flex items-center justify-center">
               {leftIcon}
             </div>
           )}
@@ -26,21 +26,21 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             disabled={disabled}
             className={cn(
-              'w-full bg-white text-slate-900 placeholder:text-slate-400 text-sm border border-slate-300 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs disabled:bg-slate-100 disabled:opacity-60',
+              'w-full bg-surface text-ink placeholder:text-ink-faint text-sm border border-line rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-acento focus:border-acento transition-all shadow-xs disabled:bg-surface-2 disabled:opacity-60',
               leftIcon && 'pl-9',
               rightIcon && 'pr-9',
-              error && 'border-rose-500 focus:ring-rose-500 focus:border-rose-500',
+              error && 'border-alarma focus:ring-alarma focus:border-alarma',
               className
             )}
             {...props}
           />
           {rightIcon && (
-            <div className="absolute right-3 text-slate-400 pointer-events-none flex items-center justify-center">
+            <div className="absolute right-3 text-ink-faint pointer-events-none flex items-center justify-center">
               {rightIcon}
             </div>
           )}
         </div>
-        {error && <p className="text-xs text-rose-600 mt-1 font-medium">{error}</p>}
+        {error && <p className="text-xs text-alarma mt-1 font-medium">{error}</p>}
       </div>
     );
   }

@@ -50,15 +50,15 @@ export const HealthIndicator: React.FC = () => {
           {/* Status Dot with Pulse Animation */}
           <span className="relative flex h-2 w-2">
             {statusType === 'online' && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-conforme opacity-75"></span>
             )}
             <span
               className={`relative inline-flex rounded-full h-2 w-2 ${
                 statusType === 'online'
-                  ? 'bg-emerald-500'
+                  ? 'bg-conforme'
                   : statusType === 'degraded'
-                  ? 'bg-amber-500'
-                  : 'bg-rose-500'
+                  ? 'bg-atencion'
+                  : 'bg-alarma'
               }`}
             ></span>
           </span>
@@ -69,73 +69,73 @@ export const HealthIndicator: React.FC = () => {
 
       {/* Tooltip Diagnóstico Flotante */}
       {showTooltip && (
-        <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl border border-slate-200 shadow-xl p-4 z-50 text-xs animate-in fade-in zoom-in-95 duration-150">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
-            <div className="flex items-center gap-1.5 font-bold text-slate-800">
-              <Database className="w-4 h-4 text-indigo-600" />
+        <div className="absolute right-0 mt-2 w-72 bg-surface rounded-xl border border-line shadow-xl p-4 z-50 text-xs animate-in fade-in zoom-in-95 duration-150">
+          <div className="flex items-center justify-between border-b border-line-soft pb-2.5 mb-3">
+            <div className="flex items-center gap-1.5 font-bold text-ink">
+              <Database className="w-4 h-4 text-acento" />
               {/* La versión se lee del propio healthcheck. Estaba codificada como "v5" y
                   siguió anunciando v5 después de migrar a v6: un panel de diagnóstico que
                   afirma una versión distinta de la real es peor que no decir ninguna. */}
               <span>Autodiagnóstico SQLite{data?.schema_version ? ` v${data.schema_version}` : ''}</span>
             </div>
-            <Info className="w-3.5 h-3.5 text-slate-400" />
+            <Info className="w-3.5 h-3.5 text-ink-faint" />
           </div>
 
-          <div className="space-y-2 text-slate-600 font-mono">
+          <div className="space-y-2 text-ink-dim font-mono">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Estado API:</span>
-              <span className="font-semibold text-slate-900">{data?.status || 'N/A'}</span>
+              <span className="text-ink-faint">Estado API:</span>
+              <span className="font-semibold text-ink">{data?.status || 'N/A'}</span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Esquema DB:</span>
-              <span className="font-semibold text-indigo-600">
+              <span className="text-ink-faint">Esquema DB:</span>
+              <span className="font-semibold text-acento">
                 v{data?.schema_version ?? '?'}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Diario WAL:</span>
+              <span className="text-ink-faint">Diario WAL:</span>
               <span className="flex items-center gap-1">
                 {data?.wal_mode_active ? (
                   <>
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-700 font-semibold">Activo</span>
+                    <CheckCircle className="w-3.5 h-3.5 text-conforme" />
+                    <span className="text-conforme font-semibold">Activo</span>
                   </>
                 ) : (
                   <>
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-amber-700 font-semibold">Inactivo</span>
+                    <AlertTriangle className="w-3.5 h-3.5 text-atencion" />
+                    <span className="text-atencion font-semibold">Inactivo</span>
                   </>
                 )}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Permiso Disco:</span>
+              <span className="text-ink-faint">Permiso Disco:</span>
               <span className="flex items-center gap-1">
                 {data?.directorio_accesible ? (
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <CheckCircle className="w-3.5 h-3.5 text-conforme" />
                 ) : (
-                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <XCircle className="w-3.5 h-3.5 text-alarma" />
                 )}
                 <span>{data?.directorio_accesible ? 'Escritura OK' : 'Error Disco'}</span>
               </span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Consulta Test:</span>
+              <span className="text-ink-faint">Consulta Test:</span>
               <span className="flex items-center gap-1">
                 {data?.query_test_ok ? (
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <CheckCircle className="w-3.5 h-3.5 text-conforme" />
                 ) : (
-                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <XCircle className="w-3.5 h-3.5 text-alarma" />
                 )}
                 <span>{data?.query_test_ok ? 'OK' : 'Fallo SQL'}</span>
               </span>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
+            <div className="pt-2 border-t border-line-soft text-[10px] text-ink-faint flex items-center justify-between">
               <span>Último pulso UTC:</span>
               <span>{formatDate(data?.timestamp)}</span>
             </div>

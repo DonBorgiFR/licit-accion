@@ -32,6 +32,54 @@ interface LicitacionesTableProps {
   onSelectLicitacion?: (id: string) => void;
 }
 
+/**
+ * El sector es CATEGORÍA, no estado: se marca con un punto de color de la marca y no
+ * significa nunca «bien» ni «mal». Esa es la regla que separa las capas del sistema de
+ * color, porque separarlas por tono resultó imposible —los semánticos quedan a 1-5 grados
+ * de los pétalos— y lo que las distingue es la forma: un punto es categoría, un estado
+ * lleva palabra. Ver la cabecera de `index.css`.
+ *
+ * Se normaliza la clave porque la base trae hoy `Consultoria` y `Consultoría` como valores
+ * distintos del mismo sector — la familia de H-27, ahora en el vocabulario de sectores.
+ * Aquí sólo se unifica lo que se PINTA; el dato sigue como está y su arreglo, si procede,
+ * es del Filtro y no de la tabla.
+ */
+const claveSector = (sector: string): string =>
+  sector
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '_');
+
+const COLOR_SECTOR: Record<string, string> = {
+  social: 'bg-marca-violeta',
+  educativo: 'bg-marca-cian',
+  comunitario_asociativo: 'bg-marca-verde',
+  cultural: 'bg-marca-amarillo',
+  mantenimiento: 'bg-marca-rojo',
+  restauracion: 'bg-marca-rojo',
+  consultoria: 'bg-ink-faint',
+  servicios_generales: 'bg-ink-faint',
+};
+
+const ETIQUETA_SECTOR: Record<string, string> = {
+  social: 'Social',
+  educativo: 'Educativo',
+  comunitario_asociativo: 'Comunitario',
+  cultural: 'Cultural',
+  mantenimiento: 'Mantenimiento',
+  restauracion: 'Restauración',
+  consultoria: 'Consultoría',
+  servicios_generales: 'Servicios generales',
+};
+
+const colorSector = (sector: string): string =>
+  COLOR_SECTOR[claveSector(sector)] ?? 'bg-ink-faint';
+
+const etiquetaSector = (sector: string): string =>
+  ETIQUETA_SECTOR[claveSector(sector)] ?? sector;
+
 export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
   onSelectLicitacion,
 }) => {
@@ -99,7 +147,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
   return (
     <div className="space-y-4">
       {/* Barra Superior de Filtros de Negocio */}
-      <Card className="p-4 bg-white border-slate-200">
+      <Card className="p-4 bg-surface border-line">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           {/* Búsqueda por Texto Libre */}
           <div className="w-full lg:w-72">
@@ -110,7 +158,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              leftIcon={<Search className="w-4 h-4 text-slate-400" />}
+              leftIcon={<Search className="w-4 h-4 text-ink-faint" />}
             />
           </div>
 
@@ -189,7 +237,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={handleResetFilters}
-                className="text-slate-500 hover:text-slate-800"
+                className="text-ink-faint hover:text-ink"
               >
                 Limpiar Filtros
               </Button>
@@ -199,12 +247,16 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
       </Card>
 
       {/* Tabla Server-Side de Licitaciones */}
-      <Card className="overflow-hidden border-slate-200">
+      <Card className="overflow-hidden border-line">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <th className="py-3.5 px-4">ID / Origen</th>
+              <tr className="bg-surface-2 border-b border-line text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                {/* La columna de identificador desaparece y su ancho pasa al título.
+                    El identificador no se pierde: baja al pie de la propia fila. Hasta
+                    ahora la columna principal era un código como `CONTR 2026 0000156087`
+                    y el título iba debajo, pequeño y recortado a dos líneas: se destacaba
+                    lo ilegible y se escondía lo legible. */}
                 <th className="py-3.5 px-4">Licitación / Órgano Adjudicador</th>
                 <th className="py-3.5 px-4 text-right">Presupuesto (PBL / VEC)</th>
                 <th className="py-3.5 px-4 text-center">Cláusulas & Riesgo</th>
@@ -214,7 +266,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-line-soft text-xs">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, idx) => (
                   <tr key={idx} className="animate-pulse">
@@ -229,9 +281,9 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                 ))
               ) : isError ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">
-                    <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
-                    <p className="font-semibold text-slate-800">Error al cargar expedientes</p>
+                  <td colSpan={7} className="p-8 text-center text-ink-faint">
+                    <AlertCircle className="w-8 h-8 text-alarma mx-auto mb-2" />
+                    <p className="font-semibold text-ink">Error al cargar expedientes</p>
                     <p className="text-xs mt-1">Verifica la conexión con FastAPI RESTful.</p>
                     <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-3">
                       Reintentar
@@ -240,10 +292,10 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                 </tr>
               ) : data?.items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-12 text-center text-slate-500">
-                    <Filter className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="font-semibold text-slate-700">No se encontraron licitaciones</p>
-                    <p className="text-xs text-slate-400 mt-1">Prueba ajustando los criterios de búsqueda o filtros.</p>
+                  <td colSpan={7} className="p-12 text-center text-ink-faint">
+                    <Filter className="w-8 h-8 text-ink-faint mx-auto mb-2" />
+                    <p className="font-semibold text-ink-dim">No se encontraron licitaciones</p>
+                    <p className="text-xs text-ink-faint mt-1">Prueba ajustando los criterios de búsqueda o filtros.</p>
                   </td>
                 </tr>
               ) : (
@@ -295,24 +347,63 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                   return (
                     <tr
                       key={lic.id}
-                      className={`hover:bg-slate-50/80 transition-colors group ${
-                        archivada ? 'bg-slate-50/60' : ''
+                      className={`hover:bg-surface-2/80 transition-colors group ${
+                        archivada ? 'bg-surface-2/60' : ''
                       }`}
                     >
-                      {/* ID / Origen */}
-                      <td className="p-4 align-top">
-                        <div className="flex flex-col gap-1">
-                          <span className="font-mono font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                            {lic.id}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <Badge variant="outline" className="text-[10px] py-0">
+                      {/* Licitación — el título manda y todo lo demás se subordina a él.
+                          Tres niveles de jerarquía, de más a menos: qué es (título), quién
+                          lo saca y de qué va (órgano, sector), y de dónde salió (id, fuente).
+                          El título completo sigue estando: se ve en la ficha de detalle. */}
+                      <td className="p-4 align-top max-w-xl">
+                        <div className="space-y-1.5">
+                          <h4
+                            className="font-display text-[15px] font-semibold text-ink leading-snug line-clamp-3 group-hover:text-acento transition-colors"
+                            title={lic.titulo}
+                          >
+                            {lic.titulo_corto || lic.titulo}
+                          </h4>
+
+                          <div className="flex items-center gap-2 flex-wrap text-[11.5px] text-ink-dim">
+                            <span className="flex items-center gap-1.5 truncate max-w-[280px]">
+                              <Building className="w-3 h-3 text-ink-faint shrink-0" />
+                              {lic.organo}
+                            </span>
+                            {lic.localidad && lic.localidad !== 'N/A' && (
+                              <>
+                                <span className="text-separador">·</span>
+                                <span className="truncate">{lic.localidad}</span>
+                              </>
+                            )}
+                            {/* El sector se calcula, se persiste y se sirve desde la Capa 5,
+                                y hasta hoy no lo pintaba ninguna pantalla. Es CATEGORÍA, así
+                                que se marca con un punto de color y nunca significa "malo". */}
+                            {lotePrincipal?.sector && (
+                              <>
+                                <span className="text-separador">·</span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-[2px] shrink-0 ${colorSector(lotePrincipal.sector)}`}
+                                    aria-hidden="true"
+                                  />
+                                  {etiquetaSector(lotePrincipal.sector)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            <span className="font-mono text-[10.5px] text-ink-faint">
+                              {lic.id}
+                            </span>
+                            <span className="text-separador text-[10px]">·</span>
+                            <span className="font-mono text-[10.5px] text-ink-faint">
                               {lic.fuente || 'PSCP'}
-                            </Badge>
+                            </span>
                             {archivada && (
                               <Badge
                                 variant="outline"
-                                className="text-[10px] py-0 border-slate-400 text-slate-600 bg-slate-100"
+                                className="text-[10px] py-0 border-line text-ink-dim bg-surface-2"
                                 title={motivoArchivado || 'Fuera del canal principal'}
                               >
                                 Archivada
@@ -341,34 +432,14 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Objeto / Órgano */}
-                      <td className="p-4 align-top max-w-md">
-                        <div className="space-y-1">
-                          <h4 className="font-semibold text-slate-900 line-clamp-2 leading-snug">
-                            {lic.titulo}
-                          </h4>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-500">
-                            <span className="flex items-center gap-1 truncate max-w-[200px]">
-                              <Building className="w-3 h-3 text-slate-400 shrink-0" />
-                              {lic.organo}
-                            </span>
-                            {lic.localidad && (
-                              <span className="text-slate-400 truncate">
-                                • {lic.localidad}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
                       {/* Presupuesto PBL / VEC */}
                       <td className="p-4 align-top text-right font-mono">
                         <div className="space-y-0.5">
-                          <span className="font-bold text-slate-900 text-sm tabular-nums block">
+                          <span className="font-bold text-ink text-sm tabular-nums block">
                             {formatCurrency(lotePrincipal?.pbl)}
                           </span>
                           {lotePrincipal?.vec && (
-                            <span className="text-[10px] text-slate-400 tabular-nums block">
+                            <span className="text-[10px] text-ink-faint tabular-nums block">
                               VEC: {formatCurrency(lotePrincipal.vec)}
                             </span>
                           )}
@@ -425,10 +496,10 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                             <span
                               className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded ${
                                 pmpDias <= 30
-                                  ? 'bg-emerald-50 text-emerald-700'
+                                  ? 'bg-conforme/12 text-conforme'
                                   : pmpDias <= 60
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : 'bg-rose-50 text-rose-700'
+                                  ? 'bg-atencion/12 text-atencion'
+                                  : 'bg-alarma/12 text-alarma'
                               }`}
                             >
                               PMP {pmpDias}d
@@ -437,9 +508,13 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Score */}
+                      {/* Score, como magnitud. El acento se reserva a la prioridad Alta,
+                          que es un juicio que ya emite el Filtro y no un umbral de pantalla. */}
                       <td className="p-4 align-top text-center">
-                        <ScoreBadge score={lic.score_maximo || 0} />
+                        <ScoreBadge
+                          score={lic.score_maximo || 0}
+                          destacado={lotePrincipal?.prioridad === 'Alta'}
+                        />
                       </td>
 
                       {/* Estado Operativo Mutante */}
@@ -469,7 +544,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                             variant="outline"
                             size="sm"
                             onClick={() => onSelectLicitacion?.(lic.id)}
-                            leftIcon={<Eye className="w-3.5 h-3.5 text-indigo-600" />}
+                            leftIcon={<Eye className="w-3.5 h-3.5 text-acento" />}
                             className="px-2.5 py-1 text-xs"
                           >
                             Detalle
@@ -479,7 +554,7 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
                               href={lic.link}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors"
+                              className="p-1.5 text-ink-faint hover:text-acento rounded-lg hover:bg-surface-2 transition-colors"
                               title="Ver Ficha Oficial en PSCP"
                             >
                               <ExternalLink className="w-4 h-4" />
@@ -496,10 +571,10 @@ export const LicitacionesTable: React.FC<LicitacionesTableProps> = ({
         </div>
 
         {/* Paginador Server-Side */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <div className="text-xs text-slate-500 font-mono">
-            Mostrando página <span className="font-bold text-slate-900">{page}</span> de{' '}
-            <span className="font-bold text-slate-900">{totalPages}</span> ({totalItems} expedientes totales)
+        <div className="p-4 bg-surface-2 border-t border-line flex items-center justify-between">
+          <div className="text-xs text-ink-faint font-mono">
+            Mostrando página <span className="font-bold text-ink">{page}</span> de{' '}
+            <span className="font-bold text-ink">{totalPages}</span> ({totalItems} expedientes totales)
           </div>
 
           <div className="flex items-center gap-2">

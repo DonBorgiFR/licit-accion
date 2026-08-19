@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
-from src import ruta_proyecto, ruta_datos
+from src import ruta_proyecto, ruta_datos, titulo_legible
 
 # =====================================================================
 # JERARQUÍA DE ERRORES ESTRUCTURADOS DE LA CAPA 5
@@ -1408,7 +1408,10 @@ class AnalistaIA:
                 score_rec = max(0.0, min(100.0, float(r["score_recalibrado"] or 50.0)))
                 writer.writerow([
                     r["expediente_id"],
-                    r["titulo"],
+                    # El derivado, no el bruto: una celda con 1.663 caracteres del cuerpo del
+                    # anuncio hace ilegible la hoja entera. Misma función que sirve la API, para
+                    # que informe y pantalla no digan cosas distintas del mismo expediente.
+                    titulo_legible(r["titulo"]),
                     f"{float(r['presupuesto_base'] or 0.0):.2f}",
                     f"{float(r['score_cuantitativo'] or 0.0):.2f}",
                     r["ajuste_semantico"] or 0,

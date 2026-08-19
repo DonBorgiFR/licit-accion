@@ -97,14 +97,14 @@ arrastra una cuestión abierta de dirección, abajo.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **501/501**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. **H-48 y H-49 se cerraron el 2026-08-19.** De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **518/518**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. **H-48 y H-49 se cerraron el 2026-08-19.** De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 501/501
+python -m pytest tests/ -q          # debe dar 518/518
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -170,7 +170,88 @@ siguen paginación— y el sistema leía «salir de la ventana» como «ha expir
 
 ---
 
-### ⏭️ Tarea activa: Bloque 3 — Identidad y foco (decisión de dirección del 2026-08-18)
+### ⏭️ Tarea activa: Bloque 3 — Identidad y foco (contrato validado el 2026-08-19)
+
+> **Contrato**: [`CONTRATO_BLOQUE_3.md`](CONTRATO_BLOQUE_3.md) v1.0.0, con las seis decisiones de
+> dirección ya tomadas y la medición de contraste que sostiene el fondo oscuro. **Léelo antes de
+> tocar el frontend.**
+
+* **Paso 1** 🟢 — contrato, validado el 2026-08-19.
+* **Paso 2** 🟢 — **el título legible, hecho el 2026-08-19.** `titulo_legible()` vive en
+  `src/__init__.py` y la sirven la API —campo computado `titulo_corto`, junto al `titulo` íntegro
+  que **no se toca**— y el informe CSV del Analista. Sobre los 68 títulos reales: **máximo 1.663 →
+  200**, ninguno por encima del tope, **47 enteros** y **0 palabras partidas**. 17 regresiones en
+  `tests/test_bloque3_titulo.py`. Suite **518/518**.
+* **Paso 3** 🟢 — **paleta y fondo oscuro, hecho el 2026-08-19.** Las tres capas viven en
+  `frontend/src/index.css` como tokens de `@theme`; **463 clases migradas** con un mapa explícito
+  —lo que no estaba en el mapa se reportó para revisarlo a mano, no se dejó pasar—; la cabecera
+  lleva el isotipo de Incoop y el nombre compuesto **con texto, no con imagen**. Verificado en el
+  navegador contra la aplicación real: **0 fallos de contraste** en las cuatro pantallas y en la
+  ficha de detalle, 0 errores de consola y ningún fondo claro superviviente.
+
+> ⚠️ **Tres defectos que sólo aparecieron mirando la pantalla, y ninguno lo habría visto la suite.**
+> Es la quinta vez en el proyecto.
+>
+> * **El texto blanco sobre los botones de color era ilegible.** Medido: blanco sobre el cian da
+>   **2,34** y sobre la alarma **3,08**, los dos por debajo del 4,5 que exige el texto; la tinta
+>   oscura da 8,25 y 6,28. **Un botón de acento sobre fondo oscuro lleva letra oscura**, que es
+>   contraintuitivo hasta que se mide. Lo habría introducido yo al migrar.
+> * **`ink-faint` se quedaba corto.** Daba 4,17 sobre el fondo pero **3,53 sobre las tarjetas**, y
+>   ahí es donde vive: son pies de KPI de 11-12 px. El error fue elegir el valor contra el fondo y
+>   no contra **la superficie más clara en la que aparece**. Corregido a `#8A87A0`.
+> * **Mi propio script generó 18 clases inválidas.** Donde el original ya traía opacidad
+>   (`bg-indigo-50/40`) el mapa añadió la suya y salió `bg-acento/10/40`, que Tailwind no reconoce:
+>   esos fondos simplemente **no se pintaban**. Compilaba sin una queja.
+
+> 🔑 **La regla del sistema de color, que salió de una medición y no del diseño previo.** Separar la
+> capa de marca de la semántica **por tono es imposible**: quedan a 1-5 grados —rojo alarma contra
+> rojo teja, ámbar contra amarillo—, así que como puntos de color serían indistinguibles. Rojo es
+> rojo. Lo que las separa es **la forma**: un punto de color significa siempre categoría; un estado
+> lleva siempre palabra y nunca es un punto suelto. **Lo que no lleva texto al lado no es una
+> advertencia.** Está escrito en la cabecera de `index.css`, que es donde lo verá quien añada color.
+
+* **Paso 4** 🟢 — **jerarquía de la tabla, hecha el 2026-08-19.** La columna del identificador
+  desaparece y su ancho pasa al título, que sube a primera línea y a tipo de titular; el id y la
+  fuente bajan a pie de fila en monoespaciada pequeña; el **sector se pinta por fin** —se calculaba,
+  se persistía y se servía desde la Capa 5 sin que ninguna pantalla lo mostrara—; y el score pasa de
+  píldora de color a **magnitud**. Verificado en vivo: 6 columnas en vez de 7, título a 15 px en tres
+  líneas con el texto íntegro en el tooltip, y **0 fallos de contraste**.
+
+> 🔑 **El score estaba mintiendo, y nadie lo había mirado así.** Pintaba verde por encima de 70,
+> ámbar por encima de 45 y rojo por debajo. Pero **un 40 no es un peligro**: es una oportunidad que
+> encaja poco. El rojo decía «cuidado» donde sólo había «esto no es lo tuyo», y de paso metía una
+> píldora de color en cada fila —el *"todo pesa lo mismo"* de dirección, fabricado por la propia
+> tabla—. Ahora la cifra se lee por tamaño, la barra por longitud, y el acento se reserva a la
+> prioridad **Alta**, que es un juicio que el Filtro ya emite y no un umbral inventado en pantalla.
+
+> ⚠️ **Dos cosas que sólo se vieron mirando, y una de ellas es un dato sucio.** *(1)* Los
+> separadores `·` de la línea de metadatos quedaron a **1,23** de contraste: no fallan como texto
+> —son decoración— pero **tampoco separaban**, y la línea se leía corrida. Token propio a 2,64.
+> *(2)* La base trae **`Consultoria` y `Consultoría` como sectores distintos**, el mismo con y sin
+> tilde: es la familia de H-27 en el vocabulario de sectores. La tabla **unifica lo que pinta**,
+> pero el dato sigue sucio y su arreglo es del Filtro, no de la pantalla.
+
+* **Paso 5** ⬜ — el ámbito: parámetro, KPIs e interruptor. **Es la tarea siguiente.**
+* **Paso 6** ⬜ — el análisis visible, con sus tres estados.
+* **Paso 7** ⬜ — cierre: suite, C7 con la aplicación arrancada y documentos.
+
+> 🔑 **La decisión del Paso 2 que conviene no revisar: el título derivado NO se persiste.** Se
+> recomendó al principio guardarlo en columna con esquema v9 y backfill, y **se retiró antes de
+> implementarlo**. Dos motivos medidos: la regla se va a afinar cuando dirección la vea sobre datos
+> reales —y con columna, cada retoque obliga a rebackfillar—, y la búsqueda del Funnel debe seguir
+> operando sobre el título completo, para encontrar una licitación por una palabra de su cuerpo.
+> Migrar el esquema por un dato que nadie consultaría desde la base es pagar por nada. La versión
+> se declara igual (`VERSION_TITULO`), que es lo que la Regla 4 pide.
+
+> ⚠️ **Una prueba que pasaba por el motivo equivocado, detectada al escribirla.** La regresión de
+> las abreviaturas en versales —`S.A.`, `U.T.E.`— llevaba minúscula detrás del punto, así que la
+> regla de frase no habría disparado **de todos modos** y la cautela no se ejercitaba. Con
+> mayúscula detrás sí. Se le añadió además su contraria, para que endurecer la cautela no pueda
+> desactivar la regla sin que nada se ponga rojo.
+
+---
+
+### 📕 Referencia del Bloque 3: las cuatro carencias (decisión de dirección del 2026-08-18)
 
 > **La Capa 10 queda abierta y en pausa, con el Paso 8 esperando.** No es un salto de capa
 > encubierto: el doble clic ya funciona de extremo a extremo y la capa no queda a medias en nada

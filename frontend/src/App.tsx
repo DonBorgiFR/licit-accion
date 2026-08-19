@@ -30,7 +30,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-ground text-ink font-sans">
       {/* Cabecera Ejecutiva Fija con Sensor de Salud */}
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 

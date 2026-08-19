@@ -56,7 +56,7 @@ export const Drawer: React.FC<DrawerProps> = ({
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs transition-opacity duration-300"
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
         onClick={onClose}
       />
 
@@ -64,21 +64,21 @@ export const Drawer: React.FC<DrawerProps> = ({
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
         <div
           className={cn(
-            'w-screen bg-white shadow-2xl border-l border-slate-200 flex flex-col transform transition-transform duration-300 ease-in-out',
+            'w-screen bg-surface shadow-2xl border-l border-line flex flex-col transform transition-transform duration-300 ease-in-out',
             widthStyles[width]
           )}
         >
           {/* Header */}
-          <div className="p-6 pb-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
+          <div className="p-6 pb-4 border-b border-line-soft flex items-start justify-between bg-surface-2/50">
             <div className="pr-4">
               {typeof title === 'string' ? (
-                <h2 className="text-lg font-bold text-slate-900 leading-snug">{title}</h2>
+                <h2 className="text-lg font-bold text-ink leading-snug">{title}</h2>
               ) : (
                 title
               )}
               {subtitle && (
                 typeof subtitle === 'string' ? (
-                  <p className="text-xs text-slate-500 mt-1 font-mono">{subtitle}</p>
+                  <p className="text-xs text-ink-faint mt-1 font-mono">{subtitle}</p>
                 ) : (
                   subtitle
                 )
@@ -88,7 +88,7 @@ export const Drawer: React.FC<DrawerProps> = ({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="p-1 text-slate-400 hover:text-slate-700 rounded-full"
+              className="p-1 text-ink-faint hover:text-ink-dim rounded-full"
             >
               <X className="w-5 h-5" />
             </Button>
@@ -99,7 +99,7 @@ export const Drawer: React.FC<DrawerProps> = ({
 
           {/* Footer */}
           {footer && (
-            <div className="p-4 px-6 bg-slate-50 border-t border-slate-200/80 flex items-center justify-end gap-3">
+            <div className="p-4 px-6 bg-surface-2 border-t border-line/80 flex items-center justify-end gap-3">
               {footer}
             </div>
           )}

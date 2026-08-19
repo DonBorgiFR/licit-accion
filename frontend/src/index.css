@@ -1,49 +1,123 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   Sistema de color de Incoop — Bloque 3, Paso 3
+   Contrato: .agents/CONTRATO_BLOQUE_3.md, apartado C
+
+   TRES CAPAS CON OFICIOS QUE NO SE PISAN. La regla que las separa no es el
+   tono —medido: los semánticos quedan a 1-5 grados de los pétalos de la
+   marca y como puntos de color serían indistinguibles— sino LA FORMA:
+
+     · Un PUNTO de color siempre significa CATEGORÍA (sector, fuente).
+     · Un ESTADO siempre lleva PALABRA, nunca es un punto suelto.
+
+   Así, aunque el rojo de la marca y el de alarma sean parientes, no hay
+   ambigüedad posible: lo que no lleva texto al lado no es una advertencia.
+
+   Por qué el fondo es oscuro, y no es cuestión de gusto: extraídos los
+   cinco colores exactos del logotipo, sobre blanco sólo 2 de 5 superan el
+   umbral de contraste 3:1 que la norma exige a un elemento gráfico; sobre
+   #0E0D14, los cinco. La cabecera blanca obligaba a no usar la marca.
+   ========================================================================== */
+
+@theme {
+  /* --- Capa 1 · Marca. Los cinco pétalos, con su contraste sobre el fondo.
+     Sirven para identidad y categoría. NUNCA significan «bien» ni «mal». --- */
+  --color-marca-cian: #26b8db;      /* 8,25 — es además el acento del sistema */
+  --color-marca-violeta: #6056a2;   /* 3,08 — el único que también vale sobre blanco */
+  --color-marca-amarillo: #ffd932;  /* 14,01 */
+  --color-marca-rojo: #cf4c39;      /* 4,37 */
+  --color-marca-verde: #5aba5a;     /* 7,92 */
+
+  /* --- Capa 2 · Semántica. Sólo tres, y sólo cuando algo exige actuar.
+     Medidos sobre el fondo: los tres pasan el 4,5:1 que pide el texto. --- */
+  --color-alarma: #e4715f;          /* 6,28 */
+  --color-atencion: #e8bc4a;        /* 10,79 */
+  --color-conforme: #63c08f;        /* 8,71 */
+
+  /* --- Capa 3 · Neutros. El 90 % de la pantalla, y lo que carga la
+     jerarquía. Sesgados hacia el violeta de la marca: un gris de fábrica
+     se lee como no elegido. --- */
+  --color-ground: #0e0d14;
+  --color-surface: #17161f;
+  --color-surface-2: #201e2b;
+  --color-line: #292735;
+  --color-line-soft: #1f1d29;
+  /* Los separadores «·» de las líneas de metadatos. Con `line` (1,32 de contraste)
+     eran invisibles y la línea se leía como una frase corrida: no fallaban como
+     texto —son decoración— pero tampoco separaban. A 2,64 se ven y siguen por
+     debajo del dato que separan, que es su sitio. */
+  --color-separador: #565469;
+  --color-ink: #edebf2;             /* 16,35 */
+  --color-ink-dim: #a5a2b5;         /* 7,76 */
+  /* Medido en pantalla y corregido: #75728A daba 4,17 sobre el fondo y sólo
+     3,53 sobre las tarjetas, y ahí es donde vive —son pies de KPI de 11-12 px,
+     que necesitan 4,5. El valor se elige contra la superficie MÁS CLARA en la
+     que aparece, no contra el fondo, que es el error que lo dejó corto. */
+  --color-ink-faint: #8a87a0;       /* 5,57 fondo · 5,17 tarjeta · 4,72 tarjeta-2 */
+
+  /* Alias del acento, para que un cambio futuro no obligue a tocar 400 clases.
+     El hover ACLARA en vez de oscurecer: sobre fondo oscuro, iluminar es el
+     gesto que se lee como «esto responde». */
+  --color-acento: #26b8db;
+  --color-acento-fuerte: #4bc8e5;
+  --color-alarma-fuerte: #f0907e;
+
+  /* Tinta para escribir ENCIMA de un color de marca o semántico. Medido: el
+     texto blanco sobre el cian da 2,34 y sobre la alarma 3,08 —los dos por
+     debajo del 4,5 que exige el texto—, mientras que la tinta oscura da 8,25 y
+     6,28. Un botón de acento sobre fondo oscuro lleva letra oscura, no blanca;
+     es contraintuitivo hasta que se mide. */
+  --color-sobre-acento: #0b0a11;
+
+  --font-mono: "Cascadia Mono", Consolas, "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI",
+    system-ui, sans-serif;
+}
+
 @layer base {
-  :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
-    --card: #ffffff;
-    --card-foreground: #0f172a;
-    --primary: #4f46e5;
-    --primary-foreground: #ffffff;
-    --secondary: #f1f5f9;
-    --secondary-foreground: #334155;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
-    --border: #e2e8f0;
-    --input: #e2e8f0;
-    --ring: #6366f1;
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    min-height: 100vh;
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+      BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-    min-height: 100vh;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    -webkit-font-smoothing: antialiased;
+  /* Los titulares piden el corte óptico de titular y algo menos de tracking:
+     es parte de la jerarquía, no un adorno. */
+  h1, h2, h3, h4 {
+    font-family: "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI",
+      system-ui, sans-serif;
+    letter-spacing: -0.012em;
+    text-wrap: balance;
   }
 }
 
-/* Custom scrollbar for modern light layout */
+/* La barra de desplazamiento formaba parte del aire claro; sobre fondo oscuro
+   una barra clara es un destello en el borde de la pantalla. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--color-ground);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-line);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #3a3848;
+}
+
+::selection {
+  background: rgb(38 184 219 / 0.28);
+  color: var(--color-ink);
 }
 
 .tabular-nums {

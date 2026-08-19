@@ -141,7 +141,12 @@ export type EstadoAnalisis = (typeof EstadoAnalisis)[keyof typeof EstadoAnalisis
 
 export interface Licitacion {
   id: string;
+  /** El título íntegro tal como llegó de la fuente. Puede traer el anuncio entero:
+   *  el más largo de la base mide 1.663 caracteres. Es lo que se muestra en la ficha. */
   titulo: string;
+  /** El derivado para leer en la tabla, que sirve la API (Bloque 3, Paso 2). Se calcula
+   *  al servir y no se guarda: `titulo` conserva siempre el original. */
+  titulo_corto: string;
   organo: string;
   localidad?: string | null;
   nuts?: string | null;
