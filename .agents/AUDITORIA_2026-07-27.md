@@ -2113,6 +2113,39 @@ distribuye el Cockpit compilado. **Y de dónde salió ese `-shm`**: si la carpet
 de un equipo, dos pipelines podrían escribir sobre la misma base sin que el cerrojo de la Capa 9
 —que es local— llegue a enterarse.
 
+#### Cara C · El cerrojo de corridas no sabe de máquinas, y hay dos
+
+> ✅ **Confirmado por dirección el 2026-08-19**: *"yo lo veo desde dos PCs"*. Deja de ser una
+> deducción a partir del `-shm` y pasa a ser un hecho. **Lo que sigue sin definir es qué se hace
+> desde cada equipo** —si los dos lanzan el pipeline o uno sólo consulta—, así que **queda anotado
+> por el caso peor**, que es el prudente: corregir esto a la baja luego cuesta una línea; al revés
+> costaría datos.
+
+`ejecuciones` identifica una corrida con `pid` y `pid_creado_en`, y **no guarda ninguna identidad
+de máquina** — comprobado: no hay `hostname`, `platform.node()` ni `COMPUTERNAME` en `src/`, ni una
+columna para ello en el esquema v8.
+
+```
+(11, 'COMPLETED', 5552, '134316192161245995')
+     estado       pid    instante de creación del proceso
+```
+
+**Consecuencia**: cuando el PC B sincroniza una fila `RUNNING` escrita por el PC A, le pregunta **a
+su propio Windows** si ese PID sigue vivo. Normalmente no existirá, así que B concluirá que la
+corrida murió y **arrancará la suya mientras A sigue prospectando**. Dos pipelines sobre la misma
+base — y esa base purga ficheros.
+
+**No es un descuido del diseño: es que el diseño nunca contempló dos máquinas.** `pid_creado_en` se
+añadió en H-40 precisamente contra el reciclado de PIDs **dentro de un mismo equipo**, y ahí hace
+su trabajo. Entre equipos distintos no hay nada que comparar: el par PID + instante pertenece a un
+espacio de nombres local.
+
+> 🚧 **Y esto toca el Paso 8, que es la tarea siguiente, no el final del proyecto.** El Paso 8 es el
+> despertador: una tarea programada de Windows que lanza el pipeline de madrugada sin nadie
+> delante. **Dada de alta en los dos equipos, convierte este riesgo en rutina nocturna.** La
+> mitigación más barata no cuesta código —dar de alta la tarea en un solo equipo, y que conste cuál—
+> pero **es una decisión que hay que tomar dentro del Paso 8**, no después.
+
 > ⚠️ **Y ya había un indicio escrito hace días, sin conectar con esto.** `ESTADO.md` documenta que
 > en su momento se dio por desfasado `frontend/dist/` mirando su fecha, y que era falso: al
 > recompilar, Vite generó **los mismos nombres de fichero**, que son un hash del contenido. La

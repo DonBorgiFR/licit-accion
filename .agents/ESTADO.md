@@ -429,11 +429,22 @@ duración intacta.
 > por dentro. Lo que espera es el **Paso 8 de la Capa 10**, el despertador. El «8» aparece en los
 > dos sitios y se confunde con facilidad.
 >
-> 🚧 **Y no se puede empezar a codificar nada: hay una decisión de dirección sin tomar.** El Paso 8
-> depende de **si el pipeline debe tener un tope de duración**, ahora que va a lanzarlo una tarea
+> 🚧 **Y no se puede empezar a codificar nada: hay DOS decisiones de dirección sin tomar.**
+>
+> *(1)* **Si el pipeline debe tener un tope de duración**, ahora que va a lanzarlo una tarea
 > nocturna sin consola delante. No se ha inventado ningún plazo porque la Regla 4 lo prohíbe. El
 > enunciado completo, con las cuatro cosas que hay que decidir, está en el `README.md` dentro del
-> Paso 8. **Es la primera conversación de la sesión siguiente, antes que ningún plan.**
+> Paso 8.
+>
+> *(2)* **En cuántos equipos se da de alta la tarea programada — y esto es nuevo, del 2026-08-19.**
+> Dirección confirmó que usa el sistema **desde dos PCs** sobre la misma carpeta sincronizada, y el
+> cerrojo de corridas **no distingue máquinas** (H-52, cara C): identifica una corrida por `pid` +
+> instante de creación, que es un espacio de nombres **local**. Dada de alta en los dos equipos, la
+> tarea nocturna pondría dos pipelines sobre la misma base de forma rutinaria. **La mitigación más
+> barata no cuesta código** —darla de alta en un solo equipo y que conste cuál—, pero es una
+> decisión que se toma **dentro de este paso**, no en el cajón del final del proyecto.
+>
+> **Las dos son la primera conversación de la sesión siguiente, antes que ningún plan.**
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
@@ -556,11 +567,21 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
   nombre de equipo que **no es el de éste**— sobre una base en modo **WAL**, cuyos `-shm` y `-wal`
   no son documentos sino el diario de escritura de SQLite.
 
+  **Confirmado por dirección el 2026-08-19: son dos PCs.** Y el cerrojo de corridas **no sabe de
+  máquinas**: identifica una corrida por `pid` + instante de creación, sin `hostname` —comprobado en
+  `src/` y en el esquema v8—, así que cada equipo evalúa el PID del otro contra **su propio
+  Windows**. Lo normal es que no exista, concluya que la corrida murió y arranque la suya **con la
+  otra todavía prospectando**. `pid_creado_en` protege del reciclado de PIDs *dentro* de un equipo
+  (H-40); entre equipos no hay nada que comparar.
+
+  > **Qué se hace desde cada PC está sin definir**, así que el hallazgo queda escrito por el caso
+  > peor —los dos prospectan—, que es lo prudente. Si resulta que uno sólo consulta, corregirlo a la
+  > baja cuesta una línea.
+
   > Lo que conviene no perder de vista al llegar: **`ruta_datos()` y `DATA_DIR_INCOOP` ya permiten
-  > mover los datos fuera sin tocar código** —se construyeron para eso en H-25—, así que la mitad
-  > cara del problema puede que sea sólo decidir dónde. Y que si la carpeta se sincroniza en más de
-  > un equipo, **dos pipelines podrían escribir sobre la misma base sin que el cerrojo de la Capa 9
-  > se entere**, porque es local. Evidencia completa en H-52.
+  > mover los datos fuera de la carpeta sincronizada sin tocar código** —se construyeron para eso en
+  > H-25—, así que la mitad cara del problema puede que sea sólo decidir dónde. Evidencia completa
+  > en H-52.
 
 **Resueltas el 2026-08-17:**
 
