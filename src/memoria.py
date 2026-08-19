@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import zoneinfo
 import hashlib
@@ -210,6 +211,74 @@ def anexar_log_cambios(cursor, expediente_id: str, entrada: str) -> None:
         "UPDATE expedientes SET log_cambios = COALESCE(log_cambios, '') || ? WHERE id = ?;",
         (f"\n{entrada}", expediente_id),
     )
+
+
+#: Identificador que la plataforma catalana pone en el enlace de cada licitación. Va anclado a
+#: `detall-publicacio/` a propósito y no a "cualquier UUID que aparezca en la URL": es el único
+#: sitio donde consta que ese código identifica **la licitación** y no otra cosa. Las demás
+#: fuentes usan otro formato de enlace y necesitarían su propia evidencia antes de deducir nada.
+_UUID_PUBLICACION_CAT = re.compile(
+    r"detall-publicacio/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+)
+
+
+def uuid_publicacion(link) -> Optional[str]:
+    """Extrae de un enlace el identificador con el que la fuente reconoce a la licitación.
+
+    Por qué hace falta (H-49): el identificador de expediente de la fuente catalana sale de
+    `codi_expedient`, **un campo de texto libre**, y la misma licitación se publicó dos veces
+    escrito de dos maneras —`EXPEDIENT214 2026…` y `EXPEDIENT  214 2026…`—, entrando como dos
+    expedientes distintos. Uno se quedó los 11 pliegos; el otro, el título de 1.663 caracteres.
+
+    **La reparación obvia no servía, y se midió antes de descartarla**: colapsar los espacios
+    repetidos deja `EXPEDIENT 214 2026…`, que sigue sin coincidir con `EXPEDIENT214 2026…`.
+    Sobre los 63 expedientes reales detectaba **0 duplicados**. Quitar todos los espacios sí
+    los unía, pero fundiría también `AB 123` con `AB123`, que pueden ser cosas distintas.
+    Este código, en cambio, es **el mismo en las dos filas** y lo dice la propia plataforma.
+    """
+    m = _UUID_PUBLICACION_CAT.search(str(link or ""))
+    return m.group(1).lower() if m else None
+
+
+PLAZO_ABIERTO = "abierto"
+PLAZO_VENCIDO = "vencido"
+PLAZO_ILEGIBLE = "ilegible"
+
+# Versión del criterio con el que se decide si una ausencia del feed significa expiración
+# (Regla 4). Se estampa en el evento de resumen y no en una columna de `ejecuciones`: este
+# barrido no persiste un artefacto por fila cuya interpretación dependa de la versión —como sí
+# le pasa a `version_scoring` en `lotes`—, sólo decide. El histórico de la decisión es el
+# JSONL, así que es ahí donde la versión sirve para algo. Si algún día el criterio pasa a
+# escribirse en la fila, entonces tocará columna y migración.
+VERSION_OBSOLESCENCIA = "1.0.0"
+
+
+def clasificar_plazo(fecha_limite, ahora_utc: str) -> str:
+    """Dice si la fecha límite de un expediente sigue abierta, venció, o no se puede leer.
+
+    Por qué existe (H-48): `soft_delete_obsoletos()` daba por expirada toda licitación ausente
+    del feed **sin mirar el calendario**, y las tres fuentes del proyecto son ventanas de
+    publicaciones recientes —la catalana pide literalmente las 100 últimas—, así que salir de
+    la ventana ocurre por antigüedad, no por haber terminado. Medido sobre la base real: 45
+    lotes archivados como expirados con el plazo todavía abierto, 19.986.870,63 € de PBL, y las
+    dos oportunidades mejor puntuadas de todo el histórico invisibles en el Funnel.
+
+    Se devuelven tres valores y no un booleano a propósito: "no se pudo leer la fecha" no es lo
+    mismo que "venció", y confundirlos es exactamente el defecto que se está reparando. La
+    comparación es de cadenas ISO-8601 en UTC, que es como ya la hacía la rama de anulación de
+    la misma función; se mantiene igual para que las dos ramas midan el tiempo de la misma
+    forma y no aparezca un segundo concepto de "vencido".
+    """
+    texto = str(fecha_limite or "").strip()
+    if not texto or texto.upper() == "N/A":
+        return PLAZO_ILEGIBLE
+    # Basta con exigir la cabecera de fecha: el resto de la cadena ISO puede variar en
+    # precisión entre fuentes, y recortarla aquí obligaría a normalizar lo que ya compara bien.
+    if len(texto) < 10 or texto[4] != "-" or texto[7] != "-":
+        return PLAZO_ILEGIBLE
+    if not (texto[:4].isdigit() and texto[5:7].isdigit() and texto[8:10].isdigit()):
+        return PLAZO_ILEGIBLE
+    return PLAZO_ABIERTO if texto > ahora_utc else PLAZO_VENCIDO
 
 
 # =====================================================================
@@ -1422,12 +1491,61 @@ class Memoria:
     # UPSERT DE INGESTA CON DETECCION DE CAMBIOS POR HASH
     # =====================================================================
 
+    def resolver_id_canonico(self, cursor, licitacion: Dict[str, Any], run_id: Optional[int] = None) -> str:
+        """Devuelve el identificador con el que esta licitación ya vive en la base, si es que sí.
+
+        Repara H-49. La fuente catalana republica una misma licitación con `codi_expedient`
+        escrito de formas distintas, y como ese campo es la clave, entraba dos veces. Aquí se
+        pregunta a la base si ya conocemos una licitación con **el mismo código de publicación**
+        —el que la propia plataforma pone en el enlace— y, si la conocemos, se reutiliza su
+        identificador para que la segunda publicación **actualice** la ficha en vez de crear otra.
+
+        Tres cautelas deliberadas:
+
+        * **El identificador que ya existe gana sin más preguntas.** Es el caso normal —la misma
+          licitación revista en la corrida siguiente— y así ni siquiera se hace la consulta extra.
+        * **No se toca ninguna fila existente.** Esto resuelve *bajo qué identificador escribir*;
+          los duplicados que ya están en la base siguen ahí. Fusionarlos arrastra documentos,
+          lotes y análisis, es irreversible, y necesita su propio paso con previsualización.
+        * **Sólo actúa donde hay evidencia.** Sin código de publicación en el enlace —hoy, todas
+          las fuentes salvo la catalana— devuelve el identificador tal cual y no deduce nada.
+        """
+        propuesto = licitacion.get("id")
+        codigo = uuid_publicacion(licitacion.get("link"))
+        if not codigo:
+            return propuesto
+
+        cursor.execute("SELECT 1 FROM expedientes WHERE id = ?;", (propuesto,))
+        if cursor.fetchone():
+            return propuesto
+
+        # El desempate por `id` no sobra: mientras queden en la base los duplicados anteriores
+        # a esta reparación, dos filas pueden compartir código de publicación **y** fecha de
+        # ingesta al segundo, y sin criterio de desempate la elección quedaría a merced del
+        # plan de consulta. Escribir unas veces en una ficha y otras en la otra sería un
+        # defecto peor que el que se está reparando.
+        cursor.execute(
+            "SELECT id FROM expedientes WHERE link LIKE ? ORDER BY fecha_ingesta, id LIMIT 1;",
+            (f"%detall-publicacio/{codigo}%",),
+        )
+        fila = cursor.fetchone()
+        if fila and fila[0] != propuesto:
+            self.registrar_log_json(
+                run_id=run_id if run_id is not None else 0,
+                action="RADAR_ID_DUPLICADO_UNIFICADO",
+                expediente_id=fila[0],
+                reason=f"La publicación {codigo} llegó como {propuesto!r}; se reutiliza el expediente ya conocido",
+            )
+            return fila[0]
+        return propuesto
+
     def upsert_oportunidad(self, licitacion: Dict[str, Any], evaluacion: Dict[str, Any]) -> None:
         """
         Inserta o actualiza un expediente y su Lote 1 de forma atómica.
         Utiliza feed_hash para omitir escrituras pesadas si el payload público no ha cambiado.
         """
-        expediente_id = licitacion.get("id")
+        with self.conectar() as conn:
+            expediente_id = self.resolver_id_canonico(conn.cursor(), licitacion)
         nuevo_hash = calcular_feed_hash(licitacion)
         timestamp_now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1607,27 +1725,47 @@ class Memoria:
     # SOFT DELETE OPERATIVO POR TIMESTAMPS
     # =====================================================================
 
-    def soft_delete_obsoletos(self, ejecucion_start_utc: str) -> None:
+    def soft_delete_obsoletos(self, ejecucion_start_utc: str, run_id: Optional[int] = None) -> Dict[str, int]:
         """
-        Aplica borrado lógico a los expedientes ausentes en la ejecución actual.
-        Utiliza el last_seen_feed comparado con el timestamp de inicio de la ejecución.
+        Revisa los expedientes ausentes del feed en la ejecución actual y decide, lote a lote,
+        si esa ausencia significa algo. Utiliza `last_seen_feed` contra el inicio de la corrida.
+
+        **La ausencia del feed no prueba que una licitación haya terminado** (H-48). Las tres
+        fuentes del proyecto son ventanas de publicaciones recientes, no censos de licitaciones
+        vigentes: `PSCP Catalunya API` pide las 100 últimas por fecha de publicación
+        (`radar.py`), y los dos feeds ATOM se descargan sin seguir la paginación. Una licitación
+        sale de la ventana por antigüedad. Por eso lo único que autoriza a darla por expirada es
+        **su fecha límite**, no su ausencia.
+
+        Contrato en `.agents/CONTRATO_REPARACION_FEED.md` (v1.0.0). Devuelve el recuento de lo
+        decidido para que la corrida pueda informar de ello (Regla 7); antes no devolvía nada y
+        el barrido era invisible salvo por sus efectos.
         """
         fecha_actual_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        resumen = {
+            "revisados": 0,
+            "expirados": 0,
+            "ignorados_plazo_abierto": 0,
+            "ignorados_sin_fecha": 0,
+            "anulaciones": 0,
+        }
 
         with self.conectar() as conn:
             cursor = conn.cursor()
-            
+
             cursor.execute(
                 "SELECT id, fecha_limite FROM expedientes WHERE last_seen_feed < ? OR last_seen_feed IS NULL;",
                 (ejecucion_start_utc,)
             )
             obsoletos = cursor.fetchall()
-            
+
             if not obsoletos:
-                return
+                return resumen
 
             with conn:
                 for exp_id, fecha_limite in obsoletos:
+                    resumen["revisados"] += 1
+                    plazo = clasificar_plazo(fecha_limite, fecha_actual_utc)
                     cursor.execute(
                         "SELECT id, lote_numero, estado_operativo FROM lotes WHERE expediente_id = ?;",
                         (exp_id,)
@@ -1636,6 +1774,32 @@ class Memoria:
                     
                     for lote_id, lote_numero, estado_op in lotes:
                         if normalizar_estado_operativo(estado_op) == "nueva":
+                            # H-48: una `Nueva` ausente del feed sólo está expirada si su plazo
+                            # venció. Con el plazo abierto lo único que ha pasado es que salió
+                            # de la ventana de publicaciones recientes, y archivarla esconde una
+                            # oportunidad viva. Sin fecha legible se resuelve igual —no tocar—:
+                            # el daño es asimétrico y está medido. Mostrar de más una licitación
+                            # muerta cuesta una línea en pantalla; esconder las vivas costó
+                            # 19.986.870,63 € en PBL y las dos mejores puntuaciones de la base.
+                            # Quien la retire de verdad será el Depurador, por fecha límite, que
+                            # es de quien es esa competencia (decisión del 2026-08-12).
+                            if plazo != PLAZO_VENCIDO:
+                                if plazo == PLAZO_ABIERTO:
+                                    resumen["ignorados_plazo_abierto"] += 1
+                                    accion = "RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO"
+                                    motivo = f"Ausente del feed pero con plazo abierto hasta {fecha_limite}: no se archiva"
+                                else:
+                                    resumen["ignorados_sin_fecha"] += 1
+                                    accion = "RADAR_AUSENCIA_SIN_FECHA_LIMITE"
+                                    motivo = f"Ausente del feed y sin fecha límite legible ({fecha_limite!r}): ante la duda no se archiva"
+                                if run_id is not None:
+                                    self.registrar_log_json(
+                                        run_id=run_id, action=accion,
+                                        expediente_id=exp_id, reason=motivo,
+                                    )
+                                continue
+
+                            resumen["expirados"] += 1
                             cursor.execute(
                                 "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
                                 (ESTADO_INACTIVA, fecha_actual_utc, "Ausente en el feed de licitaciones vigentes (Expirado)", fecha_actual_utc, lote_id)
@@ -1651,7 +1815,15 @@ class Memoria:
                                 entrada_log_cambio_estado(lote_numero, estado_op, ESTADO_INACTIVA, autor="radar")
                             )
                         elif normalizar_estado_operativo(estado_op) not in ESTADOS_ARCHIVADOS_NORMALIZADOS:
+                            # La condición se deja **literalmente igual** que antes de H-48. Es
+                            # la rama de posible anulación, que sí consultaba el plazo y que la
+                            # medición exculpó: de los 48 lotes archivados por ausencia, los 48
+                            # salieron de la rama `Nueva` y ésta no se ha disparado nunca.
+                            # Unificarla con `clasificar_plazo()` cambiaría su comportamiento
+                            # ante una fecha malformada —hoy la trataría como futura—, y eso es
+                            # otro hallazgo, no éste. Sólo se añade el contador.
                             if fecha_limite and fecha_limite != "N/A" and fecha_limite > fecha_actual_utc:
+                                resumen["anulaciones"] += 1
                                 cursor.execute(
                                     "UPDATE lotes SET estado_operativo = ?, deleted_at = ?, deleted_reason = ?, updated_by = 'radar', updated_at = ? WHERE id = ?;",
                                     (ESTADO_ANULADA_ADMINISTRACION, fecha_actual_utc, "Ausente en feed antes de la fecha límite (Posible anulación)", fecha_actual_utc, lote_id)
@@ -1671,6 +1843,22 @@ class Memoria:
                                         lote_numero, estado_op, ESTADO_ANULADA_ADMINISTRACION, autor="radar"
                                     )
                                 )
+
+        # Fuera del `with conn`: el resumen se emite cuando la transacción ya ha cerrado, para
+        # que el registro no afirme nada que la base pudiera acabar no guardando.
+        if run_id is not None:
+            self.registrar_log_json(
+                run_id=run_id,
+                action="RADAR_OBSOLESCENCIA_RESUMEN",
+                reason=(
+                    f"politica v{VERSION_OBSOLESCENCIA} | "
+                    f"Revisados {resumen['revisados']} | expirados {resumen['expirados']} | "
+                    f"conservados con plazo abierto {resumen['ignorados_plazo_abierto']} | "
+                    f"conservados sin fecha {resumen['ignorados_sin_fecha']} | "
+                    f"posibles anulaciones {resumen['anulaciones']}"
+                ),
+            )
+        return resumen
 
     # =====================================================================
     # MÉTODOS DAO - ACTUALIZACIONES MANUALES POR EL EQUIPO
@@ -1892,7 +2080,10 @@ class Memoria:
                     cursor = conn.cursor()
                     
                     for lic, eval_data in chunk:
-                        expediente_id = lic.get("id")
+                        # H-49: bajo qué identificador escribir. Si esta licitación ya vive en
+                        # la base con otro código de expediente —la fuente catalana lo escribe
+                        # de dos maneras—, se actualiza la ficha que hay en vez de crear otra.
+                        expediente_id = self.resolver_id_canonico(cursor, lic, run_id=run_id)
                         start_time_perf = time.perf_counter()
                         
                         try:

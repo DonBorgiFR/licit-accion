@@ -64,10 +64,16 @@ arrastra una cuestión abierta de dirección, abajo.
 
 > ⚠️ **En qué estado queda la base, para que nadie se asuste al abrirla.**
 >
-> **63 expedientes**, de los cuales **19 vivos y 44 archivados**, y **5.929.276,63 €** de PBL en el
-> canal principal. La caída frente a los 20,7 M€ de ayer **no es un defecto**: la corrida del
-> doble clic archivó por plazo vencido los expedientes de julio y agosto, que es exactamente lo
-> que el Depurador de la Capa 9 existe para hacer. Comprobado cifra a cifra contra la base.
+> **63 expedientes**, de los cuales **15 vivos y 48 archivados** *(rectificado el 2026-08-19: la
+> nota decía 19 y 44, escritos antes de que la corrida 6 del 18-08 a las 08:49 archivara cuatro
+> más)*.
+>
+> ❌ **Y la explicación que seguía era falsa, conviene no arrastrarla.** Decía que la caída de PBL
+> de 20,7 M€ a 5,9 M€ **no era un defecto**, sino el Depurador archivando por plazo vencido. **No
+> era eso.** Se archivaron **45 lotes con la fecha límite todavía por llegar**, por valor de
+> **19.986.870,63 €**, porque desaparecieron del feed y nadie miró el calendario. Es **H-48**, y
+> con él **H-49**: los dos están medidos en el dosier. La cifra de 5,9 M€ es correcta; lo que
+> estaba mal era darla por buena.
 >
 > **La corrida huérfana id 4 ya no existe como tal**: la reclamó su dueño legítimo —
 > `iniciar_ejecucion()`— al arrancar la corrida 5, y quedó cerrada como `FAILED`. Es el diseño del
@@ -91,17 +97,78 @@ arrastra una cuestión abierta de dirección, abajo.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **464/464**. **Desde el 2026-08-18 la tarea activa NO es la Capa 10**, que queda en pausa tras su Paso 7: dirección antepuso el **Bloque 3 — Identidad y foco**, y el porqué está justo abajo. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De 44 hallazgos catalogados, 42 están cerrados y **quedan abiertos H-39** —para repararse en el Paso 9 de esta capa— y **H-41**, el crash nativo del pipeline, sin asignar. **La capa activa es la 10**, el Lanzador: **Pasos 1 a 5 cerrados el 2026-08-13, el Paso 6 el 2026-08-17 y el Paso 7 el 2026-08-18**, tarea activa el **Paso 8**. Desde hoy **el sistema se usa con un doble clic**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, con la suite en **501/501**. **H-48 y H-49 quedaron cerrados el 2026-08-19** —el archivado prematuro y el identificador duplicado—, así que **la tarea activa vuelve a ser el Bloque 3 — Identidad y foco**; la **Capa 10** sigue en pausa tras su Paso 7. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **48 hallazgos catalogados, 44 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46/47** de la revisión del 18-08. **H-48 y H-49 se cerraron el 2026-08-19.** De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 464/464
+python -m pytest tests/ -q          # debe dar 501/501
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
+
+### ✅ Cerrado el 2026-08-19: reparar H-48 y H-49 (referencia, ya no es tarea)
+
+> **Contrato validado**: [`CONTRATO_REPARACION_FEED.md`](CONTRATO_REPARACION_FEED.md) v1.0.0.
+> **Léelo antes de tocar `soft_delete_obsoletos()` o el identificador del Radar.**
+
+**De dónde sale.** Preparando el Bloque 3 se midió que de los 15 expedientes vivos sólo 4 tenían el
+pliego leído. Dirección preguntó **por qué**, y la respuesta no estaba en el Analista: **las tres
+fuentes son ventanas de publicaciones recientes** —la catalana pide las 100 últimas; los ATOM no
+siguen paginación— y el sistema leía «salir de la ventana» como «ha expirado». Resultado medido:
+**45 lotes archivados con el plazo abierto, 19.986.870,63 € de PBL**, y las dos oportunidades de
+82 puntos invisibles mientras el Funnel enseñaba 71 como máximo.
+
+* **Paso 1** 🟢 — contrato, validado por dirección el 2026-08-19.
+* **Paso 2** 🟢 — **H-48 reparado el 2026-08-19.** La rama `Nueva` de `soft_delete_obsoletos()`
+  consulta la fecha límite; nuevo `clasificar_plazo()` con tres valores —abierto, vencido,
+  ilegible— porque *"no se pudo leer"* no es *"venció"*; la función devuelve resumen y emite
+  `RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO`, `RADAR_AUSENCIA_SIN_FECHA_LIMITE` y
+  `RADAR_OBSOLESCENCIA_RESUMEN`. **23 regresiones nuevas** en `tests/test_h48_ausencia_feed.py`.
+  Suite **487/487**. **Medido sobre copia de la base real: el código viejo habría archivado los 15
+  lotes vivos —Funnel a cero en la corrida siguiente—; el nuevo archiva 2**, los de plazo vencido.
+* **Paso 3** ❌ — **descartado por dirección.** El rescate de los 45 lotes archivados se implementó
+  con 11 regresiones en verde y **se retiró entero**; `depurador.py` quedó byte a byte como estaba.
+* **Paso 4** 🟢 — **H-49 cerrado.** `resolver_id_canonico()` reconoce la licitación por el código
+  de publicación que la fuente catalana pone en el enlace, idéntico en las dos grafías. **Sin
+  cambiar la clave primaria ni migrar nada**: el dato ya estaba en `link`. 14 regresiones en
+  `tests/test_h49_id_duplicado.py`.
+* **Paso 5** 🟢 — **corrida real id 7** (46,47 s, sin incidencias). Suite **501/501**.
+
+> 🔑 **Lo más transferible del Paso 2, y va en la línea de lo que este proyecto lleva encontrando:
+> el dato que evitaba el defecto ya estaba en la consulta.** `SELECT id, fecha_limite …` lo traía,
+> el bucle lo desempaquetaba, y **la rama que decidía no lo miraba** — mientras la rama hermana, la
+> de posible anulación, sí. La cautela existía, estaba escrita y funcionaba: se aplicaba a la
+> población que no la necesitaba. Medir de qué rama salió cada archivado (48 de 48 de la rama
+> `Nueva`, la hermana **nunca disparada**) es lo que permitió reparar el 100 % del daño sin tocar
+> el contrato de la Capa 9.
+
+> 🔑 **La lección del Paso 3, y es de método, no de código: un plan validado no exime de volver a
+> preguntarse para qué sirve cada paso.** El rescate se escribió en el contrato con el hallazgo
+> recién hecho y **la cifra de 19,99 M€ delante**, tratada como negocio perdido cuando en una beta
+> son **datos de prueba** perdidos. Contradecía de frente la decisión del 2026-08-17 —*hasta la
+> demo los datos son material de prueba*— y aun así se implementó, porque estaba en el plan. Lo
+> paró dirección preguntando **para qué**. **Una cifra grande es justo lo que anestesia esa
+> pregunta.** Dato que sí quedó: consultada la fuente, sólo **2 de los 45** seguían en su ventana
+> de 100 — lo que había que arreglar era dejar de perderlas, no recuperar las perdidas.
+
+> ⚠️ **La trampa que H-49 tendía, y que sólo se vio midiendo.** El contrato mandaba *"colapsar
+> espacios repetidos"* en el identificador. Aplicado a las dos grafías reales deja
+> `EXPEDIENT 214 2026…`, que **sigue sin coincidir** con `EXPEDIENT214 2026…`: **0 duplicados
+> detectados sobre los 63 de la base.** Implementarlo habría cerrado el hallazgo con una
+> protección que no protege y que además parecería auditada. Hay una regresión dedicada a que
+> nadie reintente esa vía.
+
+> ⚠️ **Una regresión existente cambió de resultado, y no era falsa alarma.**
+> `test_el_radar_escribe_la_grafia_canonica` sembraba un expediente **sin fecha límite**, y bajo el
+> contrato nuevo eso significa «no archivar», así que dejaba de alcanzar la rama que escribe. **Lo
+> que la prueba comprueba —la grafía canónica— no cambió**; lo que cambió es qué hace falta para
+> llegar hasta ella, y se le añadió un plazo vencido al montaje. La comprobación previa del
+> contrato dio por buenas cuatro pruebas tras leer tres: **la cuarta era ésta**.
+
+---
 
 ### ⏭️ Tarea activa: Bloque 3 — Identidad y foco (decisión de dirección del 2026-08-18)
 
@@ -277,8 +344,24 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 > ejecutarse— **sigue implementada y no se ha relajado ni una línea**. Lo que cambia es sólo
 > cuánto duele perder la base de pruebas, no lo que el código tiene permitido hacer.
 
-**Cinco hallazgos abiertos** *(tres nuevos, de la revisión funcional con dirección del
-2026-08-18; su evidencia completa está en el dosier de auditoría)*:
+**Siete hallazgos abiertos** *(tres de la revisión funcional del 2026-08-18 y **dos nuevos del
+2026-08-19**, estos últimos los más graves de todos; su evidencia completa está en el dosier)*:
+
+* 🟡 **H-48 · Se archivan como expiradas licitaciones con el plazo todavía abierto** — **causa
+  reparada el 2026-08-19 (Paso 2); queda el rescate de lo ya archivado (Paso 3).**
+  `soft_delete_obsoletos()` marca `Inactiva` todo lote **`Nueva`** ausente del feed **sin mirar la
+  fecha límite** — aunque la consulta sí trae el dato y la rama hermana sí lo consulta. **Medido:
+  45 lotes con plazo abierto archivados, 19.986.870,63 € de PBL, y las dos mejores oportunidades
+  de la base (82 puntos) invisibles** mientras el Funnel enseña como máximo 71. Castiga sobre todo
+  a `PSCP Catalunya API`, cuyos **16 expedientes están archivados los 16** — justo la fuente 100 %
+  catalana y la única con cobertura documental completa. **Es la causa de que sólo 4 de los 15
+  vivos tengan pliego**, y por tanto de que el análisis semántico "no se vea".
+* 🔥 **H-49 · El mismo expediente entra dos veces porque su identificador no se normaliza.** En la
+  fuente catalana el `id` sale tal cual de `codi_expedient`, texto libre. La misma licitación
+  —mismo UUID de publicación, misma ingesta al segundo— entró como `EXPEDIENT214 2026…` y
+  `EXPEDIENT  214 2026…`. **La copia con los 11 pliegos y el título corto quedó archivada; la que
+  sobrevive tiene 0 documentos y el título de 1.663 caracteres** que motivó media reparación del
+  Bloque 3. El peor título de la base y la falta de pliegos son **el mismo defecto**.
 
 * **H-45 · El Centinela no está vacío: está ciego.** Las dos fuentes oficiales devuelven error
   —DOGC **404**, BOPB **500**— y llevan así desde antes de hoy. El pipeline degrada correctamente
@@ -288,8 +371,9 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 * **H-46 · La purga documental se ejecuta con un solo clic**, mientras la eliminación de
   expedientes —en la misma pantalla— exige previsualizar primero. La previsualización de la purga
   documental **ya existe y la API ya la sirve**: la pantalla no la usa.
-* **H-47 · El Funnel se llena de licitaciones fuera de ámbito.** De 19 expedientes vivos, **3 son
-  catalanes y 3 de Madrid**. El perfil comercial está bien —premia la geografía con +40/+35/+20—
+* **H-47 · El Funnel se llena de licitaciones fuera de ámbito.** De 15 expedientes vivos, **3 son
+  catalanes y 3 de Madrid** *(eran 19 al anotarlo el 18-08)*. **H-48 lo agrava**: la fuente catalana
+  se archiva entera en cada corrida, así que el desequilibrio es peor de lo que este recuento sugiere. El perfil comercial está bien —premia la geografía con +40/+35/+20—
   pero **la geografía suma puntos y no descarta nada**, y dos de las tres fuentes son estatales.
   Decisión de dirección pendiente: filtrar en pantalla, filtrar al ingerir o subir el umbral.
 
@@ -527,7 +611,7 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **44 hallazgos catalogados, 42 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+De la remediación, ninguno. **48 hallazgos catalogados, 44 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
 
 > **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 

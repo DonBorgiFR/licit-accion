@@ -206,15 +206,24 @@ def test_la_migracion_normaliza_las_grafias_del_estado_archivado(base_v5):
 
 
 def test_el_radar_escribe_la_grafia_canonica(tmp_path):
-    """La otra mitad de H-27: no basta con normalizar lo viejo si se sigue escribiendo mal."""
+    """La otra mitad de H-27: no basta con normalizar lo viejo si se sigue escribiendo mal.
+
+    El montaje lleva **fecha límite vencida desde H-48** *(2026-08-19)*. Antes no llevaba
+    ninguna, y bastaba: el Radar archivaba toda `Nueva` ausente del feed sin mirar el
+    calendario. Ahora una ausencia sin fecha legible ya no se archiva —el daño de esconder
+    oportunidades vivas se midió en 19,99 M€—, así que sin plazo vencido este caso no llegaría
+    a la rama que escribe el estado y la prueba no comprobaría nada. **Lo que se comprueba es
+    la grafía, y eso no ha cambiado**; lo que cambia es qué hace falta para llegar hasta ella.
+    """
     memoria = Memoria(db_path=str(tmp_path / "radar.db"))
     memoria.setup_db()
 
     with memoria.conectar() as conn:
         with conn:
             conn.execute(
-                "INSERT INTO expedientes (id, titulo, fecha_ingesta, last_seen_feed) "
-                "VALUES ('EXP-VIEJO', 'Ausente del feed', '2026-07-01T10:00:00Z', '2026-07-01T10:00:00Z');"
+                "INSERT INTO expedientes (id, titulo, fecha_ingesta, fecha_limite, last_seen_feed) "
+                "VALUES ('EXP-VIEJO', 'Ausente del feed', '2026-07-01T10:00:00Z', "
+                "'2026-07-15T10:00:00Z', '2026-07-01T10:00:00Z');"
             )
             conn.execute(
                 "INSERT INTO lotes (expediente_id, lote_numero, titulo_lote, estado_operativo) "

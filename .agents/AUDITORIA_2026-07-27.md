@@ -1798,6 +1798,180 @@ catálogo de servicios activos, que dice qué CPVs debería estar persiguiendo e
 
 ---
 
+## Hallazgos de rastrear por qué el Analista casi no tiene trabajo — 2026-08-19
+
+> **De dónde salen.** Preparando el Bloque 3 se afirmó que *"de los 15 expedientes vivos sólo 4
+> tienen el pliego leído"*. Dirección preguntó **por qué**, y la respuesta no estaba en el
+> Analista: estaba dos capas más arriba. Los dos hallazgos que siguen **se encadenan** y explican
+> juntos por qué el Funnel se ve vacío, ajeno y sin análisis. Ninguno lo habría visto la suite
+> —sigue en 464/464—, y ninguno rompe nada: los dos **deciden mal en silencio**, que es la familia
+> de H-18 y H-26.
+
+### H-48 · Se archivan como expiradas licitaciones con el plazo todavía abierto 🟢 CERRADO (2026-08-19)
+
+> ✅ **Causa reparada** en `Memoria.soft_delete_obsoletos()`: la rama `Nueva` consulta la fecha
+> límite mediante `clasificar_plazo()`, que devuelve **tres** valores —abierto, vencido, ilegible—
+> porque *"no se pudo leer"* no es *"venció"*: comparada como texto, una fecha malformada como
+> `"14/09/2026"` resulta **mayor** que una fecha ISO y habría quedado abierta por accidente en vez
+> de por criterio. Regresiones en `tests/test_h48_ausencia_feed.py` (23).
+>
+> ✅ **Verificado en corrida real** (id 7, 2026-08-19, 46,47 s):
+> `RADAR_OBSOLESCENCIA_RESUMEN → Revisados 62 | expirados 2 | conservados con plazo abierto 13`.
+> **Con el código anterior esas 13 se habrían archivado.** Medido antes sobre copia de la base: el
+> código viejo habría archivado los 15 lotes vivos, dejando el Funnel a cero.
+>
+> ❌ **El daño ya causado NO se reparó, por decisión de dirección del 2026-08-19.** Los 45 lotes
+> archivados por error se quedan archivados. Se llegó a implementar la reparación con 11
+> regresiones en verde y **se retiró entera**. El motivo: el sistema es una beta, nadie presenta
+> ofertas desde el Funnel todavía, y la decisión del 2026-08-17 dice que hasta la demo los datos
+> son material de prueba. **Lo que había que arreglar era dejar de perderlas, no recuperar las
+> perdidas.** Ver `CONTRATO_REPARACION_FEED.md`, apartado F, que documenta cómo se haría si algún
+> día hiciera falta — incluido el aviso de no estampar `rescatado_at`, que eximiría del archivado
+> para siempre.
+>
+> 📌 **Dato que se conserva porque explica la causa raíz**: consultada la fuente catalana el
+> 2026-08-19, **sólo 2 de esos 45 expedientes seguían en su ventana de 100**. Los otros 43 no
+> vuelven ejecutando el pipeline: envejecieron fuera de la ventana.
+
+**Detectado el 2026-08-19.** `Memoria.soft_delete_obsoletos()` (`src/memoria.py:1610`) marca como
+`Inactiva` —motivo *"Ausente en el feed de licitaciones vigentes (Expirado)"*— todo lote en estado
+`Nueva` cuyo expediente no apareció en la última corrida. **Esa rama no consulta la fecha límite.**
+
+**El detalle que lo convierte en defecto y no en criterio**: la consulta **sí trae** el dato que
+lo evitaría —`SELECT id, fecha_limite FROM expedientes WHERE last_seen_feed < ?`— y la variable
+`fecha_limite` se desempaqueta en el bucle. La rama hermana, la de los lotes que **no** están en
+`Nueva`, sí la consulta y hace lo correcto: si el plazo no ha vencido no declara expiración sino
+`Anulada_Administracion` con alerta de *"posible anulación"*.
+
+> **La cautela existe, está escrita y funciona — pero se aplica a la población que no la
+> necesita.** Un expediente que alguien ya tocó recibe el trato cuidadoso; uno recién ingerido,
+> que es el caso de **todo** lo que entra, se da por expirado sin mirar el calendario. `Nueva` es
+> el estado inicial de cada licitación que capta el Radar.
+
+**Medido sobre la base del 2026-08-19:**
+
+| | |
+|---|---|
+| Lotes archivados como *"Ausente en el feed (Expirado)"* **con la fecha límite aún por llegar** | **45** |
+| PBL que representan | **19.986.870,63 €** |
+| Score máximo entre ellos | **82** |
+| Score máximo visible hoy en el Funnel | **71** |
+
+**Las dos mejores oportunidades de toda la base están archivadas**, ambas con 82 puntos y plazo
+abierto hasta el 14 y el 15 de septiembre. Y la fuente más castigada es **`PSCP Catalunya API`:
+sus 16 expedientes están archivados, los 16** — que es justo la fuente **100 % catalana** y la
+única con **cobertura documental completa** (16 de 16 con pliego, frente al 63 % del PCSP Estatal
+y el 25 % de las CCAA Agregadas).
+
+**Consecuencia en cadena, y es lo que explica el síntoma original**: como la única fuente que trae
+pliegos de forma fiable se archiva entera en la corrida siguiente, al Funnel sólo le quedan las
+dos fuentes estatales, que rara vez traen enlaces a documentos. De ahí que **de 15 expedientes
+vivos sólo 4 tengan pliego descargado** y que el análisis semántico "no se vea": en su mayor
+parte no existe, y no por culpa del Analista.
+
+> ⚠️ **Corrige una conclusión anotada el 2026-08-18.** `ESTADO.md` explicaba la caída de PBL de
+> 20,7 M€ a 5,9 M€ diciendo que **no era un defecto**, sino el Depurador archivando por plazo
+> vencido. **No era eso.** El importe no se fue por plazos cumplidos: se fue por expedientes que
+> desaparecieron del feed teniendo el plazo abierto. La cifra coincide casi exactamente con los
+> 19,99 M€ medidos arriba.
+
+**La causa raíz está una capa más abajo, y es peor que la rama olvidada.** El motivo que escribe
+el código dice *"Ausente en el feed de licitaciones **vigentes**"*, y esa palabra es la premisa
+equivocada: **ninguna de las tres fuentes publica un censo de licitaciones vigentes. Las tres son
+ventanas de publicaciones recientes.**
+
+* `PSCP Catalunya API` pide literalmente `"$order": "data_publicacio_anunci DESC", "$limit": 100`
+  (`src/radar.py:357`): **las 100 publicaciones más recientes**. Una licitación publicada hace diez
+  días sale de la ventana por antigüedad, no por haber terminado.
+* Los dos feeds ATOM se descargan con `fetch_feed()` (`src/radar.py:90`), que parsea **un único
+  documento y no sigue el enlace de paginación**: sólo ve la página más reciente.
+
+**Salir de la ventana no es información sobre la licitación**, y sin embargo el sistema la trata
+como prueba de que ha expirado. Por eso el daño se concentra en la fuente catalana: es la más
+activa en relación a su ventana, así que su catálogo rota entero en pocos días.
+
+> 📌 **Choca con una decisión ya tomada.** El registro del 2026-08-12 dice que *"gobernar el ciclo
+> de vida del dato es competencia exclusiva del Depurador"*. Esta función es el Radar decidiendo
+> ciclo de vida —escribe `updated_by = 'radar'`— a partir de una señal que no significa lo que
+> cree. El Depurador ya archiva por fecha límite, que es el criterio correcto y está validado.
+
+**Medición que acota la reparación**: los **48** lotes archivados por ausencia salieron **todos**
+de la rama `Nueva`; la rama de *"posible anulación"* —la que sí consulta el plazo— **no se ha
+disparado ni una vez (0 filas)**. Reparar sólo la rama `Nueva` corrige por tanto el **100 % del
+daño medido** sin tocar el contrato de la Capa 9, que cita literalmente el escenario
+`Presentada → Anulada_Administracion`. Y `fecha_limite` es legible en **63 de 63** expedientes, de
+modo que el caso "sin fecha" es hoy teórico —pero el código debe resolverlo, y hacia el lado que
+no archiva: el daño es asimétrico y ya está medido en 19,99 M€.
+
+**Por qué la suite no lo ve**: las regresiones ejercitan `soft_delete_obsoletos()` con expedientes
+cuyo plazo ya venció, que es el caso para el que la rama se escribió. El caso que falla —plazo
+abierto y ausencia del feed— **es precisamente el que la rama hermana sí contempla**, de modo que
+leyendo el código parece cubierto.
+
+**Reparación propuesta** *(sin implementar; requiere plan validado)*: que la rama de `Nueva`
+consulte `fecha_limite` igual que su hermana. Un expediente ausente del feed **con el plazo
+abierto** no ha expirado — o la fuente rota su ventana de publicación (ver H-49), o el órgano
+retiró el anuncio, y ninguna de las dos cosas es una expiración. Queda por decidir si merece el
+mismo `Anulada_Administracion` con alerta que la rama hermana, o un estado propio.
+
+### H-49 · El mismo expediente entra dos veces porque su identificador no se normaliza 🟢 CERRADO (2026-08-19)
+
+> ⚠️ **La reparación evidente no servía, y sólo se supo midiéndola.** El contrato proponía
+> *"colapsar espacios repetidos"*. Aplicado a las dos grafías reales, `EXPEDIENT  214 2026…` queda
+> en `EXPEDIENT 214 2026…`, que **sigue sin coincidir** con `EXPEDIENT214 2026…`. Sobre los 63
+> expedientes de la base detectaba **0 duplicados**. Implementarlo habría cerrado el hallazgo con
+> una protección decorativa que además parecería auditada — exactamente lo que el Paso 6 de la
+> Capa 10 dejó avisado.
+>
+> ✅ **Lo que sí funciona**: la plataforma catalana pone en el enlace un código propio que
+> identifica la licitación, y **es idéntico en las dos filas** (`f7bb55cd-…`). Antes de dar de alta
+> un expediente, `Memoria.resolver_id_canonico()` pregunta si ya se conoce una licitación con ese
+> código y, si la conoce, reutiliza su identificador para que la republicación **actualice** la
+> ficha en lugar de crear otra. **Sin cambiar la clave primaria y sin migrar nada**: el dato ya
+> estaba en la columna `link`. Regresiones en `tests/test_h49_id_duplicado.py` (14), una de ellas
+> dedicada a que nadie vuelva a intentar la normalización de espacios.
+>
+> **Se descartó también** quitar todos los espacios: unía las dos grafías, pero fundiría `AB 123`
+> con `AB123`, que pueden ser licitaciones distintas.
+>
+> ❌ **Los duplicados que ya existen no se fusionan.** Colapsar dos filas arrastra documentos,
+> lotes y análisis, es irreversible y necesita su propio paso con previsualización. Esta
+> reparación evita duplicados **nuevos**.
+
+**Detectado el 2026-08-19**, tirando del hilo de H-48. En la fuente catalana el identificador del
+expediente se toma **tal cual** de un campo de texto libre —`item.get("codi_expedient")`,
+`src/radar.py:385`— y se usa como clave primaria sin normalizar espacios ni mayúsculas.
+
+**Evidencia, dos filas de la base de hoy:**
+
+| | Fila A | Fila B |
+|---|---|---|
+| `id` | `EXPEDIENT214 2026 - CONTRACTACIÓ SERVEI` | `EXPEDIENT  214 2026 - CONTRACTACIÓ SERVEI` |
+| Longitud del `id` | 39 | 41 *(dos espacios)* |
+| Publicación de origen | `…/300863057` | `…/300860782` |
+| **UUID de la licitación** | `f7bb55cd-7fae-445e-83db-5c3ddc286e12` | `f7bb55cd-7fae-445e-83db-5c3ddc286e12` |
+| Documentos | **0** | **11** |
+| Longitud del título | **1.663** | 189 |
+| Estado | **VIVO** | archivado |
+| Ingesta | 2026-08-18T08:26:08 | 2026-08-18T08:26:08 |
+
+**Es la misma licitación** —mismo UUID de publicación, ingeridas en el mismo segundo— publicada
+dos veces por la fuente con el código de expediente escrito de dos maneras. Como el identificador
+no se normaliza, entran como dos expedientes distintos.
+
+**Y las dos mitades caen del lado malo**: la fila con los **11 pliegos** y el título corto quedó
+archivada por H-48; la que sobrevive en el Funnel es la que tiene **cero documentos** y el título
+de **1.663 caracteres** que motivó media reparación del Bloque 3. Dicho de otro modo: **el peor
+título de la base y la ausencia de pliegos en el expediente mejor puntuado son el mismo defecto**,
+y no el que se creía.
+
+**Reparación propuesta** *(sin implementar)*: normalizar el identificador antes de usarlo como
+clave —colapsar espacios repetidos y recortar— y evaluar si el UUID de publicación es una clave
+mejor que el código de expediente para la fuente catalana. **Cuidado**: cambiar la clave primaria
+de expedientes ya ingeridos no es una migración inocente y necesita su propio paso con contrato.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |

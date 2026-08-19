@@ -292,8 +292,17 @@ def main():
 
         if not args.dry_run:
             print("[~] Ejecutando Soft Delete de expedientes ausentes en el feed...")
-            db.soft_delete_obsoletos(ejecucion_start_utc)
-            print("[+] Proceso de Soft Delete finalizado.")
+            res_obs = db.soft_delete_obsoletos(ejecucion_start_utc, run_id=ejecucion_id)
+            # Se informa de lo conservado y no sólo de lo archivado: el defecto H-48 vivió
+            # meses porque este barrido no contaba nada y sus efectos sólo se veían en la
+            # base. Lo que aquí importa es cuántas licitaciones vivas NO se han tocado.
+            print(
+                f"[+] Soft Delete finalizado: {res_obs['revisados']} revisados | "
+                f"{res_obs['expirados']} expirados por plazo | "
+                f"{res_obs['ignorados_plazo_abierto']} conservados con plazo abierto | "
+                f"{res_obs['ignorados_sin_fecha']} conservados sin fecha legible | "
+                f"{res_obs['anulaciones']} posibles anulaciones."
+            )
 
         # 6.bis Fase del Depurador: archivar y purgar peso documental (Capa 9).
         #
