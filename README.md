@@ -12,7 +12,7 @@
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
 > **3 (identidad y foco)** están cerrados, con la suite en
-> **553/553**. De **50 hallazgos** catalogados, **47 están
+> **553/553**. De **51 hallazgos** catalogados, **47 están
 > cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
 > —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y dos
 > de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes

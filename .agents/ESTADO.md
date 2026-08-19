@@ -80,8 +80,10 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 > son material de prueba y lo que había que arreglar era dejar de perderlas.
 
 > 🐛 **H-41 sigue abierto y sin asignar** —el crash nativo del pipeline—, pero no se reprodujo en
-> las corridas de hoy. Y quedan **H-39, H-45 y H-46**. **H-47 se cerró con el Paso 5, H-50 con el
-> Paso 6 y H-51 con el Paso 7.**
+> las corridas de hoy. Y quedan **H-39, H-45 y H-46**, más el **H-52** que abrió hoy la comprobación
+> de qué viaja de verdad a GitHub —OneDrive haciendo de canal de distribución—, **diferido por
+> dirección al final del proyecto**. **H-47 se cerró con el Paso 5, H-50 con el Paso 6 y H-51 con
+> el Paso 7.**
 
 > 🔑 **El hallazgo más incómodo de la sesión, y no es técnico: una creencia equivocada del usuario
 > resultó ser un defecto del producto.** El contrato del Bloque 3 anotaba como carencia que
@@ -98,7 +100,7 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **553/553**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **50 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar) y **H-45/46** de la revisión del 18-08. De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **553/553**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **51 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar), **H-45/46** de la revisión del 18-08 y **H-52** (OneDrive como canal de distribución, **diferido por dirección al final del proyecto**). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
@@ -517,11 +519,18 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 **Decisiones ya tomadas que no hay que volver a discutir**: ver la tabla de decisiones al final del dosier de auditoría.
 
+> ⚠️ **Esa última frase acabó siendo un hallazgo, y tardó días en verse (H-52).** «Lo más probable
+> es que se compilara en otra máquina» quedó anotado como curiosidad sobre fechas de artefactos. El
+> 2026-08-19 apareció en `data/` un `licitaciones-WIN-G87QEEBSUTH.db-shm` —el patrón con el que
+> OneDrive renombra un fichero en conflicto, con un nombre de equipo que **no es el de éste**— y
+> las dos cosas dicen lo mismo: **este directorio se ha usado desde más de una máquina, y OneDrive
+> está tocando los ficheros auxiliares de SQLite.** Ver H-52.
+
 ### ⚠️ Pendiente de acción del usuario
 
-**Una sola cuestión abierta, y no bloquea el Paso 7:**
+**Dos cuestiones abiertas. La primera bloquea el Paso 8; la segunda es para el final del proyecto.**
 
-* **Si el pipeline debe tener un tope de duración**, ahora que lo va a lanzar una tarea
+* 🚧 **Si el pipeline debe tener un tope de duración**, ahora que lo va a lanzar una tarea
   nocturna sin consola. **No se ha inventado ningún plazo** porque la Regla 4 lo prohíbe.
   **El enunciado completo está anotado donde toca resolverlo**: en el `README.md`, dentro del
   **Paso 8** de la Capa 10, con las cuatro cosas que hay que decidir y por qué; y su ausencia
@@ -533,6 +542,25 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
   > sistema no parecería averiado sino simplemente vacío de oportunidades. Y la red que hay hoy
   > —la reapropiación a las 6 h— **no mata nada**: sólo deja arrancar a la corrida siguiente, de
   > modo que a las 6 h habría dos pipelines a la vez sobre una base que purga ficheros.
+
+* 📌 **Dónde deben vivir los datos y por qué canal se distribuye el Cockpit compilado (H-52).**
+  **Diferido por dirección el 2026-08-19 al final del proyecto**, y anotado para entonces: no
+  bloquea nada y hoy no hay daño —`PRAGMA integrity_check` da `ok` sobre los 74 expedientes—.
+
+  El proyecto vive dentro de una carpeta de OneDrive, y eso le ha dado dos oficios que nadie le
+  encargó. *(a)* `frontend/dist/` está en `.gitignore` y es lo que FastAPI sirve, así que **el
+  Cockpit compilado llega por sincronización y no por git**: desde un clon limpio harían falta
+  Node.js y `npm run build`, lo que **contradice la decisión del 2026-08-12** de que la máquina de
+  destino sólo necesitara Python. *(b)* La base y los pliegos también están dentro, y apareció un
+  `licitaciones-WIN-G87QEEBSUTH.db-shm` —el patrón de renombrado por conflicto de OneDrive, con un
+  nombre de equipo que **no es el de éste**— sobre una base en modo **WAL**, cuyos `-shm` y `-wal`
+  no son documentos sino el diario de escritura de SQLite.
+
+  > Lo que conviene no perder de vista al llegar: **`ruta_datos()` y `DATA_DIR_INCOOP` ya permiten
+  > mover los datos fuera sin tocar código** —se construyeron para eso en H-25—, así que la mitad
+  > cara del problema puede que sea sólo decidir dónde. Y que si la carpeta se sincroniza en más de
+  > un equipo, **dos pipelines podrían escribir sobre la misma base sin que el cerrojo de la Capa 9
+  > se entere**, porque es local. Evidencia completa en H-52.
 
 **Resueltas el 2026-08-17:**
 
@@ -821,7 +849,7 @@ parece ámbito de Incoop y aparece con la misma frecuencia que CPVs que sí punt
 
 ### Pasos pendientes
 
-De la remediación, ninguno. **50 hallazgos catalogados, 47 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
+De la remediación, ninguno. **51 hallazgos catalogados, 47 cerrados** con prueba de regresión o verificación reproducible. Los diez de H-27 a H-36 no salieron de la remediación sino de abrir la Capa 9, y se cerraron dentro de sus Pasos 3, 4, 5 y 10. Los cuatro últimos salieron de la Capa 10: **H-37** de redactar su contrato (cerrado en el Paso 2), **H-38** de escribir su configuración (Paso 3), **H-39** de verificar en vivo su supervisor (**abierto**, previsto para el Paso 9) y **H-40** de preparar su Paso 6 (cerrado allí mismo).
 
 > **El patrón se repite y conviene tenerlo presente en lo que queda**: ninguno de estos cuatro apareció leyendo código ni con la suite en verde. Salieron de **escribir el contrato, escribir la configuración, arrancar la aplicación y ponerse a implementar**. Es la misma lección que dejaron H-21, H-22 y H-23 en el Paso D8.
 

@@ -2057,6 +2057,76 @@ respuesta, que es lo que permite a la pantalla enseñarlos todos.
 > Fue sumar tres números de una pantalla y compararlos con el cuarto que había debajo. Es el sexto
 > defecto de esta clase en el proyecto y el que menos costaba encontrar.
 
+### H-52 · OneDrive hace de canal de distribución sin que nadie lo haya diseñado 🔴 ABIERTO (diferido por dirección)
+
+**Detectado el 2026-08-19**, al final de la sesión, comprobando qué viaja de verdad a GitHub.
+**Decisión de dirección el mismo día: se anota y se atiende cuando el proyecto esté terminado.**
+No bloquea nada hoy y el sistema funciona; lo que sigue es para que quien lo retome no tenga que
+rediagnosticarlo.
+
+**El proyecto vive dentro de una carpeta sincronizada** (`OneDrive\Documentos\…`), y eso le ha
+dado dos oficios que nadie le encargó. Son dos caras del mismo hecho.
+
+#### Cara A · El Cockpit compilado no viaja por git, viaja por OneDrive
+
+`frontend/dist/` está en `.gitignore`, y `src/api/main.py` sirve precisamente ese directorio como
+estáticos desde la Capa 10, Paso 4. En este equipo funciona porque la carpeta se sincroniza sola.
+
+**Contradice de frente una decisión escrita del 2026-08-12**, que está en la tabla de abajo: *"La
+máquina de destino sólo necesitará Python: FastAPI sirve el Cockpit — elimina una dependencia por
+cada PC de la cooperativa"*. Hoy esa promesa **sólo se cumple si el bundle llega por OneDrive**.
+Desde un clon limpio del repositorio no se cumple: hacen falta Node.js y `npm run build`.
+
+**No es un defecto de código, y conviene decirlo**: `main.py` ya trata el caso con elegancia
+—`COCKPIT_NO_COMPILADO`, un 503 que explica qué ejecutar, y la API arranca igual—. **Lo que falta
+no es manejo del error: es un canal de distribución.** Las salidas razonables —publicar el bundle
+como artefacto de release, compilarlo en la instalación, o versionarlo a propósito— son decisión
+de dirección y tienen contrapartidas distintas.
+
+#### Cara B · La base de datos vive dentro de la carpeta sincronizada, y hay rastro de conflicto
+
+Ésta es la que importa, y la evidencia es concreta:
+
+```
+data/licitaciones.db                        9.461.760 B   2026-08-19 16:07
+data/licitaciones-WIN-G87QEEBSUTH.db-shm       32.768 B   2026-08-18 10:49
+data/incoop_licitaciones.db                         0 B   2026-08-19 09:28
+```
+
+* El fichero `licitaciones-WIN-G87QEEBSUTH.db-shm` **sigue el patrón con el que OneDrive renombra
+  un fichero en conflicto**, añadiéndole el nombre del equipo. Y ese nombre —`WIN-G87QEEBSUTH`—
+  **no es el de este equipo**, que es `AROMAN`.
+* `-shm` y `-wal` **no son documentos**: son la memoria compartida y el diario de escritura de
+  SQLite en modo WAL, que es el modo en que corre esta base (`PRAGMA journal_mode` → `wal`). Un
+  cliente de sincronización que los copie, renombre o restaure **desfasados respecto al `.db`**
+  puede corromper la base o resucitar estado viejo.
+* `incoop_licitaciones.db`, 0 bytes y de hoy, **no lo nombra ninguna línea del código** —
+  comprobado con `grep` sobre `.py`, `.yaml` y `.md`—. Origen desconocido.
+
+> ✅ **Hoy no hay daño, y quedó comprobado antes de anotar esto**: `PRAGMA integrity_check` devuelve
+> `ok` y la base conserva sus 74 expedientes. **Esto es un riesgo con rastro, no una avería.**
+
+**Qué habrá que resolver cuando toque**, sin decidirlo ahora: si la base y los pliegos deben vivir
+**fuera** de la carpeta sincronizada —`ruta_datos()` y `DATA_DIR_INCOOP` ya permiten reubicarlos sin
+tocar una línea de código, que es justo para lo que se construyeron (H-25)— y por qué canal se
+distribuye el Cockpit compilado. **Y de dónde salió ese `-shm`**: si la carpeta se sincroniza en más
+de un equipo, dos pipelines podrían escribir sobre la misma base sin que el cerrojo de la Capa 9
+—que es local— llegue a enterarse.
+
+> ⚠️ **Y ya había un indicio escrito hace días, sin conectar con esto.** `ESTADO.md` documenta que
+> en su momento se dio por desfasado `frontend/dist/` mirando su fecha, y que era falso: al
+> recompilar, Vite generó **los mismos nombres de fichero**, que son un hash del contenido. La
+> conclusión que se anotó entonces fue *"el proyecto vive en OneDrive, así que lo más probable es
+> que se compilara en otra máquina"*. **Esa frase y el `-shm` con nombre de otro equipo dicen lo
+> mismo**: este directorio se ha usado desde más de una máquina. Se leyó como una curiosidad sobre
+> fechas de artefactos; era el primer síntoma de la Cara B.
+
+> 🔑 **Por qué se cataloga algo que hoy no rompe nada.** Porque el proyecto ya tiene dos precedentes
+> de esta forma exacta: H-18 —rutas resueltas contra el directorio de trabajo, que no fallaban,
+> puntuaban distinto— y H-38 —la URL absoluta del bundle, que funcionaba *por casualidad* mientras
+> el puerto fue 8000—. Las tres son lo mismo: **algo funciona por una circunstancia del entorno que
+> nadie eligió y que nada garantiza.**
+
 ---
 
 ## Registro de decisiones tomadas
