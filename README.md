@@ -1301,7 +1301,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 | `Incoop.ico` + `tools/crear_accesos_directos.py` | Icono y accesos directos | 🟢 Paso 7. Alta y baja idempotentes en escritorio y menú de inicio. Lo que se hace a mano no se documenta ni se reproduce. |
 | `config/lanzador.yaml` | Configuración versionada | Puerto, tope de espera, apertura del navegador y hora del despertador. Sin valores por defecto. |
 | `data/lanzador.pid` | Marca del servidor propio | 🟢 Paso 5. Distingue lo que arrancó el lanzador de lo que ya estaba. Sin esto no puede apagar sólo lo suyo. |
-| Tarea programada de Windows | El despertador | Registrada y dada de baja desde una herramienta del proyecto, no a mano por la interfaz. |
+| Tarea programada de Windows | El despertador | 🟢 Paso 8. Alta y baja idempotentes con `tools/registrar_despertador.py`. Corre **dentro de la sesión** (`InteractiveToken`): `S4U` exige permisos de administrador que la cuenta no tiene. Lo que se pierde lo amortigua `StartWhenAvailable`. |
 | `POST /api/v1/admin/apagar` | Apagado ordenado | 🟢 Paso 5. Único cierre limpio posible sin consola. Sólo `127.0.0.1` y con el testigo del fichero PID. |
 | `MANUAL.md` | Manual de operación | **El primer documento del proyecto escrito para quien usa el sistema, no para quien lo construye.** Se redacta en el Paso 10. |
 
@@ -1551,7 +1551,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      análisis y 0 errores**, cifras de pantalla comparadas una a una con la consulta directa, y
      apagado limpio al cerrar.
 
-8. **Paso 8 — El Despertador: Tarea Programada de Windows**: 💤
+8. **Paso 8 — El Despertador: Tarea Programada de Windows**: 🟢 **Completado y verificado el 2026-08-25.**
    - Herramienta del proyecto para **registrar y dar de baja** la tarea, no configuración a mano
      por la interfaz gráfica: lo que se hace a mano no se documenta ni se reproduce.
    - Ejecuta el modo **sólo pipeline** —prospectar de madrugada no debe abrir un navegador en una
@@ -1567,7 +1567,25 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    - Idempotente: registrarla dos veces no crea dos tareas, y darla de baja es tan sencillo como
      registrarla.
 
-   > ❓ **CUESTIÓN ABIERTA QUE ESTE PASO DEBE RESOLVER: ¿tiene el pipeline un tope de duración?**
+   > ✅ **RESUELTO el 2026-08-25: sí, 60 minutos.** No se inventó: se midieron las 9 corridas
+   > reales de la base, que van de 36 s a **8,1 min**. El tope es 7,4 veces la más larga jamás
+   > observada y queda muy por debajo de las 6 h de reapropiación del cerrojo, de modo que un
+   > cuelgue se corta la misma noche. Vive en `config/lanzador.yaml` (configuración a v1.1.0) y
+   > al vencer emite el **código 32** y `LANZADOR_PIPELINE_AGOTADO`. El contrato subió a v1.3.0.
+   >
+   > ✅ **Y RESUELTO lo que no estaba previsto: la tarea corre DENTRO de la sesión.** Se diseñó
+   > sobre `S4U` y el Programador respondió `Acceso denegado` — la cuenta de este equipo es un
+   > usuario estándar. Con `InteractiveToken` se registra sin problema, y **toda la dificultad
+   > del paso (Session 0, diálogos que esperan a nadie) desaparece con ella**. Lo que se pierde
+   > —no prospectar con la sesión cerrada— lo amortigua `StartWhenAvailable`. Herramientas:
+   > `tools/registrar_despertador.py` y `tools/verificar_session0.py`.
+   >
+   > **Verificado disparando la tarea, no simulándola**: corrida id 13, `COMPLETED` en 88,8 s,
+   > sin ningún proceso vivo al terminar y con el Programador registrando resultado `0`.
+   >
+   > <details><summary>El enunciado original de la cuestión abierta, que se conserva</summary>
+   >
+   > ❓ **¿tiene el pipeline un tope de duración?**
    > *(Planteada el 2026-08-17 al cerrar el Paso 6. Requiere decisión de dirección antes de
    > implementar el Paso 8.)*
    >
@@ -1610,6 +1628,8 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    > benigno frente a un cuelgue. Pero los dos comparten causa probable, la fase documental, y
    > conviene mirarlos juntos: si se diagnostica H-41 antes, es posible que el tope de duración
    > pueda decidirse con datos en vez de a ojo.
+
+   > </details>
 
 9. **Paso 9 — La Voz del Proceso Silencioso**: 💤
    - **Cuatro canales, y cuál se usa depende de hasta dónde llegó el arranque.** Es lo que hace que

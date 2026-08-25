@@ -42,7 +42,11 @@ def _xml_prueba():
 
 
 @pytest.mark.parametrize("fragmento", [
-    "<LogonType>S4U</LogonType>",
+    # El modo de sesión es lo primero que tienen que compartir: verificar la Session 0 con una
+    # tarea que corre EN la sesión no verificaría nada. Desde el 2026-08-25 el despertador usa
+    # `InteractiveToken`, así que la prueba también — y el día que se pueda volver a `S4U`,
+    # esta comprobación obliga a mover las dos a la vez.
+    "<LogonType>InteractiveToken</LogonType>",
     "-m src.lanzador --modo pipeline",
     "<StartWhenAvailable>true</StartWhenAvailable>",
 ])

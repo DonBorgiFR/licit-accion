@@ -21,22 +21,39 @@ configuración declara `ejecutar_si_se_perdio`, que en el Programador es `StartW
 dado una tarea que ignora en silencio la mitad de lo que el fichero declara — un fin de semana con
 el equipo apagado y un lunes sin las oportunidades del viernes.
 
-**2. La tarea invoca `python.exe`, no `pythonw.exe` — y nunca `Incoop.vbs`.** Lo del `.vbs` viene
-del Paso 7 y es la invariante central: su diálogo de arranque colgaría **para siempre** en la
-Session 0. Lo de `python.exe` es más fino y va al revés que en el doble clic: la lanzadera usa
-`pythonw` porque ahí hay una persona que vería la consola negra, y aquí no hay nadie. A cambio,
-un proceso con consola **puede recibir `CTRL_BREAK_EVENT`**, que es el nivel 2 de la escalera con
-la que el Paso 8 detiene un pipeline colgado — y la diferencia entre ese nivel y el siguiente es
-la diferencia entre una corrida cerrada limpiamente y una fila `RUNNING` fantasma.
+**2. Nunca `Incoop.vbs`.** Viene del Paso 7 y es la invariante central: su diálogo de arranque
+colgaría **para siempre** si la tarea corriera sin escritorio.
 
-**3. `LogonType = S4U`, que es *"ejecutar tanto si el usuario ha iniciado sesión como si no"* sin
-guardar ninguna contraseña.** La casilla es la decisión crítica del paso: es lo correcto para una
-tarea nocturna y es lo que lleva el proceso a la Session 0. La alternativa —`Password`— obligaría a
-teclear la contraseña de Windows aquí dentro, y **esta herramienta no maneja contraseñas**. Si S4U
-no funcionara en este equipo, el remedio no es que la herramienta pida la contraseña: es que la
-persona cambie ese ajuste desde el Programador, con sus credenciales y sin intermediarios.
+**3. `LogonType = InteractiveToken` por defecto, y no `S4U`** *(decisión de dirección,
+2026-08-25, tomada con la medición delante)*.
 
-**4. `WorkingDirectory` en la raíz del proyecto, y la orden es `-m src.lanzador`.** `python
+El paso se diseñó sobre `S4U` —*"ejecutar tanto si el usuario ha iniciado sesión como si no"* sin
+guardar contraseña—, porque es lo canónico para una tarea nocturna. **Al ir a registrarla, el
+Programador la rechazó: `Acceso denegado`.** La cuenta de este equipo (`AROMAN\\USUARIO`) es un
+usuario estándar, sin permisos de administrador, y *"ejecutar sin sesión iniciada"* exige el
+privilegio *Iniciar sesión como trabajo por lotes*, que sólo un administrador concede. Medido
+contra el sistema real, no deducido: con `S4U` el alta da `Acceso denegado`; con
+`InteractiveToken` se crea sin una queja.
+
+**Y lo que parecía un recorte resultó ser una simplificación.** Toda la dificultad de este paso
+—la Session 0, el diálogo que espera a un usuario que no existe, la verificación con la sesión
+cerrada— **venía exclusivamente de `S4U`**. Con `InteractiveToken` el pipeline corre en la sesión
+de la persona, igual que tras un doble clic, y esa clase entera de fallo desaparece.
+
+**Lo que se pierde, dicho sin adornos**: no prospecta con el equipo encendido y la sesión cerrada.
+Lo amortigua `StartWhenAvailable` —que ya estaba decidido—: una ejecución perdida se lanza **en
+cuanto la persona entra**, así que un día sin prospectar se convierte en una prospección al
+encender por la mañana.
+
+**`Password` no se contempla**: obligaría a teclear la contraseña de Windows dentro de una
+herramienta del proyecto, y **esta herramienta no maneja contraseñas**. Si algún día hiciera falta
+`S4U`, lo concede un administrador desde fuera, sin intermediarios.
+
+**4. El intérprete depende de eso mismo**, y por eso `_interprete()` recibe el modo. Con sesión
+abierta, `pythonw.exe`: `python.exe` plantaría una consola negra delante de quien esté trabajando,
+y el Programador no sabe ocultar la ventana de una acción. Ver el detalle en esa función.
+
+**5. `WorkingDirectory` en la raíz del proyecto, y la orden es `-m src.lanzador`.** `python
 src/lanzador.py` **no arranca** —`ModuleNotFoundError: No module named 'src'`—, que es la trampa de
 la Convención C1 y exactamente el defecto que fue H-50. Una tarea nocturna que fallara así no lo
 diría en ningún sitio salvo en un código de salida que nadie mira.
@@ -61,11 +78,31 @@ from src.lanzador import cargar_configuracion  # noqa: E402
 NOMBRE_TAREA = "Incoop - Despertador"
 
 
-def _interprete() -> str:
-    """`python.exe`, aunque nos hayan invocado con `pythonw.exe`. Ver la decisión 2 de arriba."""
+def _interprete(sin_sesion: bool = False) -> str:
+    """Qué intérprete pone la tarea, y depende de si habrá alguien delante.
+
+    * **Con la sesión abierta (`sin_sesion=False`, el caso normal): `pythonw.exe`.** La tarea
+      corre en el escritorio de la persona, y `python.exe` le plantaría **una consola negra
+      delante mientras trabaja**, a las 06:30 o al encender el equipo. El Programador de tareas
+      no sabe ocultar la ventana de una acción, así que la única forma de no molestar es un
+      intérprete que no cree ninguna.
+    * **Sin sesión iniciada (`sin_sesion=True`): `python.exe`.** Ahí no hay nadie a quien
+      molestar, y a cambio un proceso **con** consola puede recibir `CTRL_BREAK_EVENT` —el
+      nivel 2 de la escalera que detiene un pipeline colgado—, que es la diferencia entre una
+      corrida cerrada limpiamente y una fila `RUNNING` fantasma.
+
+    ⚠️ **El coste de `pythonw` está medido y asumido**: bajo él, `CTRL_BREAK_EVENT` falla con
+    «WinError 6» *(Paso 5, 2026-08-18)*, de modo que un pipeline que agote su tope se detendrá
+    por las bravas y dejará su fila `RUNNING` sin cerrar. **No es un cabo suelto**: es lo que
+    H-40 reparó en el Paso 6 —la corrida siguiente ve que el PID ya no existe y la reclama—.
+    Se prefiere eso a una ventana negra en la cara de quien está trabajando.
+    """
     ejecutable = sys.executable
-    if os.path.basename(ejecutable).lower() == "pythonw.exe":
-        candidato = os.path.join(os.path.dirname(ejecutable), "python.exe")
+    carpeta = os.path.dirname(ejecutable)
+    deseado = "python.exe" if sin_sesion else "pythonw.exe"
+
+    if os.path.basename(ejecutable).lower() != deseado:
+        candidato = os.path.join(carpeta, deseado)
         if os.path.exists(candidato):
             return candidato
     return ejecutable
@@ -77,6 +114,7 @@ def _construir_xml(
     tope_minutos: int,
     una_sola_vez=None,
     nota: str = "",
+    sin_sesion: bool = False,
 ) -> str:
     """El XML de la tarea, construido desde `config/lanzador.yaml` y de ningún otro sitio.
 
@@ -98,11 +136,16 @@ def _construir_xml(
     # que actúe primero sea siempre el que sabe explicarse.
     limite_programador = f"PT{max(tope_minutos * 2, 120)}M"
 
+    cuando_corre = (
+        "Corre sin sesion iniciada, en la Session 0: ni una sola llamada grafica."
+        if sin_sesion else
+        "Corre dentro de la sesion del usuario, asi que no necesita permisos de administrador."
+    )
     descripcion = (
-        f"Prospeccion nocturna del Ecosistema de Licitaciones de Incoop. "
+        f"Prospeccion del Ecosistema de Licitaciones de Incoop. "
         f"Dada de alta por tools/registrar_despertador.py en el equipo {equipo} el {hoy}. "
-        f"Ejecuta el modo 'solo pipeline': sin servidor, sin pantalla y sin una sola llamada "
-        f"grafica, porque corre en la Session 0. No invocar Incoop.vbs desde aqui."
+        f"Ejecuta el modo 'solo pipeline': sin servidor y sin pantalla. {cuando_corre} "
+        f"No invocar Incoop.vbs desde aqui."
     )
     if nota:
         descripcion = f"{nota} {descripcion}"
@@ -130,7 +173,7 @@ def _construir_xml(
   <Principals>
     <Principal id="Author">
       <UserId>{usuario}</UserId>
-      <LogonType>S4U</LogonType>
+      <LogonType>{'S4U' if sin_sesion else 'InteractiveToken'}</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
@@ -149,7 +192,7 @@ def _construir_xml(
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>{_interprete()}</Command>
+      <Command>{_interprete(sin_sesion)}</Command>
       <Arguments>-m src.lanzador --modo pipeline</Arguments>
       <WorkingDirectory>{PROJECT_ROOT}</WorkingDirectory>
     </Exec>
@@ -264,9 +307,14 @@ def dar_de_alta(config) -> int:
     print(f"      Ejecuta   : {_interprete()} -m src.lanzador --modo pipeline")
     print(f"      Desde     : {PROJECT_ROOT}")
     print()
-    print("  ⚠️  Que la tarea se registre NO cierra el Paso 8. Lo que lo cierra es comprobar")
-    print("      que una corrida SIN SESIÓN INICIADA termina sola y no deja proceso vivo:")
-    print("      el síntoma de un diálogo esperando a nadie es un proceso que no acaba nunca.")
+    print("  [i] Corre DENTRO de tu sesion, no en la Session 0. Eso significa:")
+    print("      - Si el equipo esta encendido y has entrado, prospecta a esa hora.")
+    print("      - Si estaba apagado o fuera, lo hace en cuanto entras. No se pierde el dia.")
+    print("      - No prospecta con el equipo encendido y la sesion cerrada: eso exigiria")
+    print("        permisos de administrador que esta cuenta no tiene.")
+    print()
+    print("  [i] Para verla funcionar ahora sin esperar a manana:")
+    print(f'      schtasks /Run /TN "{NOMBRE_TAREA}"')
     return 0
 
 

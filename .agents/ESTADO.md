@@ -16,9 +16,49 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-25)
 
+**El Paso 8 de la Capa 10 está CERRADO y verificado contra el sistema real.** El pipeline ya se
+ejecuta solo: la tarea está dada de alta en `AROMAN` y su próxima ejecución es a las 06:30. La
+suite está en **623/623**.
+
+> ✅ **Verificado disparando la tarea de verdad, no simulándola** *(2026-08-25 19:13)*: nació la
+> corrida **id 13**, terminó **COMPLETED en 88,8 s** con 1 expediente nuevo y 0 errores, **no dejó
+> ningún proceso vivo**, y el Programador de tareas registró **último resultado: 0**.
+
+> 🔑 **La decisión que cambió el paso entero, y salió de que el sistema dijera que no.** Todo el
+> Paso 8 se diseñó sobre `S4U` —*"ejecutar tanto si el usuario ha iniciado sesión como si no"*—,
+> con su Session 0, su diálogo que espera a un usuario que no existe y su verificación con la
+> sesión cerrada. **Al ir a registrar la tarea, el Programador respondió `Acceso denegado`**: la
+> cuenta `AROMAN\USUARIO` es un usuario estándar y ese modo exige un privilegio que sólo concede
+> un administrador. Medido, no deducido: con `S4U` el alta falla; con `InteractiveToken` se crea
+> sin una queja.
+>
+> **Y lo que parecía un recorte era una simplificación.** Toda la dificultad del paso venía de
+> `S4U`. Corriendo dentro de la sesión, esa clase entera de fallo desaparece — y la verificación
+> pasó de *"cierra sesión y espera"* a **disparar la tarea y mirar**, que además es reproducible.
+>
+> **Lo que se pierde, sin adornos**: no prospecta con el equipo encendido y la sesión cerrada. Lo
+> amortigua `StartWhenAvailable`, que ya estaba decidido: una ejecución perdida se lanza **en
+> cuanto se entra**, así que un día sin prospectar se convierte en una prospección al encender.
+
+**Lo que ya se puede hacer, y antes no**: **no hacer nada**. El sistema busca licitaciones solo.
+
+**Lo que sigue**: el **Paso 9** de la Capa 10 —la voz del proceso silencioso, que cierra **H-39**—
+y el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`.
+
+> ⚠️ **Y una advertencia de método sobre esta sesión, escrita para quien la lea después.** Se
+> cerraron cuatro cosas en un día —H-53, H-54, el tope y el despertador— y **dirección se perdió
+> por el camino**: *"cometes errores y has hecho supuestas pruebas de las que no veo nada"*. Era
+> cierto. Se narraron hallazgos internos, mutaciones y metodología de pruebas en vez de **dónde
+> está el proyecto y qué tiene que hacer la persona**. Lo que desatascó la sesión no fue más
+> trabajo: fue parar, decir en cinco líneas que el sistema funcionaba y que su Windows estaba
+> intacto, y dar **un solo paso siguiente con instrucciones concretas**. **El rigor que no se
+> puede explicar en dos frases no se distingue del ruido.**
+
+### 📕 Antes, en la misma sesión del 2026-08-25 (referencia)
+
 **Se tomaron las dos decisiones de dirección que bloqueaban el Paso 8**, y en vez de abrirlo se
 fue antes a por **H-41**, que era la condición que la propia dirección puso. La suite está en
-**580/580**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
+**623/623**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
 condiciones nuevas que no existían ayer *(abajo)*.
 
 > 🚨 **Lo más importante de la sesión: H-41 tiene sitio, y no era el que el dosier decía.** La
@@ -202,14 +242,14 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **580/580**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (cara A: Tesseract sin instalar en `AROMAN`; **la cara B, la irreversible, reparada el 2026-08-25**), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **623/623**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (cara A: Tesseract sin instalar en `AROMAN`; **la cara B, la irreversible, reparada el 2026-08-25**), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **el Paso 8 quedó cerrado el 2026-08-25**; espera el **Paso 9**. El sistema ya se usa con un doble clic **y se ejecuta solo**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 580/580
+python -m pytest tests/ -q          # debe dar 623/623
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.

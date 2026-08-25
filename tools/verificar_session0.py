@@ -196,7 +196,7 @@ def revisar() -> int:
 
     if not corrida_nueva:
         print()
-        print("  ⚠️  VEREDICTO: la prueba NO llegó a ejecutarse.")
+        print("  [!] VEREDICTO: la prueba NO llegó a ejecutarse.")
         print("     No demuestra nada, ni bueno ni malo. Comprueba si esperaste lo bastante,")
         print("     si cerraste sesión de verdad y si el equipo siguió encendido.")
         return 3
@@ -226,7 +226,7 @@ def revisar() -> int:
 
     print()
     if sigue_corriendo or nuevos:
-        print("  ❌ VEREDICTO: FALLA. Quedó algo vivo después de la prueba.")
+        print("  [X] VEREDICTO: FALLA. Quedó algo vivo después de la prueba.")
         print("     Es exactamente el fallo que el Paso 8 existe para impedir: una llamada")
         print("     gráfica se escapó a la Session 0 y está esperando a un usuario que no")
         print("     existe. Hay que buscarla, y el sitio es `es_sesion_interactiva()`.")
@@ -235,12 +235,12 @@ def revisar() -> int:
         return 1
 
     if not corrida_cerrada:
-        print("  ⚠️  VEREDICTO: PARCIAL. No quedó proceso vivo, pero la corrida sigue RUNNING.")
+        print("  [!] VEREDICTO: PARCIAL. No quedó proceso vivo, pero la corrida sigue RUNNING.")
         print("     Se murió sin ejecutar su `finally`. No es el fallo de la Session 0, pero")
         print("     conviene mirar por qué: es la firma de H-41.")
         return 1
 
-    print("  ✅ VEREDICTO: PASA.")
+    print("  [OK] VEREDICTO: PASA.")
     print("     Una corrida sin escritorio terminó sola, no dejó ningún proceso vivo y su")
     print("     fila quedó cerrada. Es lo que cierra el Paso 8.")
     print()

@@ -29,9 +29,9 @@ from tools import registrar_despertador as despertador  # noqa: E402
 # ANDAMIAJE
 # =====================================================================
 
-def xml(hora="06:30", recuperar=True, tope=60):
+def xml(hora="06:30", recuperar=True, tope=60, sin_sesion=False):
     return despertador._construir_xml(
-        hora=hora, ejecutar_si_se_perdio=recuperar, tope_minutos=tope
+        hora=hora, ejecutar_si_se_perdio=recuperar, tope_minutos=tope, sin_sesion=sin_sesion
     )
 
 
@@ -104,21 +104,33 @@ def test_la_tarea_arranca_desde_la_raiz_del_proyecto():
     assert f"<WorkingDirectory>{PROJECT_ROOT}</WorkingDirectory>" in generado
 
 
-def test_la_tarea_usa_python_y_no_pythonw(monkeypatch, tmp_path):
-    """Al revés que el doble clic, y a propósito.
+def test_el_interprete_depende_de_si_hay_alguien_delante(monkeypatch, tmp_path):
+    """Con la sesión abierta, `pythonw`: `python.exe` plantaría una consola negra delante de
+    quien esté trabajando, a las 06:30 o al encender, y el Programador no sabe ocultar la
+    ventana de una acción.
 
-    La lanzadera usa `pythonw` porque ahí hay una persona que vería la consola negra. Aquí no
-    hay nadie, y a cambio un proceso **con** consola puede recibir `CTRL_BREAK_EVENT`, que es
-    el nivel 2 de la escalera con la que el Paso 8 detiene un pipeline colgado. Ese nivel es la
+    Sin sesión no hay a quién molestar, y a cambio un proceso **con** consola puede recibir
+    `CTRL_BREAK_EVENT` —el nivel 2 de la escalera que detiene un pipeline colgado—, que es la
     diferencia entre una corrida cerrada limpiamente y una fila `RUNNING` fantasma.
     """
     falso_pythonw = tmp_path / "pythonw.exe"
     falso_python = tmp_path / "python.exe"
     falso_pythonw.write_bytes(b"")
     falso_python.write_bytes(b"")
-    monkeypatch.setattr(sys, "executable", str(falso_pythonw))
 
-    assert despertador._interprete() == str(falso_python)
+    monkeypatch.setattr(sys, "executable", str(falso_python))
+    assert despertador._interprete(sin_sesion=False) == str(falso_pythonw)
+
+    monkeypatch.setattr(sys, "executable", str(falso_pythonw))
+    assert despertador._interprete(sin_sesion=True) == str(falso_python)
+
+
+def test_la_tarea_normal_no_abre_una_consola_en_la_cara_de_nadie():
+    """La comprobación de arriba, pero sobre el XML que de verdad se registra."""
+    orden = _lo_que_se_ejecuta(xml()).lower()
+
+    assert "pythonw.exe" in orden
+    assert "\\python.exe" not in orden
 
 
 # =====================================================================
@@ -140,16 +152,32 @@ def test_ejecutar_si_se_perdio_llega_a_la_tarea(recuperar, esperado):
     assert f"<StartWhenAvailable>{esperado}</StartWhenAvailable>" in xml(recuperar=recuperar)
 
 
-def test_la_casilla_critica_no_guarda_contrasenas():
-    """*"Ejecutar tanto si el usuario ha iniciado sesión como si no"*, sin credenciales.
+def test_la_tarea_nunca_guarda_una_contrasena():
+    """Ni en el modo normal ni en el que necesitaría un administrador.
 
-    `S4U` da exactamente eso. La alternativa, `Password`, obligaría a teclear la contraseña de
-    Windows dentro de una herramienta del proyecto, y eso no se hace aquí ni con permiso.
+    `Password` obligaría a teclear la contraseña de Windows dentro de una herramienta del
+    proyecto, y eso no se hace aquí ni con permiso: si algún día hiciera falta, lo concede un
+    administrador desde fuera.
     """
-    generado = xml()
+    assert "Password" not in xml()
+    assert "Password" not in xml(sin_sesion=True)
 
-    assert "<LogonType>S4U</LogonType>" in generado
-    assert "Password" not in generado
+
+def test_por_defecto_la_tarea_corre_dentro_de_la_sesion():
+    """Decisión del 2026-08-25, tomada con la medición delante: con `S4U` el Programador
+    responde `Acceso denegado` en este equipo, porque la cuenta no es administradora.
+
+    Y resultó ser una simplificación: toda la dificultad del paso —la Session 0, el diálogo
+    que espera a un usuario que no existe— venía exclusivamente de `S4U`.
+    """
+    assert "<LogonType>InteractiveToken</LogonType>" in xml()
+    assert "<LogonType>S4U</LogonType>" in xml(sin_sesion=True)
+
+
+def test_una_ejecucion_perdida_se_recupera_al_entrar():
+    """Es lo que amortigua lo que se pierde al no correr sin sesión: un día sin prospectar se
+    convierte en una prospección al encender el equipo por la mañana."""
+    assert "<StartWhenAvailable>true</StartWhenAvailable>" in xml()
 
 
 def test_el_programador_corta_mas_tarde_que_nuestro_propio_tope():
