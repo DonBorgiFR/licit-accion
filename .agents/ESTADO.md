@@ -21,12 +21,18 @@ fue antes a por **H-41**, que era la condición que la propia dirección puso. L
 **560/560**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
 condiciones nuevas que no existían ayer *(abajo)*.
 
-> 🚨 **Lo más importante de la sesión, y conviene leerlo antes que nada: H-41 no estaba donde el
-> dosier decía.** La auditoría nombraba dos sospechosos —*"las dos únicas piezas nativas del
-> pipeline"*, PyMuPDF y Tesseract—. Medidos los dos: **PyMuPDF lee los 205 PDF reales, 3.363
-> páginas, en 67 s sin una sola muerte** —y entre ellos están íntegros **los 76 documentos de la
-> corrida que reventó**—; **Tesseract no se ha ejecutado nunca en toda la historia del sistema**,
-> 0 documentos de 268. Los dos sospechosos salían de razonar sobre el código, no de medir.
+> 🚨 **Lo más importante de la sesión: H-41 tiene sitio, y no era el que el dosier decía.** La
+> auditoría buscaba en *"las dos únicas piezas nativas del pipeline"*, PyMuPDF y Tesseract.
+> Medidos los dos, ninguno se sostiene: **PyMuPDF lee los 205 PDF reales, 3.363 páginas, en 67 s
+> sin una sola muerte** —y entre ellos están íntegros **los 76 documentos de la corrida que
+> reventó**—, y **Tesseract no se ha ejecutado nunca**, 0 documentos de 268.
+>
+> **Dónde murió de verdad**: descargando el **feed RSS del DOGC**, en la fase del Centinela, dos
+> fases más allá. La última línea que el proceso escribió es `boletin_fetch_started` con la URL
+> `https://dogc.gencat.cat/es/rss/index.html`, y después nada. La descarga está envuelta en un
+> `except Exception` con modo degradado que **no llegó a emitirse**, así que no fue un fallo de red
+> normal. Y el sospechoso nativo que nadie había listado es **TLS**: `urlopen` sobre HTTPS baja a
+> `_ssl` y de ahí a OpenSSL. *(Que muriera ahí está demostrado; que la culpa sea de OpenSSL, no.)*
 
 **Las dos decisiones de dirección, ya tomadas** *(2026-08-25)*:
 
@@ -55,11 +61,13 @@ condiciones nuevas que no existían ayer *(abajo)*.
   `OCR_REQUERIDO`, así que **instalar Tesseract mañana no recuperaría ni uno de los diferidos**.
   Es la forma exacta de H-33, en otro punto del mismo vocabulario. Hoy son 2 documentos; crece
   solo y en silencio.
-* **H-54 · 63 documentos se esfumaron del disco sin registro.** Todos los del 2026-08-12, ninguno
-  de ningún otro día. Sus filas siguen diciendo `PROCESADO` con su `local_path` intacto y
-  **33,4 MB** que el sistema cree conservar y no tiene. La tabla `purgas` declara `0` documentos y
-  `0` bytes en sus 6 filas — **y no existe la fila `id = 1`**. Es la firma literal del peligro que
-  la Capa 9 declaró asimétrico.
+* **H-54 · La base sigue reclamando 63 pliegos que se borraron hace trece días.** ⚠️ **Ojo: se
+  catalogó primero como un misterio y no lo era** — los borró **H-36**, que ya estaba cerrado en el
+  dosier y dice literalmente *"63 pliegos (35 MB)"*. Se rediagnosticó algo ya diagnosticado. **Lo
+  que sí queda vivo** es que H-36 se cerró impidiendo que se repita y dirección decidió no
+  recuperar los PDF, pero **nadie reconcilió la base**: 63 filas siguen diciendo `PROCESADO` con su
+  ruta intacta y **33,4 MB** que el sistema cree tener. Fechado con la marca de tiempo de las
+  carpetas que quedaron vacías: **12-08 a las 12:11:35-36 UTC**, dos segundos.
 * **H-55 · El rastro de auditoría está roto y la segunda máquina firma en él.** `pipeline.jsonl`
   tiene **11 líneas partidas** de 4.078, y dentro conviven **122 menciones de
   `C:\Users\borja\...`** y 421 de `C:\Users\USUARIO\...`. **H-52 deja de ser un riesgo teórico**:
@@ -77,17 +85,24 @@ más que ayer:
    programando a diario un proceso cuya fase de OCR se sabe muerta, y cada pliego escaneado que
    entre quedará descartado de forma irreversible. **O se instala Tesseract en `AROMAN`, o el OCR
    se declara fuera de alcance por ahora y consta.**
-3. 📌 **Distinguir las dos hipótesis de H-54** —¿murió la corrida id 4 a mitad de la purga, o hubo
-   una purga que terminó y contabilizó 0?—. **No bloquea el Paso 8**, pero es el hilo que queda
-   vivo de H-41 y las dos hipótesis piden reparaciones distintas.
+3. 📌 **Decidir cómo se reconcilian las 63 filas de H-54** —pasarlas a `PURGADO`, que la máquina
+   de estados de la Capa 9 ya contempla, o vaciarles el `local_path`—. **No bloquea el Paso 8**, y
+   es una escritura sobre la base real, así que no se hace sin decirlo. *(Ya no tiene nada que ver
+   con H-41: esa hipótesis quedó descartada.)*
 
 > ⚠️ **Un apunte que el acta no tenía: el 2026-08-25 a las 09:03 hubo una corrida (id 12, 59
 > documentos, `COMPLETED`) que no la lanzó esta sesión.** Aparece en `ejecuciones` y sus PDF están
 > en disco. Conviene saber de qué equipo salió: es justo el tipo de cosa que H-52 hace difícil de
 > responder.
 
-> 🔑 **Lo más transferible de la sesión, y es de método: un sospechoso deducido no es un sospechoso
-> medido.** Los dos candidatos de H-41 llevaban ocho días en el dosier con la etiqueta de *"las
+> 🔑 **La lección más incómoda de la sesión, y no es técnica: dos veces se investigó algo que ya
+> estaba resuelto en los propios papeles del proyecto.** H-54 se abrió como un misterio con dos
+> hipótesis y era el daño de **H-36**, cerrado el 12-08 y escrito con la misma cifra. Y la posición
+> del crash de H-41 llevaba ocho días en `pipeline.jsonl`, esperando a que alguien leyera el rastro
+> hasta el final en vez de leer el resumen. **Antes de abrir una investigación, buscar el síntoma
+> en el dosier y en el rastro.** Las dos veces la respuesta estaba a un `grep`.
+
+> 🔑 **Y la de método: un sospechoso deducido no es un sospechoso medido.** Los dos candidatos de H-41 llevaban ocho días en el dosier con la etiqueta de *"las
 > únicas piezas nativas"*, que es un razonamiento correcto sobre el código. Bastó medirlos para que
 > los dos cayeran — uno pasa limpio sobre el corpus entero, el otro no se ha ejecutado jamás. **La
 > instrumentación no encontró al culpable: encontró que se estaba buscando en el sitio
@@ -188,7 +203,7 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **560/560**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), **H-54** (63 documentos desaparecidos sin registro) y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **560/560**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), **H-54** (la base reclama 63 pliegos que H-36 borró; el daño era conocido, la desalineación no) y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 

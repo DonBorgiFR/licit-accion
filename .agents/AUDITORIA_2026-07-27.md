@@ -2176,11 +2176,13 @@ espacio de nombres local.
 > este dosier lleva registrando desde H-21 —**no rompen, callan**—, y H-55 convierte a H-52 de
 > riesgo teórico en daño medido.
 
-### H-41 · El pipeline revienta con una violación de acceso 🟠 ACOTADO (2026-08-25, sigue abierto)
+### H-41 · El pipeline revienta descargando el feed del DOGC 🟠 LOCALIZADO (2026-08-25, sigue abierto)
 
-**No se ha cerrado, pero ya no está donde la auditoría lo buscaba.** El dosier nombraba dos
-sospechosos, *"las dos únicas piezas nativas del pipeline"*: **PyMuPDF** extrayendo texto y
-**Tesseract** haciendo OCR. Medidos hoy los dos, ninguno se sostiene.
+**No se ha cerrado, pero ya no está donde la auditoría lo buscaba — y ahora tiene una línea
+concreta.** El dosier nombraba dos sospechosos, *"las dos únicas piezas nativas del pipeline"*:
+**PyMuPDF** extrayendo texto y **Tesseract** haciendo OCR. Medidos los dos, ninguno se sostiene.
+Y el rastro dice dónde murió de verdad: **descargando el feed RSS del DOGC**, en la fase del
+Centinela, dos fases más allá de donde se estaba buscando.
 
 **Lo que se hizo primero — la migaja que el propio dosier pedía.** El rastro se escribía
 *después* de que la función volviera; si la biblioteca nativa revienta dentro, no vuelve. Ahora
@@ -2201,16 +2203,59 @@ documentos con fichero, el método de extracción es `pymupdf` en 266 y
 `pymupdf_vectorial_previo` —el modo degradado— en 2. **Cero con `tesseract`.** No es que no
 fallara: es que **nunca se ejecutó**, así que no pudo matar a nadie el 2026-08-17. Ver H-53.
 
-**Qué queda, entonces.** Que el crash no ocurrió leyendo un pliego. Y hay a dónde mirar: la
-corrida id 4 es la única `FAILED`, y es también la única entre la que dejó 63 documentos en disco
-y el momento en que esos 63 desaparecieron sin registro (**H-54**). El dosier daba por descartada
-la fase de purga *"(`purgas` a 0, no llegó a esa fase)"* — y `purgas` a 0 es exactamente lo que
-deja un proceso que muere antes de anotar lo que ya borró.
+**Medición 3 — dónde murió exactamente, leído del rastro.** La última línea que el proceso
+alcanzó a escribir es ésta, y está íntegra en `pipeline.jsonl`:
+
+```json
+{"timestamp": "2026-08-17T11:20:12Z", "componente": "centinela",
+ "evento": "boletin_fetch_started",
+ "detalles": {"fuente": "DOGC", "url": "https://dogc.gencat.cat/es/rss/index.html"}}
+```
+
+Después de eso, nada: el siguiente evento del fichero es de la API, doce minutos más tarde y desde
+otro proceso. **El pipeline murió dentro de la descarga del feed del DOGC**, en
+`_http_get_with_retry()` (`centinela.py:393`).
+
+**La secuencia completa, sin interpretar:** la extracción documental **terminó bien** —
+`doc_extraction_batch_completed | Procesados: 76 | Exitosos (PyMuPDF): 76 | Requiere OCR: 0`, a
+las 11:19:02—; el Analista completó sus 18 análisis a las 11:20:12; el Centinela arrancó ese mismo
+segundo y anunció su primera descarga; y ahí se acabó. **Ni el Lector ni el Depurador tienen nada
+que ver: el orden de fases de `main.py` pone al Depurador después del Centinela, así que la
+corrida jamás llegó a purgar.**
+
+**Y el sospechoso que la auditoría no había listado: TLS.** `_http_get_with_retry()` usa
+`urllib.request.urlopen` sobre **HTTPS**, que baja al módulo `_ssl` y de ahí a **OpenSSL** —código
+nativo, y ejercitado en cada corrida contra cada fuente externa—. La afirmación de este dosier de
+que PyMuPDF y Tesseract eran *"las dos únicas piezas nativas del pipeline"* **era falsa**: se
+contaron las bibliotecas que el proyecto importa a propósito y no las que trae el intérprete.
+
+**Y hay una razón para descartar que fuera un fallo de red normal**: `obtener_feed_dogc()` envuelve
+la descarga en un `except Exception` con modo degradado, que emite `boletin_fetch_degraded` y
+sigue. **No se emitió**. Un timeout, un DNS caído o un 500 habrían dejado esa línea. Lo que mata
+sin dejarla es algo que Python no puede capturar — que es precisamente la firma de un
+`ACCESS_VIOLATION`.
+
+> ⚠️ **Lo que esto NO demuestra.** Que la culpa sea de OpenSSL. Lo demostrado es **dónde** murió:
+> dentro de `urlopen`, sin que ninguna de sus salidas por excepción se ejecutara. Nombrar a
+> OpenSSL es señalar el único código nativo que hay en ese trayecto, no cerrar el diagnóstico —
+> exactamente el error que este mismo hallazgo acaba de corregirle a la versión anterior de sí
+> mismo.
+
+**Qué haría falta para cerrarlo**: reproducir la descarga del feed del DOGC en bucle sobre este
+mismo intérprete, y —si aparece— comparar la versión de OpenSSL de este Python con la del otro
+equipo. **No se ha hecho hoy.**
 
 > 🔑 **Lo transferible: la instrumentación no encontró al culpable, encontró que se buscaba en el
 > sitio equivocado.** Los dos sospechosos venían de razonar sobre el código —*"las únicas piezas
 > nativas"*— y no de medir. Uno pasa limpio sobre el corpus entero y el otro no se ha ejecutado
 > jamás. **Un sospechoso deducido no es un sospechoso medido.**
+
+> 🔑 **Y la segunda, que es la que dolerá más de reconocer: la respuesta llevaba ocho días escrita
+> en `pipeline.jsonl`.** No hizo falta la migaja para encontrarla —la migaja se construyó para
+> otra fase, y esa fase resultó estar sana—. Bastó **leer el rastro hasta el final** en vez de
+> leer el dosier. La frase *"un `0xC0000005` mata el proceso sin dejar traza en Python"* es cierta
+> y llevó a dar por perdido un rastro que **sí existía**: lo escrito antes de morir seguía en
+> disco, que es exactamente el principio en el que se apoya la reparación de hoy.
 
 > ⚠️ **Límite honesto de la medición**: se han barrido los 205 PDF que hay **hoy**. Faltan los 63
 > del 2026-08-12, que ya no están en disco — y son precisamente el objeto de H-54. Si el culpable
@@ -2253,43 +2298,58 @@ mirar, y el Analista lo recibirá vacío sin que nada avise.
 
 ---
 
-### H-54 · 63 documentos desaparecieron del disco sin que nada lo registrara 🔴 ABIERTO
+### H-54 · La base sigue reclamando 63 pliegos que H-36 borró hace trece días 🔴 ABIERTO
 
-**Detectado el 2026-08-25**, comprobando qué parte del corpus podía cubrir el barrido de H-41.
+> ⚠️ **Corrección de este mismo hallazgo, el 2026-08-25.** Se catalogó primero como *"63
+> documentos desaparecieron del disco sin que nada lo registrara"*, con dos hipótesis abiertas
+> sobre quién los había borrado. **Las dos eran innecesarias: ya estaba escrito en este dosier.**
+> **H-36** —*Purgar sobre una copia de la base borraba los ficheros de producción*, cerrado el
+> 2026-08-12— dice literalmente que aquella purga *"borró 63 pliegos (35 MB) de `data/documents/`"*.
+> Son los mismos 63 y los mismos bytes. **Se rediagnosticó algo que ya tenía diagnóstico**, que es
+> justo lo que el punto de entrada del proyecto manda no hacer. Se deja escrito porque el error
+> costó una investigación entera y porque **lo que quedó debajo sí es un defecto vivo.**
 
-**Lo medido, sin interpretar:**
+**Lo que sí queda abierto, y no estaba en H-36: la base nunca se reconcilió.**
 
-| Día de ingesta | Documentos con `local_path` | Siguen en disco | Faltan |
-|---|---|---|---|
-| 2026-08-12 | 63 | **0** | **63** |
-| 2026-08-17 | 76 | 76 | 0 |
-| 2026-08-18 | 37 | 37 | 0 |
-| 2026-08-19 | 33 | 33 | 0 |
-| 2026-08-25 | 59 | 59 | 0 |
+H-36 se cerró de dos maneras, las dos correctas y ninguna suficiente: *(a)* con una invariante que
+impide que vuelva a pasar —`_fichero_es_mio()`, el Depurador sólo borra bajo su propio directorio
+documental—, y *(b)* con una decisión de dirección del 2026-08-12, **no recuperar los PDF**, porque
+son peso purgable y su texto sobrevivió en la base. **Pero nadie le dijo a la base que ya no los
+tiene.**
 
-* Los 63 son **exactamente** los `documentos_descargados` que registra la corrida id 3
-  (2026-08-12). Se fueron **todos**, y no se fue ninguno de ningún otro día.
-* Sus filas siguen en `documentos` con estado **`PROCESADO`** y su `local_path` intacto,
-  apuntando a ficheros que no existen. Declaran **35.037.037 bytes** (33,4 MB).
-* La tabla `purgas` **no reconoce haber borrado nada**: sus 6 filas dicen `documentos_purgados =
-  0` y `bytes_liberados = 0`.
-* **No existe la fila `id = 1` de `purgas`.** La tabla empieza en la id 2, del 2026-08-18.
+**Estado medido hoy, trece días después:**
 
-**Por qué esto es grave y no un detalle de contabilidad.** Es la firma exacta del peligro que la
-propia Capa 9 declaró asimétrico y que el dosier repite en H-41: *"la purga documental borra
-ficheros **antes** de tocar la base, así que una interrupción deja el fichero fuera y la fila sin
-marcar"*. Aquí hay 63 ficheros fuera y 63 filas sin marcar. El sistema cree que conserva 33,4 MB
-de pliegos que no tiene, y cualquier operación que se fíe de `local_path` —una relectura, un
-reanálisis, el cálculo de ocupación— trabajará sobre una ficción.
+* **63 filas de `documentos`** siguen con estado **`PROCESADO`** y su `local_path` **intacto**,
+  apuntando a ficheros que no existen. Declaran **35.037.037 bytes** (33,4 MB) que el sistema cree
+  conservar.
+* Las **10 carpetas** que los alojaban siguen ahí, **vacías**.
+* La tabla `purgas` no los menciona —correctamente: no los borró ninguna purga de esta base— así
+  que **nada en producción registra la pérdida**. Quien mire la base no puede saberlo.
 
-**Qué falta por averiguar, y no se ha hecho hoy**: si los borró la corrida id 4 —la única
-`FAILED`, la de H-41— muriendo a mitad de la purga, o si los borró una purga que sí terminó y
-contabilizó 0 por un defecto de registro. **Las dos hipótesis son malas y son distintas**, y
-distinguirlas es lo que hace falta antes de tocar nada. El hueco de la id 1 apunta a la primera;
-que las otras 6 filas también digan 0 admite la segunda.
+**Cómo se fechó el borrado, que es lo único que la investigación aportó de nuevo.** Los ficheros
+no están, pero **las carpetas que los contenían conservan su fecha de modificación**, y un
+directorio se modifica cuando se borra algo dentro: **9 de las 10 marcan el 2026-08-12 entre las
+12:11:35 y las 12:11:36 UTC**, dos segundos. Un borrado masivo por programa, seis minutos después
+de que terminara la corrida id 3 y en medio de la verificación C7 del cierre de la Capa 9. Encaja
+con H-36 al segundo.
 
-> ⚠️ **No se ha reparado nada ni se ha tocado la base.** Todas las mediciones de este hallazgo se
-> hicieron sobre una **copia** de `licitaciones.db` en un directorio temporal.
+**Por qué importa que la base mienta y no sólo que falten los PDF:**
+
+* **Cualquier operación que se fíe de `local_path` trabaja sobre una ficción**: releer un pliego,
+  reanalizarlo con otro modelo, recalcular la ocupación en disco. Es de la familia de **H-51** —el
+  Total de disco que no cuadraba con su desglose—, en el otro sentido.
+* **Y un documento `PROCESADO` sin fichero es indistinguible de uno sano** hasta que alguien va a
+  abrirlo. No rompe: calla.
+
+**Qué falta por decidir** *(no se ha tocado nada)*: si esas 63 filas pasan a un estado que diga la
+verdad —`PURGADO`, que la máquina de estados de la Capa 9 ya contempla— o si se les vacía el
+`local_path`. **Es una escritura sobre la base real y no se hace sin decisión de dirección.**
+
+> 🔑 **La lección, y es de método: cerrar la causa no es reparar el daño.** H-36 quedó en verde con
+> su invariante y su regresión, y lo estaba — para el futuro. Los 63 registros que la purga dejó
+> desalineados no los arregló nadie porque **el hallazgo se cerró cuando dejó de poder repetirse**,
+> no cuando el sistema volvió a decir la verdad. Merece la pena preguntarse, al cerrar cualquier
+> hallazgo que ya haya producido daño, **qué quedó tocado y quién lo devuelve a su sitio.**
 
 ---
 
