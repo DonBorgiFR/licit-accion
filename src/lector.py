@@ -197,6 +197,73 @@ class Lector:
             print(f"[!] Error al escribir log de inicialización en caliente: {e}")
 
     # =====================================================================
+    # 🍞 LA MIGAJA DE H-41 — QUÉ SE ESTABA LEYENDO CUANDO EL PROCESO MURIÓ
+    # =====================================================================
+    #
+    # H-41: el pipeline terminó con `0xC0000005` (ACCESS_VIOLATION) sobre datos reales. Es una
+    # violación de acceso **nativa**, no una excepción de Python: mata el proceso en seco, sin
+    # `except`, sin `finally` y sin desenrollar la pila. Las dos únicas piezas nativas que
+    # toca esta capa son PyMuPDF y Tesseract, y las dos viven en este fichero.
+    #
+    # Por qué no bastaba el rastro que ya había: se registraba **después** de que la función
+    # volviera. Si la biblioteca nativa revienta dentro, no vuelve, y no queda ni una línea
+    # diciendo qué fichero era. Por eso esta marca se escribe **antes** de abrir nada.
+    #
+    # Por qué un fichero aparte y no `pipeline.jsonl`: la marca se refresca **página a
+    # página** —el crash está dentro del bucle, no en la apertura—, y eso son miles de líneas
+    # por corrida. El JSONL guarda un evento por documento, que es lo que se lee luego; este
+    # fichero guarda una sola línea, la última, que es lo que interesa cuando hay un cadáver.
+    #
+    # Por qué `os.replace` y no abrir en modo "w": truncar deja el fichero **vacío** durante
+    # un instante, y si el proceso muriera justo ahí la migaja no diría nada — que es
+    # exactamente el caso para el que existe. `os.replace` es atómico también en Windows: o
+    # está la marca vieja, o está la nueva, nunca la nada.
+    #
+    # No se llama a `fsync`: el crash mata el proceso, no la máquina, y lo ya escrito vive en
+    # la caché del sistema operativo, que sobrevive a la muerte del proceso. Un `fsync` por
+    # página costaría un disco entero para protegerse de un apagón que no es el caso.
+    #
+    # Instrumentación pura: no cambia una sola decisión del pipeline y **nunca** puede
+    # tumbarlo. Si escribir la migaja falla, se calla y sigue.
+
+    CENTINELA_DOC = "documento_en_curso.json"
+
+    def _marcar_pagina_en_curso(self, fase: str, local_path: str, pagina: int,
+                                num_paginas: int, doc_id: Optional[int] = None) -> None:
+        """Deja constancia en disco de la página que se va a leer, **antes** de leerla (H-41)."""
+        try:
+            destino = ruta_datos("logs", self.CENTINELA_DOC)
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            marca = {
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "run_id": self.run_id,
+                "fase": fase,
+                "doc_id": doc_id,
+                "local_path": local_path,
+                "pagina": pagina,
+                "num_paginas": num_paginas,
+                "pid": os.getpid(),
+                "host": os.environ.get("COMPUTERNAME") or "desconocido",
+            }
+            temporal = destino + ".tmp"
+            with open(temporal, "w", encoding="utf-8") as f:
+                f.write(json.dumps(marca, ensure_ascii=False))
+            os.replace(temporal, destino)
+        except Exception:
+            # La migaja jamás interrumpe el pipeline: sin ella se pierde el diagnóstico, con
+            # una excepción aquí se perdería la corrida.
+            pass
+
+    def _limpiar_pagina_en_curso(self) -> None:
+        """Retira la migaja al terminar sin incidencias: si queda, es que algo murió leyendo."""
+        try:
+            destino = ruta_datos("logs", self.CENTINELA_DOC)
+            if os.path.exists(destino):
+                os.remove(destino)
+        except Exception:
+            pass
+
+    # =====================================================================
     # 🧱 1. VALIDACIÓN DE DEPENDENCIAS Y BOOTSTRAP
     # =====================================================================
 
@@ -734,7 +801,7 @@ class Lector:
     # paso el motor gana lo que aquí no tenía —medición de bytes, fila en `purgas` y los
     # eventos `DEPURADOR_PURGA_*`—. Ver `src/depurador.py`.
 
-    def extraer_texto_pdf_nativo(self, local_path: str) -> ExtraccionResult:
+    def extraer_texto_pdf_nativo(self, local_path: str, doc_id: Optional[int] = None) -> ExtraccionResult:
         """
         Extrae texto nativo (vectorial) de un PDF página a página usando PyMuPDF (fitz).
         Detecta si el documento es escaneado (densidad de caracteres < 50/página) e identifica el idioma.
@@ -761,6 +828,12 @@ class Lector:
             paginas_escaneadas = 0
 
             for i in range(num_paginas):
+                # H-41: la marca va antes de tocar la página, no después. `get_text()` es
+                # código nativo de PyMuPDF y una violación de acceso aquí no deja rastro.
+                self._marcar_pagina_en_curso(
+                    fase="pymupdf", local_path=local_path,
+                    pagina=i + 1, num_paginas=num_paginas, doc_id=doc_id,
+                )
                 page = doc[i]
                 page_text = page.get_text("text") or ""
                 page_text_clean = page_text.strip()
@@ -864,7 +937,16 @@ class Lector:
             local_path = doc["local_path"]
             titulo = doc["titulo"]
 
-            resultado = self.extraer_texto_pdf_nativo(local_path)
+            # H-41: el lote de OCR ya anunciaba el documento antes de abrirlo
+            # (`doc_ocr_started`) y éste no. La asimetría no era intencionada, y es la que
+            # dejó la corrida del 2026-08-17 sin poder decir qué pliego estaba leyendo.
+            self.registrar_log_JSONL(
+                action="doc_extraccion_started",
+                expediente_id=exp_id,
+                reason=f"ID: {doc_id} | Titulo: {titulo} | Ruta: {local_path}",
+            )
+            resultado = self.extraer_texto_pdf_nativo(local_path, doc_id=doc_id)
+            self._limpiar_pagina_en_curso()
             total_paginas += resultado.num_paginas
 
             if resultado.exito:
@@ -952,7 +1034,7 @@ class Lector:
         print(f"  [Time] Páginas analizadas: {total_paginas} (Velocidad: {ms_per_page} ms/pág)")
         print("=" * 85 + "\n")
 
-    def ejecutar_ocr_pdf_diferido(self, local_path: str, texto_previo: str = "") -> ExtraccionResult:
+    def ejecutar_ocr_pdf_diferido(self, local_path: str, texto_previo: str = "", doc_id: Optional[int] = None) -> ExtraccionResult:
         """
         Ejecuta OCR sobre las páginas escaneadas de un PDF usando PyMuPDF pixmap + pytesseract / Tesseract CLI.
         Si Tesseract no está instalado en el sistema, entra en modo degradado (OCR_DIFERIDO).
@@ -999,6 +1081,13 @@ class Lector:
             langs = "cat+spa" if "cat" in self.tesseract_idiomas else "spa"
 
             for i in range(num_paginas):
+                # H-41: igual que en la extracción nativa, y aquí con más motivo — esta
+                # rama atraviesa las dos piezas nativas, PyMuPDF al rasterizar y Tesseract
+                # al reconocer.
+                self._marcar_pagina_en_curso(
+                    fase="ocr", local_path=local_path,
+                    pagina=i + 1, num_paginas=num_paginas, doc_id=doc_id,
+                )
                 page = doc[i]
                 page_text_native = page.get_text("text") or ""
                 
@@ -1090,7 +1179,8 @@ class Lector:
             texto_previo = doc.get("texto_extraido") or ""
 
             self.registrar_log_JSONL(action="doc_ocr_started", expediente_id=exp_id, reason=f"ID: {doc_id} | Titulo: {titulo}")
-            resultado = self.ejecutar_ocr_pdf_diferido(local_path, texto_previo=texto_previo)
+            resultado = self.ejecutar_ocr_pdf_diferido(local_path, texto_previo=texto_previo, doc_id=doc_id)
+            self._limpiar_pagina_en_curso()
             total_paginas_ocr += resultado.paginas_ocr
 
             if resultado.exito:
