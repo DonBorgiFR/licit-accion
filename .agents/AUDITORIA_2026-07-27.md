@@ -2298,7 +2298,7 @@ mirar, y el Analista lo recibirá vacío sin que nada avise.
 
 ---
 
-### H-54 · La base sigue reclamando 63 pliegos que H-36 borró hace trece días 🔴 ABIERTO
+### H-54 · La base reclamaba 63 pliegos que H-36 borró hace trece días 🟢 CERRADO (2026-08-25)
 
 > ⚠️ **Corrección de este mismo hallazgo, el 2026-08-25.** Se catalogó primero como *"63
 > documentos desaparecieron del disco sin que nada lo registrara"*, con dos hipótesis abiertas
@@ -2341,9 +2341,45 @@ con H-36 al segundo.
 * **Y un documento `PROCESADO` sin fichero es indistinguible de uno sano** hasta que alguien va a
   abrirlo. No rompe: calla.
 
-**Qué falta por decidir** *(no se ha tocado nada)*: si esas 63 filas pasan a un estado que diga la
-verdad —`PURGADO`, que la máquina de estados de la Capa 9 ya contempla— o si se les vacía el
-`local_path`. **Es una escritura sobre la base real y no se hace sin decisión de dirección.**
+**Reparado el 2026-08-25 con `tools/reconciliar_h54.py`.** Las 63 filas están en **`PURGADO`**,
+sin `local_path`, sin `texto_extraido` y con `error_detalle = 'PURGADO_HISTORICO'` — exactamente
+como las deja una purga legítima, porque usa `marcar_documentos_como_purgados()` y no un `UPDATE`
+propio.
+
+**Decisión de dirección del 2026-08-25: por el libro, texto incluido.** Vaciar `texto_extraido` es
+una postcondición declarada del contrato de la Capa 9, y se respetó aun sabiendo que **destruía
+2.991.151 caracteres** —~3 MB— de pliegos ya extraídos. Se aceptó con las cifras delante: los **10
+expedientes afectados ya estaban archivados**, los **10 análisis semánticos viven en
+`analisis_semantico` y sobreviven**, y sigue vigente la decisión del 2026-08-17 de que hasta la
+demo los datos son material de prueba. **La alternativa se descartó por lo que implicaba**: un
+`PURGADO` que conservara el texto habría producido filas que no se parecen a las que produce una
+purga real, relajando una invariante del contrato desde una herramienta auxiliar.
+
+**Cómo está construida la herramienta, y por qué así:**
+
+* **Mide en vez de fiarse de una lista.** Selecciona por la condición que define el defecto —una
+  fila con `local_path` que no existe en disco—, comprobada contra el sistema de ficheros. 63
+  identificadores escritos a mano habrían fosilizado una medición del 2026-08-25 y no cubrirían un
+  daño mayor del catalogado.
+* **En dos tiempos, y la confirmación no tiene valor por defecto.** Sin argumentos previsualiza;
+  `--ejecutar` a solas se rechaza con código 2, porque es *"olvidé el resto"* y no *"sí, adelante"*.
+* **Regla 5 sin excepción**: copia de seguridad previa, y si falla no se escribe nada. Se creó
+  `licitaciones_20260825_152914.db.bak`.
+* **El hecho y su rastro, en la misma transacción**: `purgas` id 8, `tipo=DOCUMENTAL`,
+  `solicitada_por=reconciliacion_h54`, 63 documentos y **`bytes_liberados = 0`**. El cero es
+  deliberado: esta operación **no liberó un solo byte hoy**: los 35.037.037 se fueron el
+  2026-08-12 y constan en el `detalle`. Apuntárselos habría sido inventarse una liberación.
+
+**Verificado midiendo el efecto, no leyendo el informe de la propia herramienta**: `PRAGMA
+integrity_check` = `ok`; **0 filas** con una ruta que no existe, de 205 con ruta; 63 en `PURGADO`,
+las 63 sin ruta y sin texto; `PROCESADO` baja de 266 a 203; 49 análisis y 84 expedientes intactos.
+Y **Convención C7**: la aplicación arrancada contra la base real, Cockpit y pantalla de
+administración renderizando, **0 errores de consola y 0 de servidor**, con el desglose de disco
+cuadrando con su total.
+
+**Regresiones**: 9 en `tests/test_h54_reconciliacion.py`. **Comprobadas mutando** las tres
+invariantes que sostienen la herramienta —no comprobar el disco, apuntarse los bytes, saltarse la
+copia—; cada mutación la caza la prueba que le corresponde. Suite **569/569**.
 
 > 🔑 **La lección, y es de método: cerrar la causa no es reparar el daño.** H-36 quedó en verde con
 > su invariante y su regresión, y lo estaba — para el futuro. Los 63 registros que la purga dejó

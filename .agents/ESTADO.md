@@ -18,7 +18,7 @@
 
 **Se tomaron las dos decisiones de dirección que bloqueaban el Paso 8**, y en vez de abrirlo se
 fue antes a por **H-41**, que era la condición que la propia dirección puso. La suite está en
-**560/560**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
+**569/569**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
 condiciones nuevas que no existían ayer *(abajo)*.
 
 > 🚨 **Lo más importante de la sesión: H-41 tiene sitio, y no era el que el dosier decía.** La
@@ -61,13 +61,14 @@ condiciones nuevas que no existían ayer *(abajo)*.
   `OCR_REQUERIDO`, así que **instalar Tesseract mañana no recuperaría ni uno de los diferidos**.
   Es la forma exacta de H-33, en otro punto del mismo vocabulario. Hoy son 2 documentos; crece
   solo y en silencio.
-* **H-54 · La base sigue reclamando 63 pliegos que se borraron hace trece días.** ⚠️ **Ojo: se
-  catalogó primero como un misterio y no lo era** — los borró **H-36**, que ya estaba cerrado en el
-  dosier y dice literalmente *"63 pliegos (35 MB)"*. Se rediagnosticó algo ya diagnosticado. **Lo
-  que sí queda vivo** es que H-36 se cerró impidiendo que se repita y dirección decidió no
-  recuperar los PDF, pero **nadie reconcilió la base**: 63 filas siguen diciendo `PROCESADO` con su
-  ruta intacta y **33,4 MB** que el sistema cree tener. Fechado con la marca de tiempo de las
-  carpetas que quedaron vacías: **12-08 a las 12:11:35-36 UTC**, dos segundos.
+* **H-54 · La base reclamaba 63 pliegos que se borraron hace trece días.** 🟢 **CERRADO el
+  2026-08-25.** ⚠️ **Se catalogó primero como un misterio y no lo era** — los borró **H-36**, ya
+  cerrado en el dosier, que lo dice con la misma cifra: *"63 pliegos (35 MB)"*. Lo que sí quedaba
+  vivo es que H-36 se cerró impidiendo que se repita, y **nadie reconcilió la base**. Ya está:
+  `tools/reconciliar_h54.py` las dejó en `PURGADO`, sin ruta y sin texto, con copia previa y su
+  fila en `purgas`. **0 filas mienten**, de 205 con ruta. Se fechó además el borrado original con
+  la marca de tiempo de las carpetas que quedaron vacías: **12-08 a las 12:11:35-36 UTC**, dos
+  segundos.
 * **H-55 · El rastro de auditoría está roto y la segunda máquina firma en él.** `pipeline.jsonl`
   tiene **11 líneas partidas** de 4.078, y dentro conviven **122 menciones de
   `C:\Users\borja\...`** y 421 de `C:\Users\USUARIO\...`. **H-52 deja de ser un riesgo teórico**:
@@ -85,10 +86,9 @@ más que ayer:
    programando a diario un proceso cuya fase de OCR se sabe muerta, y cada pliego escaneado que
    entre quedará descartado de forma irreversible. **O se instala Tesseract en `AROMAN`, o el OCR
    se declara fuera de alcance por ahora y consta.**
-3. 📌 **Decidir cómo se reconcilian las 63 filas de H-54** —pasarlas a `PURGADO`, que la máquina
-   de estados de la Capa 9 ya contempla, o vaciarles el `local_path`—. **No bloquea el Paso 8**, y
-   es una escritura sobre la base real, así que no se hace sin decirlo. *(Ya no tiene nada que ver
-   con H-41: esa hipótesis quedó descartada.)*
+3. ~~Reconciliar las 63 filas de H-54~~ ✅ **hecho el 2026-08-25**, por el libro y con el coste
+   asumido: se destruyeron ~3 MB de texto extraído porque vaciarlo es postcondición del contrato de
+   la Capa 9. Los 10 expedientes ya estaban archivados y los 10 análisis sobreviven.
 
 > ⚠️ **Un apunte que el acta no tenía: el 2026-08-25 a las 09:03 hubo una corrida (id 12, 59
 > documentos, `COMPLETED`) que no la lanzó esta sesión.** Aparece en `ejecuciones` y sus PDF están
@@ -203,14 +203,14 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **560/560**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), **H-54** (la base reclama 63 pliegos que H-36 borró; el daño era conocido, la desalineación no) y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **569/569**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 560/560
+python -m pytest tests/ -q          # debe dar 569/569
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -673,8 +673,8 @@ del proyecto.**
   nocturna sin consola. **No se ha inventado ningún plazo** porque la Regla 4 lo prohíbe.
   **Dirección decidió el 2026-08-25 diagnosticar H-41 primero** para poder ponerle un número con
   datos. Lo que el diagnóstico ha dado hasta ahora: **el cuelgue no viene de leer pliegos** —los
-  dos sospechosos nativos están descartados con medición—, así que el hilo vivo es H-54 y la fase
-  de purga.
+  dos sospechosos nativos están descartados con medición, y murió descargando el feed del DOGC—,
+  así que el hilo vivo es la descarga y no la fase documental.
   **El enunciado completo está anotado donde toca resolverlo**: en el `README.md`, dentro del
   **Paso 8** de la Capa 10, con las cuatro cosas que hay que decidir y por qué; y su ausencia
   queda explicada en el bloque `despertador` de `config/lanzador.yaml`, que es donde alguien
