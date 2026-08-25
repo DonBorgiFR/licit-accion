@@ -1,10 +1,27 @@
 # Contrato de Servicio — Capa 10: El Lanzador y Despertador
 
-**Versión:** 1.2.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13**, corregido y revalidado
-el **2026-08-17** y el **2026-08-18**.
+**Versión:** 1.3.0 · **Estado:** 🟢 **validado por dirección el 2026-08-13**, corregido y revalidado
+el **2026-08-17**, el **2026-08-18** y el **2026-08-25**.
 
 Corresponde al **Paso 1** de la Capa 10 (Reglas 1 y 2). Rige todo lo que venga después: léelo antes
 de tocar `src/lanzador.py`.
+
+> **Qué cambia en la v1.3.0 y por qué** *(2026-08-25, al abrir el Paso 8)*. Una sola cosa, y es la
+> que faltaba para poder programar el despertador: **el pipeline pasa a tener un tope de duración,
+> y agotarlo tiene código propio**. El contrato se corrige **antes** de escribir el código que lo
+> obedece, que es la lección que dejó el Paso 6.
+>
+> 1. **Código `32` — el pipeline agotó su tope y fue detenido.** No se reutiliza el `31`: *"reventó"*
+>    y *"no acababa"* son diagnósticos distintos y piden reacciones distintas, y el Programador de
+>    tareas es el único que va a leer esto. Ver la tabla de códigos.
+> 2. **Evento `LANZADOR_PIPELINE_AGOTADO`**, con la duración real y el nivel de la escalera de
+>    apagado que hizo falta para detenerlo.
+> 3. **El tope vive en `config/lanzador.yaml`** (`despertador.duracion_maxima_minutos`), sin valor
+>    por defecto como todo lo demás de ese fichero: si falta, código `11` y no se arranca.
+>
+> **El número —60 minutos— no es del contrato, es de la configuración**, y sale de medir: las 9
+> corridas reales de la base van de 36 s a **8,1 minutos**, así que el tope es 7,4 veces la más
+> larga jamás observada. La Regla 4 prohíbe inventar plazos; medirlos es otra cosa.
 
 > **Qué cambió en la v1.2.0 y por qué** *(2026-08-18, al implementar el Paso 7)*. Cuatro añadidos,
 > ninguno de ellos una corrección de criterio: son cosas que **el documento no decía** y que hubo
@@ -425,8 +442,21 @@ prospectó.
 | `21` | La API no respondió dentro del tope | Sí |
 | `30` | **Pipeline omitido: cerrojo tomado y vivo** | **No, pero tampoco es éxito** |
 | `31` | El pipeline terminó con error | Sí |
+| `32` | **Pipeline detenido por agotar su tope de duración** *(v1.3.0)* | Sí |
 | `40` | Apagado incompleto: quedó proceso vivo | Sí |
 | `1` | Error no previsto | Sí |
+
+**Por qué `32` no es un `31`** *(v1.3.0)*. Un pipeline que revienta y uno que no termina se
+parecen en que la noche se pierde, y no se parecen en nada más. **El que revienta libera el
+cerrojo** —el proceso muere—, de modo que la noche siguiente prospecta con normalidad: es el caso
+benigno. **El que se cuelga sigue vivo**, así que sin tope el cerrojo quedaría tomado por un dueño
+legítimo y el lanzador devolvería `30` —*"omisión deliberada"*— **noche tras noche**, con toda la
+razón y sobre una premisa falsa. El sistema no parecería averiado: parecería que ya no hay
+oportunidades. Es la familia de H-21 —no rompe, calla— aplicada al calendario.
+
+Y por eso el `32` no puede confundirse con el `31` en el registro del Programador: **ante un `31`
+se mira el pipeline; ante un `32` se mira por qué no acababa**, que hoy es una pregunta abierta
+—ver H-41— y mañana puede ser un tope mal puesto.
 
 **Por qué `30` merece código propio y no `0`.** Omitir la prospección porque ya hay una corrida en
 marcha es la conducta correcta, no una avería: el sistema está protegiendo la integridad de un

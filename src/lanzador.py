@@ -72,6 +72,13 @@ SERVIDOR_NO_RESPONDE = 21
 #: ser 0: el Programador registraría una noche sana en la que no se prospectó nada.
 PIPELINE_OMITIDO = 30
 PIPELINE_FALLIDO = 31
+#: El pipeline no acabó dentro de su tope y hubo que detenerlo (contrato v1.3.0, Paso 8).
+#: **No es un 31**, y la diferencia importa porque es lo único que verá quien revise el
+#: Programador de tareas: ante un `31` se mira el pipeline; ante un `32` se mira por qué no
+#: acababa. Y los dos fallos no se parecen — el que revienta libera el cerrojo al morir, así
+#: que la noche siguiente prospecta; el que se cuelga seguiría vivo, y sin tope el lanzador
+#: devolvería `30` noche tras noche con toda la razón y sobre una premisa falsa.
+PIPELINE_AGOTADO = 32
 APAGADO_INCOMPLETO = 40
 
 
@@ -166,6 +173,21 @@ class ConfiguracionApagado:
 class ConfiguracionDespertador:
     hora: str
     ejecutar_si_se_perdio: bool
+
+    #: Tope tras el cual una prospección se da por colgada y se detiene (Paso 8, v1.3.0 del
+    #: contrato). El número vive en la configuración y no aquí: sale de medir las corridas
+    #: reales, y si mañana el pipeline tarda otra cosa se vuelve a medir. Lo que sí es del
+    #: código es que **no tiene valor por defecto**: sin él el lanzador se detiene con el 11.
+    duracion_maxima_minutos: int
+
+    def duracion_maxima_segundos(self) -> int:
+        """En segundos, que es la unidad en la que se espera a un proceso.
+
+        La conversión vive aquí y no en quien vigila, para que exista un solo sitio donde el
+        tope se traduce. En minutos porque es la unidad en la que una persona piensa un plazo
+        nocturno; en segundos porque es la que entiende `Popen.wait`.
+        """
+        return self.duracion_maxima_minutos * 60
 
 
 @dataclass(frozen=True)
@@ -331,6 +353,14 @@ def cargar_configuracion(ruta: Optional[str] = None) -> ConfiguracionLanzador:
         despertador=ConfiguracionDespertador(
             hora=hora,
             ejecutar_si_se_perdio=_booleano_explicito(despertador, "ejecutar_si_se_perdio", "despertador"),
+            # Entre 1 minuto y un día. El mínimo descarta el 0, que significaría "mata el
+            # pipeline antes de empezar" y que un descuido convertiría en un sistema que no
+            # prospecta nunca sin decir por qué. El máximo descarta el otro descuido —un tope
+            # de varios días es no tener tope— y queda muy por encima de cualquier corrida
+            # medida: la más larga fueron 8,1 minutos.
+            duracion_maxima_minutos=_entero_en_rango(
+                despertador, "duracion_maxima_minutos", 1, 1440, "despertador"
+            ),
         ),
     )
 
@@ -1344,18 +1374,78 @@ def _ruta_registro_prospeccion(db_path: Optional[str] = None) -> str:
     return os.path.join(directorio, f"prospeccion_{marca}.log")
 
 
-def prospectar(db_path: Optional[str] = None, comando: Optional[List[str]] = None) -> int:
+def _detener_pipeline_colgado(proceso: "subprocess.Popen", gracia_segundos: int) -> str:
+    """Detiene un pipeline que agotó su tope, y devuelve por qué nivel se murió.
+
+    **Es la escalera del Paso 5 con un nivel menos.** Aquí no existe el nivel 1 —el endpoint
+    `POST /admin/apagar`—, porque eso apaga el servidor y esto es el pipeline: no tiene puerto
+    al que llamar.
+
+    * **Nivel 2 — `CTRL_BREAK_EVENT` al grupo del proceso.** Es el que vale la pena intentar,
+      porque llega al hijo como `KeyboardInterrupt`: Python desenrolla la pila, corre los
+      `finally`, y `finalizar_ejecucion()` alcanza a escribir `FAILED` en la fila de la
+      corrida. La diferencia entre eso y matarlo en seco es la diferencia entre una corrida
+      cerrada y una fila `RUNNING` fantasma.
+    * **Nivel 3 — `TerminateProcess`.** Agotada la gracia.
+
+    ⚠️ **Y hay que decir que el nivel 2 fallará justo cuando más falta hace.** `CTRL_BREAK_EVENT`
+    necesita una consola, y **el despertador corre en la Session 0, sin ninguna** — igual que
+    falla bajo `pythonw.exe` con «WinError 6», medido el 2026-08-18 en el Paso 5. Se intenta
+    igual porque **sí funciona cuando alguien lanza el pipeline a mano**, que es el caso en que
+    una corrida cerrada limpiamente se agradece. De madrugada lo normal será el nivel 3.
+
+    **Que el nivel 3 deje una fila `RUNNING` huérfana no es un cabo suelto**: es exactamente lo
+    que H-40 reparó en el Paso 6. La corrida siguiente ve que el PID anotado ya no existe,
+    concluye que murió y arranca. El daño está acotado de antemano.
+    """
+    if proceso.poll() is not None:
+        return "termino_solo"
+
+    # Nivel 2 — señal.
+    try:
+        os.kill(proceso.pid, signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+        try:
+            proceso.wait(timeout=gracia_segundos)
+            return "senal"
+        except subprocess.TimeoutExpired:
+            pass
+    except Exception:
+        # Sin consola no hay señal que enviar. No es un fallo: es el caso previsto.
+        pass
+
+    # Nivel 3 — a la fuerza.
+    try:
+        proceso.kill()
+        proceso.wait(timeout=gracia_segundos)
+    except Exception:
+        pass
+    return "terminado"
+
+
+def prospectar(
+    db_path: Optional[str] = None,
+    comando: Optional[List[str]] = None,
+    tope_segundos: Optional[int] = None,
+    gracia_segundos: int = 10,
+) -> int:
     """Ejecuta el pipeline respetando el cerrojo y devuelve el código de salida de la capa.
 
     | Situación | Código |
     |---|---|
     | Cerrojo tomado y vivo: no se lanza | `30` |
     | El pipeline terminó y su corrida consta `COMPLETED` | `0` |
+    | **No acabó dentro de `tope_segundos` y hubo que detenerlo** | **`32`** |
     | Todo lo demás | `31` |
 
     `comando` existe para que las pruebas puedan sustituir el pipeline por algo predecible;
     sin él se invoca el punto de entrada real, que es la ruta que la Convención C4 exige
     ejercitar.
+
+    **`tope_segundos` a `None` significa esperar indefinidamente, y es lo correcto para el modo
+    completo**: ahí hay una persona delante que ve la pantalla y puede cerrar la ventana. El
+    plazo sólo gobierna al despertador, que corre de madrugada y sin nadie mirando, y el
+    orquestador se lo pasa leyéndolo de `config/lanzador.yaml`. Ponerle un tope al modo
+    interactivo sería inventarle un plazo a quien ya está mirando el reloj (Regla 4).
     """
     diagnostico = inspeccionar_cerrojo(db_path)
 
@@ -1400,12 +1490,14 @@ def prospectar(db_path: Optional[str] = None, comando: Optional[List[str]] = Non
         entorno["DB_PATH_INCOOP"] = os.path.abspath(db_path)
 
     inicio = time.perf_counter()
+    agotado = False
+    nivel_detencion = ""
     try:
         os.makedirs(os.path.dirname(registro), exist_ok=True)
         with open(registro, "a", encoding="utf-8") as salida:
             salida.write(f"\n===== {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} =====\n")
             salida.flush()
-            completado = subprocess.run(
+            proceso = subprocess.Popen(
                 orden,
                 cwd=str(PROJECT_ROOT),
                 env=entorno,
@@ -1415,9 +1507,21 @@ def prospectar(db_path: Optional[str] = None, comando: Optional[List[str]] = Non
                 # Sin ventana: el `.vbs` del Paso 7 no tiene consola y la tarea del Paso 8
                 # corre sin escritorio. Una consola emergente de madrugada tampoco la vería
                 # nadie, pero en modo completo sí saltaría delante de quien esté trabajando.
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                #
+                # Y grupo propio (Paso 8): sin `CREATE_NEW_PROCESS_GROUP` no se le puede
+                # enviar un `CTRL_BREAK_EVENT` para pedirle que se cierre por las buenas, y
+                # la única forma de detener un pipeline colgado sería matarlo en seco.
+                creationflags=(
+                    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                ),
             )
-        codigo_proceso = completado.returncode
+            try:
+                codigo_proceso = proceso.wait(timeout=tope_segundos)
+            except subprocess.TimeoutExpired:
+                agotado = True
+                nivel_detencion = _detener_pipeline_colgado(proceso, gracia_segundos)
+                codigo_proceso = proceso.returncode
     except Exception as e:
         registrar_evento_lanzador(
             "LANZADOR_PIPELINE_FALLIDO",
@@ -1429,6 +1533,30 @@ def prospectar(db_path: Optional[str] = None, comando: Optional[List[str]] = Non
 
     duracion = time.perf_counter() - inicio
     id_corrida, estado_corrida = _resultado_de_la_corrida(ultimo_id, db_path)
+
+    # --- El pipeline no acabó (contrato v1.3.0, Paso 8) ---
+    #
+    # Se resuelve **antes** de mirar el código del proceso, y a propósito: un proceso al que
+    # acabamos de matar devuelve el código que le pusimos nosotros, y traducirlo como si fuera
+    # suyo sería contar como diagnóstico del pipeline una decisión nuestra. Lo que ocurrió aquí
+    # no lo dice su código de salida: lo dice el reloj.
+    if agotado:
+        registrar_evento_lanzador(
+            "LANZADOR_PIPELINE_AGOTADO",
+            motivo=(
+                f"el pipeline no terminó en {tope_segundos} s y se detuvo por "
+                f"'{nivel_detencion}' tras {duracion:.1f} s. "
+                f"Corrida {id_corrida if id_corrida is not None else 'sin registrar'}: "
+                f"{estado_corrida or 'sin estado'}. Detalle en {registro}"
+            ),
+            run_id=id_corrida or 0,
+            db_path=db_path,
+        )
+        print(
+            f"[-] Prospección detenida: el pipeline agotó su tope de {tope_segundos} s.",
+            file=sys.stderr,
+        )
+        return PIPELINE_AGOTADO
 
     # --- Traducción del resultado (contrato v1.1.0, Operación 3) ---
     #
@@ -1842,7 +1970,20 @@ def orquestar(
 
     codigo_pipeline = EXITO
     if modo.prospecta:
-        codigo_pipeline = prospectar(db_path, comando_pipeline)
+        # El tope gobierna **sólo al despertador**. En modo completo hay alguien delante que ve
+        # la pantalla y decide; ponerle un plazo sería inventárselo (Regla 4). Y es justamente
+        # el modo sin nadie delante el que necesita que algo mire el reloj.
+        tope = (
+            config.despertador.duracion_maxima_segundos()
+            if modo is ModoInvocacion.PIPELINE
+            else None
+        )
+        codigo_pipeline = prospectar(
+            db_path,
+            comando_pipeline,
+            tope_segundos=tope,
+            gracia_segundos=config.apagado.gracia_senal_segundos,
+        )
 
     # ---------- DETENIENDO ----------
     codigo_apagado = EXITO

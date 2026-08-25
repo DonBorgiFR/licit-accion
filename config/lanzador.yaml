@@ -30,7 +30,9 @@ lanzador:
   # o de plazos no reescriba la historia de lo ya ejecutado (Regla 4).
   #
   # 1.0.0 (2026-08-13, Paso 3): versión inicial.
-  version: "1.0.0"
+  # 1.1.0 (2026-08-25, Paso 8): se añade `despertador.duracion_maxima_minutos`, que era la
+  #        cuestión abierta que bloqueaba el despertador desde el 2026-08-17.
+  version: "1.1.0"
 
   servidor:
     # Interfaz en la que escucha la API. `127.0.0.1` a propósito y no `0.0.0.0`: el
@@ -103,22 +105,36 @@ lanzador:
     # las oportunidades del viernes.
     ejecutar_si_se_perdio: true
 
-    # ❓ FALTA AQUÍ UN PARÁMETRO, Y SU AUSENCIA ES UNA CUESTIÓN ABIERTA, NO UNA DECISIÓN
-    #    (planteada el 2026-08-17 al cerrar el Paso 6; se resuelve en el Paso 8)
+    # Tope tras el cual se da por colgada una prospección y se la detiene.
     #
-    #    `duracion_maxima_minutos` — el tope tras el cual se da por colgada una prospección.
+    # ESTE NÚMERO NO SE INVENTÓ: SE MIDIÓ (2026-08-25, decisión de dirección).
     #
-    #    No está porque **la Regla 4 prohíbe inventar plazos**, y elegir un número "razonable"
-    #    aquí sería repetir lo que hizo que los 90 días de retención vivieran codificados a
-    #    fuego sin que nadie los hubiera decidido. Se anota su ausencia por la misma razón por
-    #    la que se explican las de arriba: un parámetro que falta sin motivo se acaba añadiendo.
+    # La Regla 4 prohíbe inventar plazos, y este parámetro estuvo ausente ocho días por eso —con
+    # su ausencia explicada aquí mismo, para que nadie lo rellenara "con algo razonable"—. Lo que
+    # lo desbloqueó fue medir las 9 corridas reales que había en la base:
     #
-    #    Por qué importa: desde el Paso 8 esto corre de madrugada y sin consola. Un pipeline
-    #    colgado seguiría VIVO, así que el cerrojo del Paso 6 haría lo correcto —código 30, no
-    #    prospectar— noche tras noche, y el sistema no parecería averiado: parecería que ya no
-    #    encuentra oportunidades. La red que existe hoy —la reapropiación a las 6 h de
-    #    `TIMEOUT_EJECUCION_HORAS`— NO mata nada: sólo deja arrancar a la corrida siguiente, de
-    #    modo que a las 6 h habría dos pipelines a la vez sobre una base que purga ficheros.
+    #     id  7 (19-08)     47 s    2 documentos
+    #     id  9 (19-08)    151 s   30 documentos
+    #     id  5 (18-08)    155 s   36 documentos
+    #     id  3 (12-08)    255 s   63 documentos
+    #     id 12 (25-08)    487 s   59 documentos   <-- la más larga jamás observada: 8,1 min
     #
-    #    El enunciado completo, con las cuatro cosas que hay que decidir, vive en el README,
-    #    sección "Capa 10", Paso 8. Al resolverlo, esta configuración sube a v1.1.0.
+    # 60 minutos son 7,4 veces la más larga. El README pide margen para la jornada con mucha más
+    # ingesta, no para la media, y esto lo da de sobra sin acercarse a las 6 h de reapropiación
+    # del cerrojo (`TIMEOUT_EJECUCION_HORAS`): un cuelgue se corta la MISMA noche, y por la mañana
+    # el sistema está sano.
+    #
+    # POR QUÉ HACE FALTA, Y NO BASTABA LO QUE HABÍA. Desde el Paso 8 esto corre de madrugada y sin
+    # consola. Un pipeline colgado sigue VIVO, así que el cerrojo del Paso 6 haría lo correcto
+    # —código 30, no prospectar— noche tras noche, y el sistema no parecería averiado: parecería
+    # que ya no encuentra oportunidades. Y la reapropiación a las 6 h NO mata nada: sólo deja
+    # arrancar a la corrida siguiente, de modo que habría dos pipelines a la vez sobre una base
+    # que purga ficheros.
+    #
+    # QUÉ PASA AL VENCERLO: se detiene con la escalera de apagado del Paso 5 y el lanzador
+    # devuelve el código 32 --distinto del 31, porque "reventó" y "no acababa" piden reacciones
+    # distintas--. Si la interrupción cae a mitad de la purga documental, puede dejar un fichero
+    # fuera y su fila sin marcar; eso se deshace con `tools/reconciliar_h54.py`.
+    #
+    # Si se cambia este número, que sea midiendo otra vez.
+    duracion_maxima_minutos: 60

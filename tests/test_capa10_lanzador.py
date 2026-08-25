@@ -27,6 +27,7 @@ import json
 import os
 import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 from datetime import datetime, timezone
@@ -52,6 +53,7 @@ from src.lanzador import (
     HEALTHCHECK_INSATISFACTORIO,
     ModoApertura,
     ModoInvocacion,
+    PIPELINE_AGOTADO,
     PIPELINE_FALLIDO,
     PIPELINE_OMITIDO,
     PUERTO_OCUPADO_AJENO,
@@ -380,14 +382,22 @@ def test_el_evento_del_lanzador_usa_run_id_reservado_y_su_autor(tmp_path):
 def _config_valida():
     return {
         "lanzador": {
-            "version": "1.0.0",
+            "version": "1.1.0",
             "servidor": {
                 "host": "127.0.0.1", "puerto": 8000,
                 "espera_api_segundos": 30, "espacio_minimo_mb": 200,
             },
             "cockpit": {"ruta_bundle": "frontend/dist", "abrir_navegador": True},
             "apagado": {"gracia_endpoint_segundos": 10, "gracia_senal_segundos": 10},
-            "despertador": {"hora": "06:30", "ejecutar_si_se_perdio": True},
+            # `duracion_maxima_minutos` es obligatorio desde el Paso 8, como todo en este
+            # fichero: no hay valores por defecto. Que añadirlo tumbara 23 pruebas de golpe
+            # no es una molestia del diseño, es el diseño funcionando — la misma señal que
+            # recibiría quien actualizara el código sin actualizar su configuración.
+            "despertador": {
+                "hora": "06:30",
+                "ejecutar_si_se_perdio": True,
+                "duracion_maxima_minutos": 60,
+            },
         }
     }
 
@@ -1021,6 +1031,139 @@ def test_un_pipeline_ininvocable_es_un_fallo_no_una_excepcion(tmp_path):
     assert "LANZADOR_PIPELINE_FALLIDO" in _acciones_registradas(tmp_path / "pipeline.jsonl")
 
 
+# --- El tope de duración: que un cuelgue se note (Paso 8) -------------------------------
+#
+# La cuestión que bloqueó este paso desde el 2026-08-17. Mientras el pipeline lo lanzaba una
+# persona, un cuelgue se veía: la consola dejaba de avanzar. Desde el despertador corre de
+# madrugada y sin nadie mirando, y un pipeline colgado sigue VIVO — así que el cerrojo haría
+# lo correcto, código 30, noche tras noche, y el sistema no parecería averiado sino vacío de
+# oportunidades. Es la familia de H-21: no rompe, calla.
+
+def _pipeline_que_no_termina():
+    """Un pipeline que se queda dormido. Subproceso real, no un simulacro de reloj.
+
+    Medir el tope contra un `time.sleep` parcheado comprobaría la aritmética; lo que hace
+    falta comprobar es que **el proceso se muere**, y para eso tiene que haber un proceso.
+    """
+    return [sys.executable, "-c", "import time; time.sleep(300)"]
+
+
+def test_un_pipeline_que_no_acaba_se_detiene_con_su_propio_codigo(tmp_path):
+    """El `32` y no el `31`: 'no acababa' y 'reventó' piden reacciones distintas."""
+    db_path = _base_lista(tmp_path)
+
+    codigo = prospectar(
+        db_path=db_path,
+        comando=_pipeline_que_no_termina(),
+        tope_segundos=2,
+        gracia_segundos=2,
+    )
+
+    assert codigo == PIPELINE_AGOTADO
+    assert codigo != PIPELINE_FALLIDO, "un cuelgue se está contando como un fallo del pipeline"
+
+
+def test_el_pipeline_colgado_queda_muerto_de_verdad(tmp_path):
+    """Lo que importa no es el código que devolvemos, es que no quede un proceso vivo.
+
+    Un tope que devuelve `32` y deja el pipeline corriendo sería peor que no tener tope:
+    añadiría una mentira al problema que ya había.
+    """
+    db_path = _base_lista(tmp_path)
+    procesos = []
+    popen_real = subprocess.Popen
+
+    def espiar(*args, **kwargs):
+        proceso = popen_real(*args, **kwargs)
+        procesos.append(proceso)
+        return proceso
+
+    with patch("src.lanzador.subprocess.Popen", side_effect=espiar):
+        prospectar(
+            db_path=db_path,
+            comando=_pipeline_que_no_termina(),
+            tope_segundos=2,
+            gracia_segundos=2,
+        )
+
+    assert len(procesos) == 1
+    assert procesos[0].poll() is not None, "el pipeline sigue vivo después de 'detenerlo'"
+
+
+def test_el_agotamiento_queda_registrado_con_su_evento(tmp_path):
+    """Convención C2: nada ocurre en silencio, y menos algo que mata un proceso."""
+    db_path = _base_lista(tmp_path)
+
+    prospectar(
+        db_path=db_path,
+        comando=_pipeline_que_no_termina(),
+        tope_segundos=2,
+        gracia_segundos=2,
+    )
+
+    acciones = _acciones_registradas(tmp_path / "pipeline.jsonl")
+    assert "LANZADOR_PIPELINE_AGOTADO" in acciones
+    assert "LANZADOR_PIPELINE_FALLIDO" not in acciones, "se registró además como fallo"
+
+
+def test_un_pipeline_que_acaba_a_tiempo_no_se_toca(tmp_path):
+    """El tope no puede convertirse en una guillotina para corridas legítimas."""
+    db_path = _base_lista(tmp_path)
+
+    codigo = prospectar(
+        db_path=db_path,
+        comando=_pipeline_simulado(db_path, "COMPLETED"),
+        tope_segundos=120,
+    )
+
+    assert codigo == EXITO
+    assert "LANZADOR_PIPELINE_AGOTADO" not in _acciones_registradas(tmp_path / "pipeline.jsonl")
+
+
+def test_sin_tope_se_espera_indefinidamente(tmp_path):
+    """`None` es esperar sin plazo, y es lo correcto para el modo con alguien delante.
+
+    Ponerle un tope a quien está mirando la pantalla sería inventarle un plazo (Regla 4).
+    """
+    db_path = _base_lista(tmp_path)
+
+    codigo = prospectar(db_path=db_path, comando=_pipeline_simulado(db_path, "COMPLETED"))
+
+    assert codigo == EXITO
+
+
+# --- El tope, en la configuración ------------------------------------------------------
+
+def test_sin_tope_declarado_no_se_arranca(tmp_path):
+    """Como todo en este fichero: no hay valores por defecto. Un plazo inventado aquí sería
+    repetir lo que hizo que los 90 días de retención vivieran codificados a fuego."""
+    ruta = _escribir_config(tmp_path, lambda c: c["despertador"].pop("duracion_maxima_minutos"))
+
+    with pytest.raises(ConfiguracionLanzadorInvalida, match="duracion_maxima_minutos"):
+        cargar_configuracion(ruta)
+
+
+@pytest.mark.parametrize("valor", [0, -5, "60", 60.5, True, None])
+def test_un_tope_que_no_es_un_entero_positivo_se_rechaza(tmp_path, valor):
+    """El `0` es el peligroso: significaría 'mata el pipeline antes de empezar', y un
+    descuido lo convertiría en un sistema que no prospecta nunca sin decir por qué."""
+    ruta = _escribir_config(
+        tmp_path, lambda c: c["despertador"].update({"duracion_maxima_minutos": valor})
+    )
+
+    with pytest.raises(ConfiguracionLanzadorInvalida):
+        cargar_configuracion(ruta)
+
+
+def test_el_tope_se_convierte_a_segundos_en_un_solo_sitio(tmp_path):
+    """Minutos porque es la unidad en la que una persona piensa un plazo nocturno; segundos
+    porque es la que entiende quien espera a un proceso. La conversión vive en un sitio."""
+    config = cargar_configuracion(_escribir_config(tmp_path))
+
+    assert config.despertador.duracion_maxima_minutos == 60
+    assert config.despertador.duracion_maxima_segundos() == 3600
+
+
 # --- La ruta real, sin inyectar (Convención C4) -----------------------------------------
 
 def test_el_pipeline_se_invoca_por_run_py_y_nunca_por_src_main(tmp_path):
@@ -1030,8 +1173,14 @@ def test_el_pipeline_se_invoca_por_run_py_y_nunca_por_src_main(tmp_path):
     "simplifique" la orden apuntando al módulo."""
     db_path = _base_lista(tmp_path)
 
-    with patch("src.lanzador.subprocess.run") as lanzamiento:
-        lanzamiento.return_value = MagicMock(returncode=0)
+    # Se vigila `Popen` y no `run` desde el Paso 8: el pipeline ya no se lanza y se espera en
+    # una sola llamada, porque hay que poder mirarle el reloj y detenerlo. Lo que esta prueba
+    # sujeta no es cuál de las dos se usa, sino **qué orden se construye**.
+    with patch("src.lanzador.subprocess.Popen") as lanzamiento:
+        proceso = MagicMock()
+        proceso.wait.return_value = 0
+        proceso.returncode = 0
+        lanzamiento.return_value = proceso
         prospectar(db_path=db_path)
 
     orden = lanzamiento.call_args[0][0]
