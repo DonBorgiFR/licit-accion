@@ -2699,12 +2699,27 @@ class Memoria:
 
     def obtener_documentos_para_ocr(self) -> List[Dict[str, Any]]:
         """
-        Devuelve los documentos que están en estado OCR_REQUERIDO y tienen local_path válido en disco.
+        Devuelve los documentos pendientes de OCR con `local_path` declarado.
+
+        **`OCR_DIFERIDO` también es candidato (H-53).** Hasta el 2026-08-25 esta consulta sólo
+        miraba `OCR_REQUERIDO`, de modo que un documento que hubiera pasado por el modo degradado
+        —porque Tesseract no estaba instalado— **no volvía a seleccionarse nunca**. El nombre decía
+        *diferido* y el comportamiento era *descartado*: instalar Tesseract al día siguiente no
+        habría recuperado ni uno de los que ya estaban ahí.
+
+        Es la forma exacta de H-33 —un estado que se escribe y que ninguna consulta lee— en otro
+        punto del mismo vocabulario documental, y por eso se repara igual: **ampliando quien
+        pregunta, no renombrando el estado**. La fila conserva su historia; lo que cambia es que
+        deja de ser un callejón sin salida.
+
+        Reintentar es barato y seguro: si Tesseract sigue ausente el lote se detiene antes de
+        tocar nada (ver `Lector.procesar_ocr_diferido_lote`), y si está, el documento se procesa
+        y sale del estado por su propio pie.
         """
         sql = """
-        SELECT id, expediente_id, titulo, url, tipo, local_path, sha256, texto_extraido
+        SELECT id, expediente_id, titulo, url, tipo, local_path, sha256, texto_extraido, estado
         FROM documentos
-        WHERE estado = 'OCR_REQUERIDO' AND local_path IS NOT NULL;
+        WHERE estado IN ('OCR_REQUERIDO', 'OCR_DIFERIDO') AND local_path IS NOT NULL;
         """
         with self.conectar() as conn:
             conn.row_factory = sqlite3.Row

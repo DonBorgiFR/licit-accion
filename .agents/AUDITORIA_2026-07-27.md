@@ -2264,7 +2264,7 @@ equipo. **No se ha hecho hoy.**
 
 ---
 
-### H-53 · El OCR nunca ha funcionado, y un pliego escaneado no se reintenta jamás 🔴 ABIERTO
+### H-53 · El OCR nunca ha funcionado, y un pliego escaneado no se reintentaba jamás 🟠 REPARADA LA CARA B (2026-08-25)
 
 **Detectado el 2026-08-25**, midiendo el método de extracción de cada documento para descartar a
 Tesseract como causa de H-41.
@@ -2289,12 +2289,41 @@ otro punto del mismo vocabulario documental.
 solo y en silencio: cada pliego escaneado que entre se sumará a un montón que nadie vuelve a
 mirar, y el Analista lo recibirá vacío sin que nada avise.
 
-> ⚠️ **Y toca de lleno al Paso 8 de la Capa 10.** La tarea nocturna se va a dar de alta en
-> **AROMAN** *(decisión de dirección del 2026-08-25)*, que es el equipo donde se ha medido que
-> **Tesseract no está**. Tal cual, el despertador garantiza que ningún pliego escaneado se lea
-> nunca — y por la Cara B, además, de forma irreversible. **Antes de cerrar el Paso 8 hay que
-> decidir si se instala Tesseract en AROMAN o si el OCR se declara fuera de alcance por ahora**;
-> lo que no puede quedar es programado a diario un proceso cuya fase de OCR se sabe muerta.
+**Cara B reparada el 2026-08-25**, antes de abrir el Paso 8 y por decisión de dirección. Se
+amplía quien pregunta, **no se renombra el estado**: `obtener_documentos_para_ocr()` selecciona
+ahora `WHERE estado IN ('OCR_REQUERIDO', 'OCR_DIFERIDO')`. La fila conserva su historia; lo que
+cambia es que deja de ser un callejón sin salida.
+
+**Y una segunda mitad que la reparación obligaba a añadir.** Devolver los diferidos a la cola abre
+una posibilidad que antes no existía: **reprocesar cada corrida un montón de documentos para
+dejarlos exactamente igual**, mientras Tesseract siga sin estar. Así que el lote se detiene antes
+de tocar nada cuando *(a)* el OCR no está disponible **y** *(b)* **todos** los candidatos son ya
+`OCR_DIFERIDO` — no hay nada que pueda cambiar. Emite `doc_ocr_batch_pospuesto` y sale: **nada
+ocurre en silencio, tampoco no ocurrir.**
+
+**No se sale si hay algún `OCR_REQUERIDO` entre ellos**, aunque falte Tesseract: ésos **sí** cambian
+de estado, y ese registro es justo lo que hace que mañana se les vuelva a mirar.
+
+**Verificado contra la base real**: los 2 documentos diferidos **ya son candidatos** —antes eran
+invisibles para la consulta— y el lote los conserva sin tocarlos, diciéndolo. **11 regresiones** en
+`tests/test_h53_ocr_reintento.py`, comprobadas en las dos direcciones: restaurando el `WHERE`
+original caen 3, y quitando la salida temprana caen 2. Suite **580/580**.
+
+> ✅ **Y con esto el Paso 8 deja de depender del OCR.** Era el bloqueo: la tarea nocturna va a
+> `AROMAN`, donde Tesseract no está, así que el despertador habría ido acumulando pliegos
+> escaneados descartados **de forma irreversible**. Ya no: se acumulan **recuperables**. Instalar
+> Tesseract pasa a ser mantenimiento que se puede hacer cualquier día, y el día que se haga, la
+> corrida siguiente los recoge sola.
+
+> 🔑 **La lección, y es la misma que H-33 dejó y que este hallazgo repite en otro punto del mismo
+> vocabulario**: un estado que se escribe y que **ninguna consulta lee** no es un estado, es un
+> vertedero. Y se detecta con una pregunta barata que conviene hacerse ante cualquier estado
+> nuevo: **¿quién selecciona por él?** Si la respuesta es nadie, lo que se ha construido no es un
+> paso del ciclo de vida, es su final.
+
+**La Cara A sigue abierta y es de entorno, no de código**: Tesseract no está instalado en `AROMAN`,
+así que hoy sigue sin leerse ni un escaneo. Ya no urge — sólo deja de leerse lo que se recuperará
+cuando se instale.
 
 ---
 

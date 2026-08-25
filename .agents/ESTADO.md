@@ -18,7 +18,7 @@
 
 **Se tomaron las dos decisiones de dirección que bloqueaban el Paso 8**, y en vez de abrirlo se
 fue antes a por **H-41**, que era la condición que la propia dirección puso. La suite está en
-**569/569**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
+**580/580**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
 condiciones nuevas que no existían ayer *(abajo)*.
 
 > 🚨 **Lo más importante de la sesión: H-41 tiene sitio, y no era el que el dosier decía.** La
@@ -81,11 +81,10 @@ más que ayer:
 
 1. 🚧 **El tope de duración del pipeline.** Sigue sin número. Ahora se sabe algo que ayer no: el
    cuelgue no viene de leer pliegos.
-2. 🚧 **Qué se hace con el OCR antes de programar el despertador (H-53).** La tarea nocturna va a
-   `AROMAN`, que es el equipo donde se ha medido que **Tesseract no está**. Tal cual, se estaría
-   programando a diario un proceso cuya fase de OCR se sabe muerta, y cada pliego escaneado que
-   entre quedará descartado de forma irreversible. **O se instala Tesseract en `AROMAN`, o el OCR
-   se declara fuera de alcance por ahora y consta.**
+2. ~~Qué se hace con el OCR antes de programar el despertador~~ ✅ **resuelto el 2026-08-25**:
+   se reparó la cara B de **H-53**, así que un pliego escaneado ya no queda descartado para
+   siempre — se conserva y se recogerá solo el día que Tesseract se instale. **El Paso 8 deja de
+   depender de ello.**
 3. ~~Reconciliar las 63 filas de H-54~~ ✅ **hecho el 2026-08-25**, por el libro y con el coste
    asumido: se destruyeron ~3 MB de texto extraído porque vaciarlo es postcondición del contrato de
    la Capa 9. Los 10 expedientes ya estaban archivados y los 10 análisis sobreviven.
@@ -203,14 +202,14 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **569/569**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **580/580**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (cara A: Tesseract sin instalar en `AROMAN`; **la cara B, la irreversible, reparada el 2026-08-25**), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 569/569
+python -m pytest tests/ -q          # debe dar 580/580
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.

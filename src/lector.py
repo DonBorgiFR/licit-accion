@@ -1149,8 +1149,9 @@ class Lector:
 
     def procesar_ocr_diferido_lote(self) -> None:
         """
-        Orquesta el procesamiento OCR para todos los documentos marcados como OCR_REQUERIDO.
-        Si Tesseract no está disponible, opera en modo degradado de forma transparente.
+        Orquesta el OCR de los documentos pendientes: `OCR_REQUERIDO` y, desde H-53, también los
+        `OCR_DIFERIDO` de corridas anteriores. Si Tesseract no está disponible, opera en modo
+        degradado de forma transparente.
         """
         if not self.db:
             print("[!] [lector] No se puede ejecutar OCR. Base de datos no conectada.")
@@ -1158,7 +1159,27 @@ class Lector:
 
         docs = self.db.obtener_documentos_para_ocr()
         if not docs:
-            print("[~] [lector] No hay documentos en estado OCR_REQUERIDO para procesar.")
+            print("[~] [lector] No hay documentos pendientes de OCR.")
+            return
+
+        # H-53: los diferidos vuelven a ser candidatos, y eso abre una posibilidad que antes no
+        # existía — la de reprocesar cada corrida un montón de documentos para dejarlos igual.
+        # Si Tesseract sigue sin estar y **todos** los candidatos ya son `OCR_DIFERIDO`, no hay
+        # nada que este lote pueda cambiar: se dice una vez y se sale.
+        #
+        # No se sale cuando hay algún `OCR_REQUERIDO` entre ellos, aunque Tesseract falte: ésos
+        # sí cambian de estado —pasan a `OCR_DIFERIDO`—, y ese registro es lo que hace que
+        # mañana se les vuelva a mirar.
+        ocr_no_disponible = not self.tesseract_path_bin or self.ocr_estado == "ocr_ausente"
+        solo_diferidos = all(doc.get("estado") == "OCR_DIFERIDO" for doc in docs)
+        if ocr_no_disponible and solo_diferidos:
+            print(f"[~] [lector] {len(docs)} documentos esperan OCR y Tesseract no está instalado. "
+                  f"Se conservan para la próxima corrida; no se reprocesan.")
+            self.registrar_log_JSONL(
+                action="doc_ocr_batch_pospuesto",
+                reason=f"Candidatos: {len(docs)} | Motivo: Tesseract no disponible | "
+                       f"Estado: conservados, se reintentaran cuando lo este",
+            )
             return
 
         print(f"[~] [lector] Iniciando motor de OCR diferido en {len(docs)} documentos...")
