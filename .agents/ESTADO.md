@@ -14,7 +14,95 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-19)
+## ▶️ Para retomar (sesión del 2026-08-25)
+
+**Se tomaron las dos decisiones de dirección que bloqueaban el Paso 8**, y en vez de abrirlo se
+fue antes a por **H-41**, que era la condición que la propia dirección puso. La suite está en
+**560/560**. **La tarea siguiente sigue siendo el Paso 8 de la Capa 10**, pero llega con dos
+condiciones nuevas que no existían ayer *(abajo)*.
+
+> 🚨 **Lo más importante de la sesión, y conviene leerlo antes que nada: H-41 no estaba donde el
+> dosier decía.** La auditoría nombraba dos sospechosos —*"las dos únicas piezas nativas del
+> pipeline"*, PyMuPDF y Tesseract—. Medidos los dos: **PyMuPDF lee los 205 PDF reales, 3.363
+> páginas, en 67 s sin una sola muerte** —y entre ellos están íntegros **los 76 documentos de la
+> corrida que reventó**—; **Tesseract no se ha ejecutado nunca en toda la historia del sistema**,
+> 0 documentos de 268. Los dos sospechosos salían de razonar sobre el código, no de medir.
+
+**Las dos decisiones de dirección, ya tomadas** *(2026-08-25)*:
+
+* **El tope de duración del pipeline se decide después de diagnosticar H-41**, no antes, para
+  poder ponerle un número con datos en vez de a ojo. Sigue sin decidirse, y **sigue bloqueando el
+  Paso 8**.
+* **La tarea nocturna se da de alta en un solo equipo, y consta cuál: `AROMAN`.** Es este, el que
+  **no** generó el `-shm` de conflicto. El otro es `WIN-G87QEEBSUTH`, que en el rastro firma como
+  `C:\Users\borja\...`. Es la mitigación barata de H-52 cara C: el cerrojo no distingue máquinas,
+  así que con la tarea en un solo equipo no hay dos pipelines rutinarios sobre la misma base.
+
+**Lo que se hizo, y qué se puede hacer ahora que antes no:**
+
+* **Saber qué pliego estaba leyendo el sistema cuando muere.** `Lector._marcar_pagina_en_curso()`
+  deja en `data/logs/documento_en_curso.json` el fichero, la página, el `pid` y el **host**,
+  escrito **antes** de tocar la biblioteca nativa y con `os.replace`, que es atómico. Si el
+  fichero está ahí al terminar, es que algo murió leyendo. **7 regresiones** en
+  `tests/test_h41_migaja_documental.py`.
+* **Descartar a los dos sospechosos de H-41 con medición**, no con lectura de código. H-41 pasa
+  de 🔴 abierto sin pista a 🟠 **acotado**: no ocurrió leyendo un pliego.
+
+**Tres hallazgos nuevos, y ninguno se ve leyendo código:**
+
+* **H-53 · El OCR nunca ha funcionado.** Tesseract no está instalado en `AROMAN`, y —esto sí es un
+  defecto— `OCR_DIFERIDO` es un **estado terminal**: `obtener_documentos_para_ocr()` sólo mira
+  `OCR_REQUERIDO`, así que **instalar Tesseract mañana no recuperaría ni uno de los diferidos**.
+  Es la forma exacta de H-33, en otro punto del mismo vocabulario. Hoy son 2 documentos; crece
+  solo y en silencio.
+* **H-54 · 63 documentos se esfumaron del disco sin registro.** Todos los del 2026-08-12, ninguno
+  de ningún otro día. Sus filas siguen diciendo `PROCESADO` con su `local_path` intacto y
+  **33,4 MB** que el sistema cree conservar y no tiene. La tabla `purgas` declara `0` documentos y
+  `0` bytes en sus 6 filas — **y no existe la fila `id = 1`**. Es la firma literal del peligro que
+  la Capa 9 declaró asimétrico.
+* **H-55 · El rastro de auditoría está roto y la segunda máquina firma en él.** `pipeline.jsonl`
+  tiene **11 líneas partidas** de 4.078, y dentro conviven **122 menciones de
+  `C:\Users\borja\...`** y 421 de `C:\Users\USUARIO\...`. **H-52 deja de ser un riesgo teórico**:
+  se difirió porque *"hoy no hay daño"* y la base sigue sana, pero el fichero con el que se
+  reconstruye qué pasó cuando algo falla llega con agujeros. Se necesitó hoy mismo y no se pudo
+  leer entero.
+
+**Lo que sigue**: la **Capa 10, Paso 8**, con **tres cosas que resolver antes de codificar** —una
+más que ayer:
+
+1. 🚧 **El tope de duración del pipeline.** Sigue sin número. Ahora se sabe algo que ayer no: el
+   cuelgue no viene de leer pliegos.
+2. 🚧 **Qué se hace con el OCR antes de programar el despertador (H-53).** La tarea nocturna va a
+   `AROMAN`, que es el equipo donde se ha medido que **Tesseract no está**. Tal cual, se estaría
+   programando a diario un proceso cuya fase de OCR se sabe muerta, y cada pliego escaneado que
+   entre quedará descartado de forma irreversible. **O se instala Tesseract en `AROMAN`, o el OCR
+   se declara fuera de alcance por ahora y consta.**
+3. 📌 **Distinguir las dos hipótesis de H-54** —¿murió la corrida id 4 a mitad de la purga, o hubo
+   una purga que terminó y contabilizó 0?—. **No bloquea el Paso 8**, pero es el hilo que queda
+   vivo de H-41 y las dos hipótesis piden reparaciones distintas.
+
+> ⚠️ **Un apunte que el acta no tenía: el 2026-08-25 a las 09:03 hubo una corrida (id 12, 59
+> documentos, `COMPLETED`) que no la lanzó esta sesión.** Aparece en `ejecuciones` y sus PDF están
+> en disco. Conviene saber de qué equipo salió: es justo el tipo de cosa que H-52 hace difícil de
+> responder.
+
+> 🔑 **Lo más transferible de la sesión, y es de método: un sospechoso deducido no es un sospechoso
+> medido.** Los dos candidatos de H-41 llevaban ocho días en el dosier con la etiqueta de *"las
+> únicas piezas nativas"*, que es un razonamiento correcto sobre el código. Bastó medirlos para que
+> los dos cayeran — uno pasa limpio sobre el corpus entero, el otro no se ha ejecutado jamás. **La
+> instrumentación no encontró al culpable: encontró que se estaba buscando en el sitio
+> equivocado.**
+
+> ⚠️ **Y una que vale para las regresiones de cualquier reparación nueva.** Las 7 pruebas de la
+> migaja pasaban en verde, y contra el código anterior fallaban las 7 — pero fallaban por
+> `AttributeError`, porque el símbolo no existía todavía. **Eso no prueba nada sobre el defecto.**
+> La prueba honesta fue **mutar la reparación**: mover la marca a *después* de leer la página, que
+> es exactamente el defecto original. Caen dos pruebas, y con el síntoma correcto —la migaja
+> señalando la página 1 cuando la muerte fue en la 2—. **Una regresión sobre código nuevo hay que
+> comprobarla mutando, no revirtiendo.**
+
+
+### 📕 Sesión anterior — 2026-08-19 (referencia, ya no es la cabecera)
 
 La sesión **cerró H-48, H-49, H-47, H-50 y H-51**, y **cerró entero el Bloque 3 — Identidad y
 foco**, sus siete pasos. La suite está en **553/553**. **La tarea siguiente es el Paso 8 de la
@@ -100,14 +188,14 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **553/553**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **51 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, sin asignar), **H-45/46** de la revisión del 18-08 y **H-52** (OneDrive como canal de distribución, **diferido por dirección al final del proyecto**). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **560/560**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 47 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (el OCR nunca ha funcionado y `OCR_DIFERIDO` no se reintenta), **H-54** (63 documentos desaparecidos sin registro) y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **espera el Paso 8**; el sistema ya se usa con un doble clic.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 
 **Verificación antes de dar nada por bueno:**
 
 ```bash
-python -m pytest tests/ -q          # debe dar 553/553
+python -m pytest tests/ -q          # debe dar 560/560
 ```
 
 **Punto de entrada del pipeline**: `python run.py` desde la raíz. **Nunca** `python src/main.py`.
@@ -429,14 +517,25 @@ duración intacta.
 > por dentro. Lo que espera es el **Paso 8 de la Capa 10**, el despertador. El «8» aparece en los
 > dos sitios y se confunde con facilidad.
 >
-> 🚧 **Y no se puede empezar a codificar nada: hay DOS decisiones de dirección sin tomar.**
+> 🚧 **Y no se puede empezar a codificar nada: siguen faltando DOS decisiones de dirección** —una
+> de las de ayer y una nueva; la otra ya está tomada.
+>
+> ✅ *(Tomada el 2026-08-25)* **La tarea nocturna se da de alta en un solo equipo: `AROMAN`.** Es
+> la mitigación barata de H-52 cara C, y no cuesta código.
+>
+> 🚧 **(NUEVA, 2026-08-25) Qué se hace con el OCR (H-53).** `AROMAN` es justo el equipo donde se ha
+> medido que **Tesseract no está instalado**, y `OCR_DIFERIDO` resultó ser un estado terminal del
+> que no se sale. Programar el despertador tal cual garantiza que **ningún pliego escaneado se lea
+> nunca**, y de forma irreversible. Se decide **dentro de este paso**.
 >
 > *(1)* **Si el pipeline debe tener un tope de duración**, ahora que va a lanzarlo una tarea
 > nocturna sin consola delante. No se ha inventado ningún plazo porque la Regla 4 lo prohíbe. El
 > enunciado completo, con las cuatro cosas que hay que decidir, está en el `README.md` dentro del
 > Paso 8.
 >
-> *(2)* **En cuántos equipos se da de alta la tarea programada — y esto es nuevo, del 2026-08-19.**
+> *(2)* ~~**En cuántos equipos se da de alta la tarea programada**~~ **— RESUELTO el 2026-08-25:
+> en uno solo, `AROMAN`.** Se conserva el enunciado porque explica por qué la respuesta importa.
+> **En cuántos equipos se da de alta la tarea programada — planteado el 2026-08-19.**
 > Dirección confirmó que usa el sistema **desde dos PCs** sobre la misma carpeta sincronizada, y el
 > cerrojo de corridas **no distingue máquinas** (H-52, cara C): identifica una corrida por `pid` +
 > instante de creación, que es un espacio de nombres **local**. Dada de alta en los dos equipos, la
@@ -444,7 +543,8 @@ duración intacta.
 > barata no cuesta código** —darla de alta en un solo equipo y que conste cuál—, pero es una
 > decisión que se toma **dentro de este paso**, no en el cajón del final del proyecto.
 >
-> **Las dos son la primera conversación de la sesión siguiente, antes que ningún plan.**
+> **Las que queden abiertas son la primera conversación de la sesión siguiente, antes que ningún
+> plan.**
 
 **La Capa 9 quedó cerrada el 2026-08-12**, con sus diez pasos completados y verificada con una corrida real del pipeline. Su historia vive más abajo y en el README; no hace falta releerla.
 
@@ -539,10 +639,27 @@ Bloque 1 — Cimientos 🟢 y Bloque 2 — Coherencia LCSP 🟢 están cerrados.
 
 ### ⚠️ Pendiente de acción del usuario
 
-**Dos cuestiones abiertas. La primera bloquea el Paso 8; la segunda es para el final del proyecto.**
+**Tres cuestiones abiertas. Las dos primeras bloquean el Paso 8; la tercera es para el final
+del proyecto.**
+
+> ✅ **Resuelto el 2026-08-25 — en cuántos equipos se da de alta la tarea nocturna**: en **uno
+> solo, `AROMAN`** *(decisión de dirección)*. Es la mitigación barata de H-52 cara C y no cuesta
+> código. El otro equipo es `WIN-G87QEEBSUTH`, que en el rastro firma como `C:\Users\borja\...`.
+
+* 🚧 **Qué se hace con el OCR antes de programar el despertador (H-53).** *(Nueva del
+  2026-08-25.)* Tesseract **no está instalado en `AROMAN`**, que es justo el equipo donde va la
+  tarea nocturna, y `OCR_DIFERIDO` es un estado del que no se sale: cada pliego escaneado que
+  entre quedará descartado **de forma irreversible**. Programar a diario un proceso cuya fase de
+  OCR se sabe muerta es la caja negra silenciosa que el contrato de esta capa existe para
+  impedir. **O se instala Tesseract en `AROMAN`, o el OCR se declara fuera de alcance por ahora y
+  consta por qué.**
 
 * 🚧 **Si el pipeline debe tener un tope de duración**, ahora que lo va a lanzar una tarea
   nocturna sin consola. **No se ha inventado ningún plazo** porque la Regla 4 lo prohíbe.
+  **Dirección decidió el 2026-08-25 diagnosticar H-41 primero** para poder ponerle un número con
+  datos. Lo que el diagnóstico ha dado hasta ahora: **el cuelgue no viene de leer pliegos** —los
+  dos sospechosos nativos están descartados con medición—, así que el hilo vivo es H-54 y la fase
+  de purga.
   **El enunciado completo está anotado donde toca resolverlo**: en el `README.md`, dentro del
   **Paso 8** de la Capa 10, con las cuatro cosas que hay que decidir y por qué; y su ausencia
   queda explicada en el bloque `despertador` de `config/lanzador.yaml`, que es donde alguien

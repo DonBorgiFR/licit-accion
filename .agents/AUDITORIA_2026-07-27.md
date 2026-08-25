@@ -1537,7 +1537,14 @@ identidad de un proceso se unifican en **`src/proceso.py`**: `es_pid_activo()` v
 de comportamiento: **`db_lock()` se queda exactamente como estaba**, y la nota de alcance sobre su
 `created_at` sigue vigente y sin tocar.
 
-### H-41 · El pipeline revienta con una violación de acceso sobre datos reales 🔴 ABIERTO (sin asignar)
+### H-41 · El pipeline revienta con una violación de acceso sobre datos reales 🟠 ACOTADO
+
+> ⛔ **No te quedes en esta sección: está superada.** El 2026-08-25 se instrumentó la fase
+> documental y se midieron los dos sospechosos que aquí se nombran. **Los dos quedaron
+> descartados** — PyMuPDF pasa limpio sobre el corpus entero y Tesseract no se ha ejecutado
+> nunca. Lo que sigue aquí abajo es la evidencia original del 2026-08-17, que se conserva
+> íntegra; **la conclusión vigente está en "Hallazgos de instrumentar y perseguir H-41 —
+> 2026-08-25"**, al final del dosier, junto con H-53, H-54 y H-55.
 
 **Detectado el 2026-08-17**, por accidente: durante la verificación del Paso 6 se lanzó una
 prospección real contra las fuentes públicas, y **terminó con el código `3221225477`**, que es
@@ -2159,6 +2166,168 @@ espacio de nombres local.
 > puntuaban distinto— y H-38 —la URL absoluta del bundle, que funcionaba *por casualidad* mientras
 > el puerto fue 8000—. Las tres son lo mismo: **algo funciona por una circunstancia del entorno que
 > nadie eligió y que nada garantiza.**
+
+---
+
+## Hallazgos de instrumentar y perseguir H-41 — 2026-08-25
+
+> **Los cuatro salieron de un solo movimiento: poner una migaja donde no la había y luego mirar
+> qué había pasado de verdad.** Ninguno se ve leyendo código. H-53 y H-54 son de la familia que
+> este dosier lleva registrando desde H-21 —**no rompen, callan**—, y H-55 convierte a H-52 de
+> riesgo teórico en daño medido.
+
+### H-41 · El pipeline revienta con una violación de acceso 🟠 ACOTADO (2026-08-25, sigue abierto)
+
+**No se ha cerrado, pero ya no está donde la auditoría lo buscaba.** El dosier nombraba dos
+sospechosos, *"las dos únicas piezas nativas del pipeline"*: **PyMuPDF** extrayendo texto y
+**Tesseract** haciendo OCR. Medidos hoy los dos, ninguno se sostiene.
+
+**Lo que se hizo primero — la migaja que el propio dosier pedía.** El rastro se escribía
+*después* de que la función volviera; si la biblioteca nativa revienta dentro, no vuelve. Ahora
+`Lector._marcar_pagina_en_curso()` deja en `data/logs/documento_en_curso.json` qué fichero y qué
+página se va a leer **antes** de tocarla, con `pid` y `host`. Se escribe con `os.replace`, que es
+atómico: truncar el destino lo dejaría vacío justo en el instante para el que existe. 7
+regresiones en `tests/test_h41_migaja_documental.py`. **Comprobado que fallan sin la
+reparación** mutándola —moviendo la marca a *después* de leer la página—: dos pruebas caen, y
+con el síntoma exacto, la migaja diciendo *página 1* cuando la muerte fue en la 2.
+
+**Medición 1 — PyMuPDF, limpio sobre todo el corpus real.** Los **205 PDF** que hay en
+`data/documents`, **3.363 páginas**, **67,0 s**: **0 muertes y 0 errores**. Y el dato que lo
+hace concluyente: **los 76 documentos de la corrida que reventó —la id 4, del 2026-08-17— siguen
+íntegros en disco y están entre los 205**. El corpus que mató al proceso se lee hoy sin una queja.
+
+**Medición 2 — Tesseract no ha corrido nunca, en toda la historia del sistema.** De 268
+documentos con fichero, el método de extracción es `pymupdf` en 266 y
+`pymupdf_vectorial_previo` —el modo degradado— en 2. **Cero con `tesseract`.** No es que no
+fallara: es que **nunca se ejecutó**, así que no pudo matar a nadie el 2026-08-17. Ver H-53.
+
+**Qué queda, entonces.** Que el crash no ocurrió leyendo un pliego. Y hay a dónde mirar: la
+corrida id 4 es la única `FAILED`, y es también la única entre la que dejó 63 documentos en disco
+y el momento en que esos 63 desaparecieron sin registro (**H-54**). El dosier daba por descartada
+la fase de purga *"(`purgas` a 0, no llegó a esa fase)"* — y `purgas` a 0 es exactamente lo que
+deja un proceso que muere antes de anotar lo que ya borró.
+
+> 🔑 **Lo transferible: la instrumentación no encontró al culpable, encontró que se buscaba en el
+> sitio equivocado.** Los dos sospechosos venían de razonar sobre el código —*"las únicas piezas
+> nativas"*— y no de medir. Uno pasa limpio sobre el corpus entero y el otro no se ha ejecutado
+> jamás. **Un sospechoso deducido no es un sospechoso medido.**
+
+> ⚠️ **Límite honesto de la medición**: se han barrido los 205 PDF que hay **hoy**. Faltan los 63
+> del 2026-08-12, que ya no están en disco — y son precisamente el objeto de H-54. Si el culpable
+> estuviera entre ellos, este barrido no podía encontrarlo. Lo que sí queda establecido es que
+> **el corpus de la corrida que murió está completo y se lee limpio**.
+
+---
+
+### H-53 · El OCR nunca ha funcionado, y un pliego escaneado no se reintenta jamás 🔴 ABIERTO
+
+**Detectado el 2026-08-25**, midiendo el método de extracción de cada documento para descartar a
+Tesseract como causa de H-41.
+
+**Cara A — Tesseract no está instalado, y el sistema lo tapa bien.** `_autodetectar_tesseract()`
+en este equipo devuelve `ocr_estado = "ocr_ausente"` y binario `None`. El modo degradado está
+previsto y es correcto —conserva el texto previo y sigue—, pero **el resultado neto es que en
+toda la historia del sistema no se ha leído ni una página por OCR**: 266 documentos por
+`pymupdf`, 2 en modo degradado, **0 por `tesseract`**.
+
+**Cara B, y ésta sí es un defecto: `OCR_DIFERIDO` es un estado terminal del que no se sale.**
+`Memoria.obtener_documentos_para_ocr()` selecciona `WHERE estado = 'OCR_REQUERIDO'`
+(`memoria.py:2707`). Un documento que entra en modo degradado se guarda como `OCR_DIFERIDO`, que
+esa consulta no mira. **Instalar Tesseract mañana no recuperaría ni uno de los ya diferidos**:
+seguirían ahí, con su texto vacío, para siempre. El nombre dice *diferido* y el comportamiento es
+*descartado*.
+
+Es literalmente la forma de **H-33** —un estado que se escribe y que ninguna consulta lee—, en
+otro punto del mismo vocabulario documental.
+
+**Impacto hoy: pequeño y medido.** Sólo 2 documentos. Lo que lo hace catalogable es que crece
+solo y en silencio: cada pliego escaneado que entre se sumará a un montón que nadie vuelve a
+mirar, y el Analista lo recibirá vacío sin que nada avise.
+
+> ⚠️ **Y toca de lleno al Paso 8 de la Capa 10.** La tarea nocturna se va a dar de alta en
+> **AROMAN** *(decisión de dirección del 2026-08-25)*, que es el equipo donde se ha medido que
+> **Tesseract no está**. Tal cual, el despertador garantiza que ningún pliego escaneado se lea
+> nunca — y por la Cara B, además, de forma irreversible. **Antes de cerrar el Paso 8 hay que
+> decidir si se instala Tesseract en AROMAN o si el OCR se declara fuera de alcance por ahora**;
+> lo que no puede quedar es programado a diario un proceso cuya fase de OCR se sabe muerta.
+
+---
+
+### H-54 · 63 documentos desaparecieron del disco sin que nada lo registrara 🔴 ABIERTO
+
+**Detectado el 2026-08-25**, comprobando qué parte del corpus podía cubrir el barrido de H-41.
+
+**Lo medido, sin interpretar:**
+
+| Día de ingesta | Documentos con `local_path` | Siguen en disco | Faltan |
+|---|---|---|---|
+| 2026-08-12 | 63 | **0** | **63** |
+| 2026-08-17 | 76 | 76 | 0 |
+| 2026-08-18 | 37 | 37 | 0 |
+| 2026-08-19 | 33 | 33 | 0 |
+| 2026-08-25 | 59 | 59 | 0 |
+
+* Los 63 son **exactamente** los `documentos_descargados` que registra la corrida id 3
+  (2026-08-12). Se fueron **todos**, y no se fue ninguno de ningún otro día.
+* Sus filas siguen en `documentos` con estado **`PROCESADO`** y su `local_path` intacto,
+  apuntando a ficheros que no existen. Declaran **35.037.037 bytes** (33,4 MB).
+* La tabla `purgas` **no reconoce haber borrado nada**: sus 6 filas dicen `documentos_purgados =
+  0` y `bytes_liberados = 0`.
+* **No existe la fila `id = 1` de `purgas`.** La tabla empieza en la id 2, del 2026-08-18.
+
+**Por qué esto es grave y no un detalle de contabilidad.** Es la firma exacta del peligro que la
+propia Capa 9 declaró asimétrico y que el dosier repite en H-41: *"la purga documental borra
+ficheros **antes** de tocar la base, así que una interrupción deja el fichero fuera y la fila sin
+marcar"*. Aquí hay 63 ficheros fuera y 63 filas sin marcar. El sistema cree que conserva 33,4 MB
+de pliegos que no tiene, y cualquier operación que se fíe de `local_path` —una relectura, un
+reanálisis, el cálculo de ocupación— trabajará sobre una ficción.
+
+**Qué falta por averiguar, y no se ha hecho hoy**: si los borró la corrida id 4 —la única
+`FAILED`, la de H-41— muriendo a mitad de la purga, o si los borró una purga que sí terminó y
+contabilizó 0 por un defecto de registro. **Las dos hipótesis son malas y son distintas**, y
+distinguirlas es lo que hace falta antes de tocar nada. El hueco de la id 1 apunta a la primera;
+que las otras 6 filas también digan 0 admite la segunda.
+
+> ⚠️ **No se ha reparado nada ni se ha tocado la base.** Todas las mediciones de este hallazgo se
+> hicieron sobre una **copia** de `licitaciones.db` en un directorio temporal.
+
+---
+
+### H-55 · El rastro de auditoría tiene 11 líneas partidas, y la segunda máquina firma en él 🔴 ABIERTO
+
+**Detectado el 2026-08-25**, al intentar leer `data/pipeline.jsonl` para reconstruir la corrida
+que reventó. **No se pudo: el fichero no es JSONL válido.**
+
+**Es la Cara B de H-52 con daño encima, y ya no es teórica.**
+
+* De **4.078 líneas, 11 están partidas** y no parsean: las 44, 1699, 1711, 2708, 2807, 2809,
+  3196, 3274, 3276, 4070 y 4073. Son escrituras rotas por la mitad —fragmentos como
+  `'s": 69.11}}'` sin su principio—, no contenido mal formado.
+* **La segunda máquina aparece firmada dentro del rastro.** 122 menciones de
+  `C:\Users\borja\OneDrive\...\licitaciones.db` frente a 421 de `C:\Users\USUARIO\...`. Hasta hoy
+  la evidencia de H-52 era un `-shm` renombrado por conflicto; **ahora hay dos perfiles de
+  usuario escribiendo en el mismo fichero de auditoría.**
+* **Cuándo escribió cada uno**: `USUARIO` los días 12, 13, 17, 18, 19 y 25 de agosto; `borja`
+  sólo el 18 y el 19. Cuatro relevos limpios de una máquina a otra, **sin solape temporal
+  detectable** entre eventos. Y aun así hay líneas partidas, incluida la 3274, que es de `borja`.
+
+**Lo que esto añade a H-52.** El diferimiento del 2026-08-19 se decidió sobre la base de que *"hoy
+no hay daño"*, y era cierto con la evidencia de entonces: `PRAGMA integrity_check` daba `ok`. La
+base sigue sana — **pero el rastro de auditoría no**. Es el fichero con el que se reconstruye qué
+pasó cuando algo sale mal, exactamente lo que se ha necesitado hoy para H-41, y llega con agujeros.
+
+> 🔑 **Por qué el mecanismo no es "dos procesos a la vez".** `registrar_log_json()` abre en modo
+> `"a"`, escribe y cierra en cada evento (`memoria.py:2009`): dentro de una máquina eso es seguro.
+> Lo que no es seguro es que **OneDrive reconcilie dos versiones de un fichero de sólo-añadir**.
+> No hace falta que los dos equipos escriban a la vez: basta con que cada uno añada al final de la
+> copia que tenía. Por eso hay líneas partidas sin un solo solape temporal.
+
+> 📌 **Relación con H-39**, que ya estaba abierto sobre este mismo fichero —*mezcla dos esquemas de
+> evento incompatibles*—. **Son cosas distintas y conviene no fundirlas**: H-39 es que las líneas
+> válidas no hablan el mismo idioma; H-55 es que 11 de ellas no son líneas. Pero se reparan en el
+> mismo sitio, el Paso 9 de la Capa 10, y quien lo abra debe saber que **cualquier lector de
+> `pipeline.jsonl` tiene que tolerar líneas rotas**, porque las hay ya escritas y borrarlas sería
+> destruir rastro.
 
 ---
 
