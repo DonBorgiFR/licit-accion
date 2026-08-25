@@ -71,8 +71,22 @@ def _interprete() -> str:
     return ejecutable
 
 
-def _construir_xml(hora: str, ejecutar_si_se_perdio: bool, tope_minutos: int) -> str:
-    """El XML de la tarea, construido desde `config/lanzador.yaml` y de ningún otro sitio."""
+def _construir_xml(
+    hora: str,
+    ejecutar_si_se_perdio: bool,
+    tope_minutos: int,
+    una_sola_vez=None,
+    nota: str = "",
+) -> str:
+    """El XML de la tarea, construido desde `config/lanzador.yaml` y de ningún otro sitio.
+
+    `una_sola_vez` —un `datetime`— cambia el disparador diario por uno de una sola vez a esa
+    hora. Lo usa `tools/verificar_session0.py`, y **por eso vive aquí y no allí**: la
+    verificación de la Session 0 sólo demuestra algo si la tarea que se prueba tiene el mismo
+    usuario, el mismo `LogonType`, el mismo directorio y la misma orden que la de verdad. Una
+    tarea de prueba construida aparte se le parecería hoy y dejaría de parecérsele el día que
+    alguien cambiara una de las dos.
+    """
     usuario = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
     equipo = platform.node()
     hoy = datetime.now().strftime("%Y-%m-%d")
@@ -90,19 +104,28 @@ def _construir_xml(hora: str, ejecutar_si_se_perdio: bool, tope_minutos: int) ->
         f"Ejecuta el modo 'solo pipeline': sin servidor, sin pantalla y sin una sola llamada "
         f"grafica, porque corre en la Session 0. No invocar Incoop.vbs desde aqui."
     )
+    if nota:
+        descripcion = f"{nota} {descripcion}"
+
+    if una_sola_vez is not None:
+        disparador = f"""    <TimeTrigger>
+      <StartBoundary>{una_sola_vez.strftime('%Y-%m-%dT%H:%M:%S')}</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>"""
+    else:
+        disparador = f"""    <CalendarTrigger>
+      <StartBoundary>2026-01-01T{hora}:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+    </CalendarTrigger>"""
 
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>{descripcion}</Description>
-    <URI>\\{NOMBRE_TAREA}</URI>
   </RegistrationInfo>
   <Triggers>
-    <CalendarTrigger>
-      <StartBoundary>2026-01-01T{hora}:00</StartBoundary>
-      <Enabled>true</Enabled>
-      <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
-    </CalendarTrigger>
+{disparador}
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -147,9 +170,38 @@ def _schtasks(argumentos):
         return -1, f"no se pudo invocar schtasks: {e}"
 
 
-def existe_tarea() -> bool:
-    codigo, _ = _schtasks(["/Query", "/TN", NOMBRE_TAREA])
+def existe_tarea(nombre: str = NOMBRE_TAREA) -> bool:
+    codigo, _ = _schtasks(["/Query", "/TN", nombre])
     return codigo == 0
+
+
+def registrar_xml(nombre: str, xml: str):
+    """Entrega el XML al Programador. Devuelve `(codigo, salida)`.
+
+    El Programador exige el fichero en **UTF-16**; en UTF-8 lo rechaza con un error que no
+    explica nada. Se escribe a un temporal y se retira siempre, pase lo que pase.
+
+    `/F` es lo que hace idempotente el alta: sustituye la tarea si ya existía, en vez de
+    fallar o —peor— dejar una segunda que prospectaría sobre la misma base.
+    """
+    manejador, ruta_xml = tempfile.mkstemp(suffix=".xml", prefix="incoop_despertador_")
+    os.close(manejador)
+    try:
+        with open(ruta_xml, "w", encoding="utf-16") as f:
+            f.write(xml)
+        return _schtasks(["/Create", "/TN", nombre, "/XML", ruta_xml, "/F"])
+    finally:
+        try:
+            os.remove(ruta_xml)
+        except OSError:
+            pass
+
+
+def retirar_tarea(nombre: str):
+    """Retira una tarea. Devuelve `(codigo, salida)`; si no existía, `(0, ...)`."""
+    if not existe_tarea(nombre):
+        return 0, "no estaba dada de alta"
+    return _schtasks(["/Delete", "/TN", nombre, "/F"])
 
 
 def informar_estado(config) -> int:
@@ -192,22 +244,7 @@ def dar_de_alta(config) -> int:
         tope_minutos=config.despertador.duracion_maxima_minutos,
     )
 
-    # El Programador exige el XML en UTF-16; en UTF-8 lo rechaza con un error que no explica
-    # nada. Se escribe a un temporal y se retira siempre.
-    manejador, ruta_xml = tempfile.mkstemp(suffix=".xml", prefix="incoop_despertador_")
-    os.close(manejador)
-    try:
-        with open(ruta_xml, "w", encoding="utf-16") as f:
-            f.write(xml)
-
-        # `/F` es lo que hace esto idempotente: sustituye la tarea si ya existía, en vez de
-        # fallar o —peor— crear una segunda que prospectaría sobre la misma base.
-        codigo, salida = _schtasks(["/Create", "/TN", NOMBRE_TAREA, "/XML", ruta_xml, "/F"])
-    finally:
-        try:
-            os.remove(ruta_xml)
-        except OSError:
-            pass
+    codigo, salida = registrar_xml(NOMBRE_TAREA, xml)
 
     if codigo != 0:
         print()
