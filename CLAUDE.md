@@ -8,8 +8,8 @@ Claude Code y otros). El estado canónico **no vive en la conversación**: vive 
 1. **[`.agents/ESTADO.md`](.agents/ESTADO.md)** — dónde está el proyecto, cuál es la tarea activa y
    qué se cerró en cada capa. **Es el fichero que cambia**, y el único donde se anota el resultado
    de un paso.
-2. **[`.agents/AGENTS.md`](.agents/AGENTS.md)** — las 14 Reglas de Rigor Operativo y las 7
-   Convenciones Técnicas (C1–C7). **Son de obligado cumplimiento**, no recomendaciones: cada
+2. **[`.agents/AGENTS.md`](.agents/AGENTS.md)** — las 14 Reglas de Rigor Operativo y las 9
+   Convenciones Técnicas (C1–C9). **Son de obligado cumplimiento**, no recomendaciones: cada
    convención nació de un defecto real que llegó a producción. Casi nunca cambia.
 3. **[`.agents/AUDITORIA_2026-07-27.md`](.agents/AUDITORIA_2026-07-27.md)** — los hallazgos con su
    evidencia reproducible. **No rediagnostiques lo que ya está ahí.**

@@ -1,5 +1,31 @@
 # Apuntes para el Paso 10 — Cierre de la Capa 10 y del ecosistema
 
+> # ⚠️ DOCUMENTO SUPERADO EN SU MAYOR PARTE — 2026-08-27, tarde
+>
+> **Se escribió por la mañana, antes de abrir el paso. La sesión de la tarde lo dejó obsoleto
+> en casi todo lo que afirma**, y se conserva porque su método sigue valiendo y porque explica
+> de dónde venía el paso.
+>
+> **Ve primero a [`ESTADO.md`](ESTADO.md) y a [`CONTRATO_PASO_10.md`](CONTRATO_PASO_10.md).**
+>
+> **Qué de aquí ya NO es cierto:**
+>
+> | Lo que dice este documento | Lo que pasó |
+> |---|---|
+> | *«Cinco hallazgos abiertos»* | Quedan **tres**: H-55, H-41 y H-52. Se cerraron H-53, H-56, H-58 y H-59 |
+> | *«El análisis del Centinela no ha funcionado nunca» (H-56)* | 🟢 **Cerrado.** Era un esquema cruzado en la factoría de proveedores |
+> | *«No reabrir H-56 en este paso»* | **Dirección decidió lo contrario**, con motivo: medido, la causa no era el motor de análisis. Ver decisión D.4 |
+> | *«Tesseract no está instalado» (H-53)* | 🟢 **Cerrado.** Instalado y verificado; los 4 documentos diferidos se recuperaron solos |
+> | *«14 líneas partidas en el registro» (H-55)* | Son **19**, y el diagnóstico cambió: es **cualquier pool de hilos**, no sólo el de la API |
+> | *«H-41 conviene comprobar si sigue vivo»* | Comprobado: **sin reaparecer** en 8+ corridas. Sigue **sin cerrarse**, y es deliberado |
+> | *«Las cuatro decisiones que habrá que plantear»* | **Tomadas las cuatro** el 2026-08-27. Están en `ESTADO.md` y en el contrato |
+> | *«El trabajo del paso son el manual y la verificación en vivo»* | **Sigue siendo cierto**, y es lo único que queda intacto: bloques 10.C, 10.E, 10.F y 10.G |
+>
+> **Qué de aquí sigue valiendo entero:** la sección **E** *(trampas del entorno y del código)*, la
+> **F** *(método: medir antes de escribir el contrato, validar mutando, mirar la pantalla, un
+> bloque una verificación un commit)* y la advertencia de la **G** de no escribir un manual del
+> sistema ideal. **Las tres se usaron hoy y las tres funcionaron.**
+
 **Escritos el 2026-08-27**, al cerrar el Paso 9, por quien acababa de recorrerlo entero.
 
 > **Qué es este documento y qué no.** **No es un plan** —el plan lo hará quien abra el paso, con

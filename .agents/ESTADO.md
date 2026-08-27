@@ -14,111 +14,115 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-27, tarde)
+## ▶️ Para retomar (sesión del 2026-08-27)
 
-**El Paso 10 está ABIERTO** —el último de la capa y del recorrido— con su contrato **validado**
-por dirección: [`CONTRATO_PASO_10.md`](CONTRATO_PASO_10.md), ya en **v1.1.0**. **El bloque 10.B.1
-está CERRADO** y la suite pasa de 688 a **708/708**.
+**El Paso 10 de la Capa 10 está ABIERTO** —el último de la capa y del recorrido— con su contrato
+**validado por dirección**: [`CONTRATO_PASO_10.md`](CONTRATO_PASO_10.md), en **v1.2.0**. **Sus
+bloques 10.A, 10.B.1, 10.B.2 y 10.D están cerrados.** La suite pasa de 688 a **742/742** y el
+esquema de base de datos de v8 a **v9**.
 
-> ✅ **H-56 cerrado: el Centinela emitió su primer dictamen completo de la historia del
-> proyecto.** Verificado contra el modelo real con `tools/verificar_dictamen_centinela.py`:
-> `estado_operativo` **`ANALIZADA_IA`**, `modo_degradado` **`False`**, nivel **ALTO**, tres
-> acciones recomendadas concretas. **`boletin_llm_succeeded` pasa de 0 a 1** — valía 0 desde el
-> primer día del proyecto. La reparación: el esquema deja de estar fijado en el proveedor y lo
-> pone el llamador, con `None` conservando el del analista para no tocar lo que ya iba *(Regla
-> 14)*. **10 regresiones** que afirman sobre la **petición** y no sobre la respuesta —dos de
-> ellas mirando el cuerpo HTTP que sale por el cable—, validadas con 5 mutaciones. Suite **718**.
+### 🎯 Lo primero que hay que saber: el paso ya no es el que estaba escrito
 
-> ✅ **H-59 cerrado también, y con él las 5 alertas del Cockpit tienen dictamen por primera
-> vez**: las cinco pasan de `ANALISIS_DIFERIDO_BOLETIN` a **`NUEVA_FASE_TEMPRANA`** con
-> `modo_degradado` a `False` —cuatro `PRESUPUESTO` y una `SUBVENCION`, todas de nivel `BAJO`,
-> que es un veredicto real y no una degradación disfrazada—. Esquema **v9** con
-> `intentos_analisis`, **el tope puesto desde el primer día** porque es la lección de H-58
-> aplicada antes de repetirla.
+Dirección tomó las **cuatro decisiones** que el `MANUAL.md` necesitaba, y la cuarta invirtió el
+paso entero:
 
-> 🔑 **Y lo más duradero del bloque no es la reparación: es que la invariante dejó de estar
-> escrita.** El contrato del Paso 10 la declaró por la mañana, con H-58 delante, y por la
-> tarde el proyecto pisó la misma forma por cuarta vez. `tests/test_vocabularios_de_estado.py`
-> la ejecuta ahora: cada estado declara su naturaleza y, si es transitorio, **quién lo recoge
-> por su nombre**; la prueba resuelve ese consumidor y **lee su código** para exigir que lo
-> mencione. **Encontró dos cosas en su primera ejecución** — `ANALIZADA_IA` no estaba
-> declarado en ninguna parte *(hubo que inventar la categoría «en vuelo»)*, y descubrir que no
-> figura en `ESTADOS_BOLETIN_VALIDOS` reveló que **eso es la protección, no el defecto**:
-> estando fuera, reconstruir una alerta con ese valor **falla en voz alta**.
+| | Decisión | Qué implica |
+|---|---|---|
+| **D.1 · Lector** | **Cero terminal** | El manual no menciona una línea de comandos. Obliga a envolver el despertador y la instalación en accesos de doble clic *(bloque 10.C, pendiente)* |
+| **D.2 · Idioma** | **Català** | `MANUAL.md` será el único documento del proyecto en catalán; el resto sigue en castellano |
+| **D.3 · DOGC** | **Apagada, pendiente de reponer** | Sin prometer fecha: nadie tiene programada su reposición *(Regla 4)* |
+| **D.4 · Averías** | **Reparar antes que documentar** | La sección de limitaciones del manual es **el residuo** de lo que no se pueda arreglar, no un inventario decidido de antemano |
 
-> 📕 **Lo que decía este apartado antes de reparar H-59, y se conserva porque explica el
-> hallazgo:**
-> `ANALISIS_DIFERIDO_BOLETIN` **tampoco lo recoge nadie**: el flujo del Centinela sólo analiza lo
-> que acaba de ingerir, así que **las 5 alertas del canal seguirán sin dictamen para siempre**
-> aunque el motor ya funcione. *Reparar el motor no rescata a quien se quedó en la cuneta
-> mientras estaba averiado.* **Es la cuarta vez este mes con la misma forma** —H-33, H-53 cara B,
-> H-58 y ésta—, y la frase con la que se catalogó H-53 vale literal: **el nombre dice diferido y
-> el comportamiento es descartado**. Pendiente de decisión: el contrato del Paso 10 declara la
-> invariante sólo para el vocabulario documental, y esto pasa en el de alertas.
+> 🔑 **D.4 se pagó sola el día que se tomó, y tres veces.** El triaje que obligaba a hacer destapó
+> **H-58**, que estaba perdiendo pliegos esa misma mañana; verificar H-56 destapó **H-59**; y la
+> prueba escrita para que no hubiera un quinto caso **encontró dos cosas más en su primera
+> ejecución**. Se buscaba qué escribir en una sección de averías y aparecieron averías.
 
-> ✅ **H-58 cerrado, y verificado sobre la base real: los 6 pliegos que estaban perdidos ya están
-> en disco.** 5 descargados —el PCA de 999 KB, el PPT, el quadre, la memòria y la resolució— y 1
-> omitido correctamente por no ser PDF. `count(*) WHERE estado='DESCARGANDO'` devuelve **0**.
+### ✅ Lo que se puede hacer ahora y ayer no
 
-> 🔑 **Y al repararlo apareció lo que el diagnóstico no tenía: por qué se varaban.** Eran **dos
-> defectos encadenados**, y ninguno bastaba solo. **El disparador**: `_path_for_document()`
-> troceaba el expediente por el carácter 4 sin comprobar que el trozo fuera un nombre legal, y
-> `"HCA 006/2026"` daba la carpeta `"HCA "` —con espacio final—, que **Windows no puede crear**.
-> *No era el límite de 260 caracteres, que es lo primero que uno supone: la ruta medía 111, y el
-> experimento de control lo confirmó quitando sólo el espacio.* **El amplificador**: esa excepción
-> escapaba del hilo y el `Future` que nadie recogía se la tragaba.
+* **Ver el análisis de las alertas del Centinela.** Las 5 del canal pasan de
+  `ANALISIS_DIFERIDO_BOLETIN` a **`NUEVA_FASE_TEMPRANA`** con `modo_degradado` a `False`. Cuatro
+  `PRESUPUESTO` y una `SUBVENCION`, nivel `BAJO` — **un veredicto real, no una degradación
+  disfrazada**, y por eso siguen en el canal en vez de desaparecer *(el umbral configurado es 30)*.
+  `boletin_llm_succeeded` deja de valer **0**, que es lo que valía desde el primer día del proyecto.
+* **Leer un pliego escaneado.** Tesseract instalado *(v5.5.3, `cat`+`spa`)*, y los **4 documentos
+  que llevaban meses en `OCR_DIFERIDO` se recuperaron solos**: 88 páginas rasterizadas, 0 errores.
+  `metodo_extraccion = 'tesseract'` aparece en la base **por primera vez**.
+* **No perder pliegos en silencio.** Los 6 varados de la corrida 17 volvieron al circuito: 5
+  descargados —el PCA de 999 KB, el PPT, el quadre, la memòria, la resolució—, extraídos (102
+  páginas, catalán) y **`PROCESADO`**; 1 omitido correctamente por no ser PDF.
+* **Enterarse de que un hilo ha reventado.** Los `Future` del descargador se recogen y el fallo
+  consta en el rastro en vez de evaporarse.
 
-> 🚨 **Un `Future` que nadie recoge es un `except` que silencia, escrito de otra forma — y peor,
-> porque ni siquiera lo parece.** La Convención C2 persigue el `except` amplio; aquí no había
-> bloque sospechoso que revisar, sólo una línea de aspecto correcto y un error que se evaporaba.
-> **Queda anotado en el contrato para que el bloque 10.G decida si sube a convención.**
+📊 **Estado de los datos al cerrar**: **cero documentos en ningún estado transitorio** — 337
+`PROCESADO`, 145 `OMITIDO_FORMATO_NO_PDF`, 63 `PURGADO`, 15 `ERROR_DESCARGA` *(con sus 3 intentos
+agotados, que es su terminal legítimo)*.
 
-📌 **Se retiró una operación entera del contrato, y el motivo importa más que el ahorro.** Estaba
-prevista una herramienta de reconciliación copiando la de H-54. No hacía falta: **H-54 dejaba
-filas mintiendo** —reclamaban ficheros borrados— y había que corregirlas una a una; **H-58 deja
-filas diciendo la verdad**, así que en cuanto alguien vuelve a por ellas se resuelven solas.
+### 🚧 Lo que falta, en orden
 
-⚠️ **Y la corrida de verificación subió H-55 de 18 líneas rotas a 19**, lo que **refina su
-diagnóstico**: se creía cosa del pool de hilos de la API, y esto lo produjo el pool del **Lector**.
-No es la API — es **cualquier pool de hilos que escriba en el rastro**.
+| Bloque | Qué es | Estado |
+|---|---|---|
+| **10.B.3** | **H-55**, el cerrojo del rastro | 🔜 **Es lo siguiente.** Diagnosticado y es el más pequeño de los tres |
+| **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🔴 Sin empezar. Lo exige la decisión D.1 |
+| **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🔴 Sin empezar. **Es la que de verdad cierra la capa** |
+| **10.F** | **`MANUAL.md`**, en catalán y sin terminal | 🔴 Sin empezar. Índice propuesto en el README |
+| **10.G** | Cierre de la capa y del recorrido | 🔴 Sin empezar |
 
-📌 **Lo que cambió la forma del paso, y hay que saberlo antes de nada.** Dirección tomó las cuatro
-decisiones que el manual necesitaba, y la cuarta invirtió el paso entero: **reparar antes que
-documentar**. El Paso 10 ya no es *«documentar el sistema tal cual»* sino *«arreglar lo que se
-pueda y documentar el resto»*. Las otras tres: **cero terminal**, **manual en catalán**, y el
-**DOGC como fuente apagada pendiente de reponer**.
+### 🔴 Hallazgos abiertos: quedan tres, y ninguno de los dos que se veían
 
-🚨 **Y el triaje que esa decisión obligó a hacer destapó H-58, que estaba causando daño esa misma
-mañana.** `DESCARGANDO` es el **único estado transitorio del vocabulario que nadie recoge**
-—auditados los diez, uno por uno—: se escribe en `src/lector.py:576` y no aparece en ninguna
-consulta de `src/memoria.py`. Hay **6 pliegos atrapados** de la corrida 17 —el PCA, el PPT, el
-quadre, la memòria— con `intentos = 0`, **en una corrida que consta `COMPLETED` con 0 errores**.
-Es la tercera vez que el proyecto pisa esta forma exacta *(H-33, H-53 cara B)*, y la primera en
-que ocurre mientras el sistema se declara sano.
+| Hallazgo | Estado | Qué hacer |
+|---|---|---|
+| **H-55** · Líneas partidas en el rastro | 🟠 **Diagnosticado**, 19 de 6.423 y creciendo | **Bloque 10.B.3.** Un cerrojo de módulo alrededor del append en `src/rastro.py` |
+| **H-41** · Crash nativo | 🟠 **Acotado**, sin reaparecer | **Observar.** 8+ corridas `COMPLETED` con 0 errores y sin migaja `documento_en_curso.json`. Ocho corridas no cierran un crash intermitente |
+| **H-52** · OneDrive entre dos equipos | 🔴 Diferido por dirección | **No tocar.** Mitigado con el despertador en un solo equipo |
 
-**Los otros dos diagnosticados, y los dos son baratos ahora que se sabe dónde miran:**
+> 📌 **Se cerraron cuatro en la sesión**: **H-53** *(el OCR nunca había funcionado — instalado y
+> verificado con los 4 diferidos recuperados)*, **H-56**, **H-58** y **H-59**. **Los dos que se le
+> notaban a quien usa el sistema ya no están**, que era exactamente el objetivo de D.4.
 
-* **H-56** — `GeminiProvider` fija **siempre** el esquema del analista de licitaciones, y la
-  factoría es la misma para los dos consumidores. Cuando el Centinela pide su dictamen, Gemini
-  está **obligado por structured output** a responder con el otro esquema. **Intersección de
-  campos: ∅.** Por eso faltan los cuatro a la vez, siempre. No podía funcionar ningún día, y se
-  vio comparando dos objetos del código, sin gastar cuota.
-* **H-55** — ya **18** líneas rotas de 6.354, creciendo. La 6251 **parsea entera** y la 6252 es la
-  cola de otra: es una carrera **entre hilos del mismo proceso** (el pool de la API), no entre
-  procesos. Eso baja la reparación de un cerrojo de sistema operativo a un cerrojo de módulo.
+### 🔑 Las tres lecciones de la sesión, y ninguna es técnica
 
-✅ **Tesseract instalado y verificado** *(v5.5.3, con `cat` y `spa`)*: el Lector reporta
-`ocr_disponible` y `modo_ocr_diferido = False`. **Falta lo único que vale**: que los 4 documentos
-en `OCR_DIFERIDO` se recuperen solos en la corrida siguiente.
+**1 · Un `Future` que nadie recoge es un `except` que silencia, escrito de otra forma — y peor,
+porque ni siquiera lo parece.** La Convención C2 te enseña a desconfiar de un bloque `except`
+amplio; en H-58 no había bloque sospechoso que revisar, sólo una línea de aspecto correcto y un
+error que se evaporaba. **Es la nueva Convención C8.**
 
-📏 **H-41 sigue sin cerrarse, y es deliberado.** 8 corridas seguidas `COMPLETED` con 0 errores y
-sin migaja `documento_en_curso.json`, 4 de ellas ya sin DOGC. **Ocho corridas no cierran un crash
-intermitente**: queda en *«no reproducible desde el 2026-08-25»*.
+**2 · Una invariante escrita no protege de nada.** La de los estados transitorios se declaró en el
+contrato por la mañana, con H-58 delante, y **por la tarde el proyecto pisó la misma forma por
+cuarta vez** (H-59). Sólo dejó de repetirse cuando pasó a ejecutarse en
+`tests/test_vocabularios_de_estado.py`. **Es la nueva Convención C9**, y su prueba encontró dos
+cosas más en su primera ejecución.
 
-> 🔑 **La lección de la sesión, y es de método: se buscaba qué escribir sobre las averías y
-> apareció una avería.** El triaje no se hizo para encontrar defectos sino para redactar una
-> sección de un manual. **Preguntarle a los datos qué hay que contar es una forma barata de
-> auditoría**, y es la misma familia que la Convención C7: mirar encuentra lo que las pruebas no.
+**3 · Reparar el motor no rescata a quien se quedó en la cuneta mientras estaba averiado.** Es
+literalmente H-59, y es la forma general de H-53 cara B: cuando se arregla un componente, hay que
+preguntarse **quién quedó atrapado mientras estaba roto** y si alguien volverá a por él.
+
+### ⚠️ Trampas pisadas, para no volver a pisarlas
+
+* **`Path.write_text()` trunca el fichero ANTES de escribir.** Un fallo de codificación —un emoji
+  en cp1252— dejó `ESTADO.md` en **0 bytes**. Se recuperó de git porque estaba todo commiteado.
+  **Escritura atómica siempre**: a un temporal y luego `os.replace()`.
+* **Un emoji dentro de un heredoc de bash llega como par sustituto** y revienta al codificar. Los
+  parches con emoji van en un fichero aparte, escritos con la herramienta de ficheros.
+* **La consola de Windows es cp1252**: `sys.stdout.reconfigure(errors="replace")` en toda
+  herramienta que imprima.
+* **Validar una regresión mutando, no revirtiendo.** Revertir no prueba nada cuando el símbolo no
+  existía antes: media suite caería por `ImportError` en vez de por el defecto. Las 9 mutaciones
+  de la sesión cayeron exactamente donde debían.
+* **Un doble de prueba que no sigue la interfaz miente.** Al añadir `response_schema`, el
+  `MockProvider` no lo aceptaba y el `TypeError` **el Centinela lo convirtió en modo degradado**:
+  la prueba decía *«el modelo falló»* cuando fallaba una firma. Anotado, no reparado: es del
+  `except Exception` de `analizar_alerta`.
+* **No fijar números de versión de esquema en las pruebas.** `test_migracion_v8.py` afirmaba
+  `== 8` y cayó al llegar la v9 por un motivo que no era el suyo.
+
+### 📎 Pendientes menores anotados y no tocados
+
+* El `except Exception` de `analizar_alerta` convierte errores de programación en modo degradado.
+* `lector.py` imprime *«versión: tesseract»* en vez de *«5.5.3»* — `split(' ')[0]` sobre
+  `"tesseract v5.5.3..."`. Cosmético.
+
+---
 
 ### 📕 Antes, en la misma sesión — el cierre del Paso 9 (referencia)
 
@@ -451,7 +455,7 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, el **Bloque 3 cerrado entero** y de la **Capa 10 quedan cerrados los Pasos 1 a 9**; sólo falta el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`. La suite está en **688/688**. El **Paso 9 se cerró el 2026-08-27** con sus seis bloques, y con él **H-39** *(el rastro mezclaba cuatro gramáticas de evento, no dos)*, **H-45** *(el Centinela estaba ciego: el canal pasa de 0 a 5 alertas, el BOPB cambió de dirección y el DOGC ya no publica RSS)*, **H-46** *(la purga documental se lanzaba de un clic)* y **H-57** *(el KPI de cabecera decía 0 sobre un canal con 5 alertas)*. El esquema de base de datos vigente es **v8**, la política de retención **v1.2.0** y la configuración del Centinela **v1.1.0**. De **57 hallazgos catalogados, 52 están cerrados**; quedan abiertos cinco: **H-41** (crash nativo, **acotado**: no ocurrió leyendo un pliego sino descargando el feed del DOGC), **H-52** (OneDrive como canal de distribución, diferido), **H-53 cara A** (Tesseract sin instalar en `AROMAN`; la cara irreversible se reparó el 2026-08-25), **H-55** (**14** líneas partidas en `pipeline.jsonl`, y **sigue partiéndose**: contenido por el lector, sin reparar la causa) y **H-56** (el análisis semántico del Centinela no ha funcionado nunca, destapado al reparar H-45). El sistema ya se usa con un doble clic, **se ejecuta solo y cuenta lo que le pasa**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, el **Bloque 3 cerrado entero** y de la **Capa 10 quedan cerrados los Pasos 1 a 9**; falta el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`, y del que ya están hechos los bloques **10.A, 10.B.1, 10.B.2 y 10.D**. La suite está en **742/742**. El **Paso 9 se cerró el 2026-08-27** con sus seis bloques, y con él **H-39**, **H-45**, **H-46** y **H-57**; ese mismo día el **Paso 10** cerró **H-53** *(el OCR nunca había funcionado: Tesseract instalado y los 4 pliegos diferidos recuperados)*, **H-56** *(el análisis del Centinela pedía un dictamen y recibía el esquema del analista de licitaciones)*, **H-58** *(6 pliegos varados en un estado que nadie recogía, en una corrida que constaba `COMPLETED` con 0 errores)* y **H-59** *(las alertas diferidas tampoco las recogía nadie)*. El esquema de base de datos vigente es **v9**, la política de retención **v1.2.0** y la configuración del Centinela **v1.1.0**. De **59 hallazgos catalogados, 56 están cerrados**; quedan abiertos **tres**: **H-55** *(19 líneas partidas en `pipeline.jsonl` y sigue partiéndose; diagnosticado, es la tarea siguiente)*, **H-41** *(crash nativo **acotado** y sin reaparecer en más de 8 corridas, pero no cerrado)* y **H-52** *(OneDrive como canal de distribución, diferido y mitigado)*. El sistema ya se usa con un doble clic, **se ejecuta solo, cuenta lo que le pasa y ya no pierde pliegos en silencio**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 

@@ -18,7 +18,7 @@ implementación del **Ecosistema Automático de Licitaciones (bfr_incoop)**.
 **Orden de lectura obligatorio:**
 
 1. **[`ESTADO.md`](ESTADO.md)** — dónde está el proyecto y cuál es la tarea activa.
-2. **Este archivo** — las 14 Reglas de Rigor Operativo y las 7 Convenciones Técnicas. **Son de
+2. **Este archivo** — las 14 Reglas de Rigor Operativo y las 9 Convenciones Técnicas. **Son de
    obligado cumplimiento**, no recomendaciones: cada convención nació de un defecto real que llegó
    a producción.
 3. **[`AUDITORIA_2026-07-27.md`](AUDITORIA_2026-07-27.md)** — los hallazgos con su evidencia
@@ -178,6 +178,48 @@ python -m uvicorn src.api.main:app --port 8000     # sirve API y Cockpit: http:/
 
 **Comprobación mínima**: que cada cifra de cabecera cuadre con su desglose, que ninguna fila salga a cero, y que lo que se afirma de un pliego proceda de haberlo leído.
 
+
+### C8. Un trabajo lanzado en paralelo se recoge, siempre
+
+Todo `Future`, hilo o tarea que se lance debe tener a alguien que **espere su resultado y registre
+el fallo**. `executor.submit(...)` sin recoger el `Future` está prohibido.
+
+**Por qué**: es la Convención C2 en otra forma, y **peor, porque no lo parece**. C2 enseña a
+desconfiar de un `except Exception` amplio: hay un bloque sospechoso que revisar. Aquí no hay
+bloque —hay una línea de aspecto impecable— y el error se evapora dentro del `Future` que nadie
+lee. En **H-58** eso convirtió una excepción por cada uno de **6 pliegos** en una corrida que
+constaba `COMPLETED` con `errores = 0`.
+
+**Cómo se cumple**: recoger con `as_completed`, registrar el fallo con su tipo en el rastro, y
+**seguir con los demás** — que un elemento reviente no puede costar el trabajo del resto.
+
+### C9. Todo estado transitorio tiene exactamente un consumidor, y se comprueba ejecutando
+
+Cada valor de un vocabulario de estados es **transitorio** —y entonces alguna consulta debe
+recogerlo— o **terminal declarado**. Un estado que se escribe y no se lee es un agujero por el que
+se cae trabajo en silencio.
+
+**Por qué**: este proyecto pisó la misma forma **cuatro veces en un mes**. **H-33**; **H-53 cara
+B**, donde `OCR_DIFERIDO` era terminal y por tanto instalar Tesseract no habría recuperado ni un
+pliego; **H-58**, con 6 pliegos reales varados en `DESCARGANDO`; y **H-59**, con las 5 alertas del
+Centinela condenadas a no tener dictamen nunca. En tres de los cuatro casos **el nombre del estado
+prometía lo contrario de lo que pasaba**: *diferido* significaba *descartado*.
+
+> ⚠️ **La segunda mitad del enunciado es la que importa, y costó aprenderla.** Esta invariante
+> estuvo **escrita** en el contrato del Paso 10 durante una mañana entera, con H-58 delante como
+> ejemplo, y **esa misma tarde el proyecto la incumplió por cuarta vez**. Un texto correcto en un
+> documento que nadie relee al añadir un estado no protege de nada.
+
+**Cómo se cumple**: `tests/test_vocabularios_de_estado.py` declara cada estado con su naturaleza y,
+si es transitorio, **el nombre del método que lo recoge**; la prueba resuelve ese método y **lee su
+código fuente** para exigir que mencione el estado. Un estado que el código escriba sin estar
+declarado también hace caer la prueba. **Al añadir un estado nuevo, se declara ahí.**
+
+*(Hay una tercera categoría, `EN_VUELO`: un valor que existe sólo dentro de una corrida y que otra
+pieza resuelve antes de persistir. No necesita consumidor, pero **sí una prueba que demuestre que
+se resuelve**, o sería un transitorio huérfano disfrazado.)*
+
+
 ---
 
 
@@ -193,6 +235,7 @@ a mano y cuando se quiere*.
 ```bash
 python tools/verificar_proveedor_llm.py         # ¿responde el modelo configurado? ¿cuántos tokens gasta?
 python tools/verificar_matriz_subrogacion.py    # ¿dos modelos distintos coinciden? (debe dar 5/5)
+python tools/verificar_dictamen_centinela.py    # ¿emite el Centinela un dictamen completo? (H-56, Paso 10)
 ```
 
 **Dependen de los datos reales de este equipo**:

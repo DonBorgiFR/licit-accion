@@ -1,35 +1,52 @@
 # 📡 Ecosistema Automático de Licitaciones (bfr_incoop)
 
-> **Estado del producto: Beta 0.5 (2026-08-18).** **Las Capas 1 a 9 están completadas y
-> validadas**, y la Capa 10 —el lanzador silencioso— es la activa, con sus **Pasos 1 a 7
-> cerrados**: **el sistema ya se usa con un doble clic**. Un icono en el escritorio arranca el
-> ecosistema sin consola, abre el Cockpit en una ventana de aplicación —servido por FastAPI, sin
-> Node.js— y prospecta por debajo respetando el cerrojo; al cerrar la ventana, el servidor se apaga
-> solo y el equipo queda como estaba. La **Capa 11** —despliegue en servidor— está **anotada como
-> alcance, no diseñada**. El 2026-08-18 el doble clic ejecutó una **corrida real completa**: 154,55
-> segundos, 15 expedientes nuevos, 36 documentos descargados, 5 análisis del LLM y 0 errores.
+> **Estado del producto: Beta 0.6 (2026-08-27).** **Las Capas 1 a 9 están completadas y
+> validadas**, y la Capa 10 —el lanzador silencioso— es la activa, con sus **Pasos 1 a 9
+> cerrados**: **el sistema ya se usa con un doble clic y prospecta solo cada mañana**. Un icono en
+> el escritorio arranca el ecosistema sin consola, abre el Cockpit en una ventana de aplicación
+> —servido por FastAPI, sin Node.js— y prospecta por debajo respetando el cerrojo; al cerrar la
+> ventana, el servidor se apaga solo y el equipo queda como estaba. La **Capa 11** —despliegue en
+> servidor— está **anotada como alcance, no diseñada**. El 2026-08-18 el doble clic ejecutó una
+> **corrida real completa**: 154,55 segundos, 15 expedientes nuevos, 36 documentos descargados, 5
+> análisis del LLM y 0 errores.
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
+> **Lo que empezó a funcionar el 2026-08-27**, en el Paso 10 y por decisión de dirección de
+> *reparar antes que documentar*:
+>
+> * **El análisis semántico del Centinela**, que **no había funcionado ni un solo día** del
+>   proyecto *(H-56)*. Las 5 alertas del canal tienen dictamen por primera vez.
+> * **El OCR** *(H-53)*. Tesseract instalado, y los **4 pliegos escaneados** que llevaban meses
+>   esperando **se recuperaron solos**.
+> * **Dejar de perder pliegos en silencio** *(H-58)*: 6 documentos estaban varados en un estado
+>   que nadie recogía, en una corrida que constaba `COMPLETED` con 0 errores.
+>
 > **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
-> **3 (identidad y foco)** están cerrados, con la suite en **688/688** *(2026-08-27)*. De
-> **57 hallazgos** catalogados, **52 están cerrados**. Quedan abiertos cinco:
+> **3 (identidad y foco)** están cerrados, con la suite en **742/742** *(2026-08-27)*. De
+> **59 hallazgos** catalogados, **56 están cerrados**. Quedan abiertos **tres**:
 >
-> * **H-41** — un crash nativo del pipeline sobre datos reales. **Acotado el 2026-08-25**: no
->   ocurrió leyendo un pliego, sino descargando el feed del DOGC.
-> * **H-52** — OneDrive como canal de distribución entre dos equipos. Diferido.
-> * **H-53** *(cara A)* — Tesseract no está instalado, así que el OCR no se ejecuta. La cara
->   irreversible quedó reparada el 2026-08-25.
-> * **H-55** — el rastro de auditoría tiene **14 líneas partidas y sigue partiéndose**. Contenido
->   *(el lector las cuenta en vez de saltarlas)*, pero **sin reparar la causa**.
-> * **H-56** — el análisis semántico del Centinela **no ha funcionado nunca**. Apareció el
->   2026-08-27 al reparar H-45: hasta entonces no había alertas que analizar.
+> * **H-55** — el rastro de auditoría tiene **19 líneas partidas y sigue partiéndose**. Contenido
+>   *(el lector las cuenta en vez de saltarlas)* y **diagnosticado**: es una carrera entre hilos de
+>   un mismo proceso, así que basta un cerrojo de módulo. **Es la tarea siguiente.**
+> * **H-41** — un crash nativo del pipeline sobre datos reales. **Acotado el 2026-08-25** —no
+>   ocurrió leyendo un pliego, sino descargando el feed del DOGC— y **sin reaparecer** en más de 8
+>   corridas. No se cierra: ocho corridas limpias no caracterizan un fallo intermitente.
+> * **H-52** — OneDrive como canal de distribución entre dos equipos. Diferido y mitigado.
 >
-> **Cerrados el 2026-08-27 con el Paso 9 de la Capa 10**: **H-39** *(el rastro mezclaba cuatro
-> gramáticas de evento, no dos)*, **H-45** *(el Centinela estaba ciego; el canal pasa de 0 a 5
-> alertas)*, **H-46** *(la purga documental se lanzaba de un clic)* y **H-57** *(el KPI decía 0
-> sobre un canal con 5 alertas — lo destapó la verificación C7, no una prueba)*. El esquema vigente es **v8**,
-> la política de retención **v1.2.0** y la configuración del Centinela **v1.1.0**. El Cockpit
-> compila limpio con `tsc -b` en modo estricto y su bundle está al día.
+> **Cerrados el 2026-08-27**: con el **Paso 9**, **H-39** *(el rastro mezclaba cuatro gramáticas de
+> evento, no dos)*, **H-45** *(el Centinela estaba ciego; el canal pasa de 0 a 5 alertas)*,
+> **H-46** *(la purga documental se lanzaba de un clic)* y **H-57** *(el KPI decía 0 sobre un canal
+> con 5 alertas — lo destapó la verificación C7, no una prueba)*; y con el **Paso 10**, **H-53**,
+> **H-56**, **H-58** y **H-59**. El esquema vigente es **v9**, la política de retención **v1.2.0**
+> y la configuración del Centinela **v1.1.0**. El Cockpit compila limpio con `tsc -b` en modo
+> estricto y su bundle está al día.
+>
+> 🔑 **La lección de esa jornada, y vale para cualquiera que retome esto**: los cuatro hallazgos
+> cerrados **no se buscaron**. Salieron de preguntarse *qué habría que contarle al usuario sobre lo
+> que no funciona*, que resultó ser una forma de auditoría más barata que auditar. Dos de ellos
+> —H-58 y H-59— son **la misma forma repetida**: un estado que se escribe y que ninguna consulta
+> lee. El proyecto la había pisado ya dos veces antes, así que dejó de ser casualidad y pasó a ser
+> la **Convención C9**, con una prueba que la ejecuta en vez de un párrafo que la enuncia.
 >
 > ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra
 > ficheros del disco** según la política de retención. Es deliberado y está auditado en la tabla
@@ -1009,7 +1026,7 @@ Evitar que una oportunidad sea recomendada, descartada o presentada con una punt
 ---
 
 ## 💾 Capa 9: El Histórico y Depurador (Archivo y Purga de Datos)
-* **Estado actual**: 🟢 **Completada y Validada** el 2026-08-12, con los diez pasos cerrados y verificada mediante una corrida real del pipeline de extremo a extremo. Esquema de base de datos en **v8** desde el 2026-08-17 —la Capa 10 le añadió la identidad del proceso a `ejecuciones` (H-40)—; política de retención en **v1.2.0**.
+* **Estado actual**: 🟢 **Completada y Validada** el 2026-08-12, con los diez pasos cerrados y verificada mediante una corrida real del pipeline de extremo a extremo. Esquema de base de datos en **v9** desde el 2026-08-27 —la Capa 10 le añadió la identidad del proceso a `ejecuciones` en v8 (H-40) y el contador de intentos de análisis a `boletines_alertas` en v9 (H-59)—; política de retención en **v1.2.0**.
 
 ### 🎯 Objetivo
 
@@ -1123,7 +1140,7 @@ graph TD
    - **Cierra H-27**: normaliza las dos grafías del estado archivado y hace indiferente a la grafía la consulta de purga documental, que dependía de la escritura en minúsculas.
    - La versión del esquema deja de estar duplicada: `ESQUEMA_VERSION_ACTUAL` es la única fuente.
 
-> ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v8** desde el 2026-08-17 (v7 el 2026-08-12, v6 el 2026-08-07).
+> ℹ️ **Nota de lectura**: las secciones de las Capas 5 a 8 mencionan *"SQLite v5"* porque describen lo que cada capa hizo **en su momento** — la migración a v5 fue efectivamente el Paso 2 de la Capa 6. Se conservan como registro histórico. El esquema vigente es **v9** desde el 2026-08-27 —el Paso 10 de la Capa 10 le añadió `intentos_analisis` a `boletines_alertas` (H-59)— (v8 el 2026-08-17, v7 el 2026-08-12, v6 el 2026-08-07).
 
 #### **Fase 2: Motor del Depurador**
 4. **Paso 4 — Motor de Archivado (`src/depurador.py`)**: 🟢 Completado y Validado.
@@ -1183,7 +1200,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 9 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.3.0** desde el 2026-08-25. **El sistema ya se usa con un doble clic** —icono en el escritorio, sin consola, Cockpit en ventana de aplicación y prospección por debajo— **y prospecta solo cada mañana**. La tarea activa es el **Paso 10**, el último: verificación en vivo, `MANUAL.md` y cierre del recorrido de la Capa 1 a la 10. Suite: **688/688**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 9 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.3.0** desde el 2026-08-25. **El sistema ya se usa con un doble clic** —icono en el escritorio, sin consola, Cockpit en ventana de aplicación y prospección por debajo— **y prospecta solo cada mañana**. La tarea activa es el **Paso 10**, el último: le quedan la **verificación en vivo**, el **`MANUAL.md`** y el cierre del recorrido de la Capa 1 a la 10. Suite: **742/742**; esquema de base de datos en **v9**.
 
 ### 🎯 Objetivo
 
@@ -1709,7 +1726,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
     | Regresiones en `tests/test_capa10_lanzador.py` | 🟢 **128 pruebas**, escritas entre los Pasos 2 y 7. **Las cinco que este paso exige ya existen** *(tabla abajo)* |
     | **Verificación en vivo del doble clic** | 🔴 Sin hacer. **Es la que de verdad cierra la capa** |
     | **`MANUAL.md`** | 🔴 No existe |
-    | Los tres arreglos que abrió la decisión D.4 | 🟡 **H-58 cerrado**; H-56 y H-55 diagnosticados y pendientes. Contrato validado, en [v1.1.0](.agents/CONTRATO_PASO_10.md) |
+    | Los arreglos que abrió la decisión D.4 | 🟡 **H-53, H-56, H-58 y H-59 cerrados**; queda **H-55**. Contrato validado, en [v1.2.0](.agents/CONTRATO_PASO_10.md) |
 
     | Lo que este paso exige probar | Regresión que ya lo cubre |
     |---|---|
@@ -1759,13 +1776,13 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
     | Bloque | Qué entrega | Por qué va aquí y no después |
     |---|---|---|
-    | **10.A · Estado de partida verificado** | 🟢 **Hecho.** Suite 688/688, las 128 regresiones recolectadas, las cinco confirmadas una a una, y corregidas las cifras del README que ya no eran ciertas | Un manual escrito sobre cifras de papel hereda sus errores. En el Paso 9 el papel falló dos veces y lo corrigió el código |
-    | **10.B · Los tres arreglos** | 🟡 **Dos de tres.** **H-58** 🟢 *(eran dos defectos encadenados, no uno)*; **H-56** 🟢 *(el esquema lo pone ya el llamador; `boletin_llm_succeeded` deja de valer 0 por primera vez)*; **H-55** 🔴 *(un cerrojo alrededor del append del rastro)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y cada uno ha destapado algo: H-58 traía dos defectos, y verificar H-56 destapó **H-59** |
-    | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para la preparación de un equipo nuevo | Es lo que hace verdadera la decisión D.1. Sin esto, un manual sin terminal no podría cubrir su propio alcance |
-    | **10.D · Tesseract** | 🟡 **Instalado y verificado el 2026-08-27** *(v5.5.3, `cat`+`spa`, `ocr_disponible`)*. Falta comprobar que los 4 documentos diferidos se recuperan solos | Sólo verificable con una corrida posterior, así que se instaló pronto y se comprueba al final |
-    | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | Ejecutar el `.vbs` de verdad: ninguna consola a la vista, el Cockpit abriendo con datos, y la tarea programada disparando una corrida real | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal |
-    | **10.F · `MANUAL.md`** | El manual de operación, en catalán y sin terminal *(índice abajo)* | Se escribe el último porque sólo puede afirmar lo que los cinco bloques anteriores hayan dejado comprobado |
-    | **10.G · Cierre de la capa y del recorrido** | README, `ESTADO.md` y auditoría al día —con H-58 catalogado—; Capa 10 cerrada y con ella las diez | Lo que no se anota al cerrar se pierde entre sesiones: es la razón por la que `ESTADO.md` existe |
+    | **10.A · Estado de partida verificado** | 🟢 **CERRADO.** Las 128 regresiones recolectadas, las cinco confirmadas una a una, y corregidas las cifras del README que ya no eran ciertas | Un manual escrito sobre cifras de papel hereda sus errores. En el Paso 9 el papel falló dos veces y lo corrigió el código |
+    | **10.B · Los arreglos** | 🟡 **Dos bloques de tres.** **10.B.1 · H-58** 🟢 *(eran dos defectos encadenados, no uno)*; **10.B.2 · H-56 + H-59** 🟢 *(el esquema lo pone ya el llamador, y las 5 alertas del canal tienen dictamen por primera vez)*; **10.B.3 · H-55** 🔴 *(un cerrojo alrededor del append del rastro)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y **cada uno destapó otro**: H-58 traía dos defectos encadenados, verificar H-56 destapó H-59, y la prueba escrita para que no hubiera un quinto caso encontró dos cosas más |
+    | **10.C · Cero terminal** | 🔴 **Pendiente.** Envoltorio de doble clic para el despertador y para la preparación de un equipo nuevo | Es lo que hace verdadera la decisión D.1. Sin esto, un manual sin terminal no podría cubrir su propio alcance |
+    | **10.D · Tesseract** | 🟢 **CERRADO.** Instalado *(v5.5.3, `cat`+`spa`)* y **los 4 documentos que llevaban meses en `OCR_DIFERIDO` se recuperaron solos**: 88 páginas rasterizadas, 0 errores. `metodo_extraccion = 'tesseract'` aparece en la base por primera vez | Sólo verificable con una corrida posterior, así que se instaló pronto y se comprobó al final. **Cierra H-53** |
+    | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | 🔴 **Pendiente.** Ejecutar el `.vbs` de verdad: ninguna consola a la vista, el Cockpit abriendo con datos, y la tarea programada disparando una corrida real | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal |
+    | **10.F · `MANUAL.md`** | 🔴 **Pendiente.** El manual de operación, en catalán y sin terminal *(índice abajo)* | Se escribe el último porque sólo puede afirmar lo que los cinco bloques anteriores hayan dejado comprobado |
+    | **10.G · Cierre de la capa y del recorrido** | 🔴 **Pendiente.** Capa 10 cerrada y con ella las diez | Lo que no se anota al cerrar se pierde entre sesiones: es la razón por la que `ESTADO.md` existe |
 
     <details><summary>Índice propuesto para <code>MANUAL.md</code> — el maquetado a validar</summary>
 
@@ -1829,6 +1846,9 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `tools/verificar_rastro_real.py`: el lector, medido contra el rastro de verdad. 🟢 Paso 9.
 - `MANUAL.md`: manual de operación para quien usa el sistema. 🛠️ **Paso 10, en curso.** Índice propuesto y decisiones pendientes en la ficha del paso.
 - `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟢 **128 regresiones** de los Pasos 2 a 7 — *el README dijo 116 hasta el Paso 10, que las contó recolectándolas en vez de leyendo el fichero*. Incluyen ya las cinco que exige este paso.
+- `tools/verificar_dictamen_centinela.py`: el dictamen del Centinela, contra el modelo real. 🟢 Paso 10 *(gasta cuota: vive fuera de la suite)*.
+- `tests/test_vocabularios_de_estado.py`: **la invariante de los estados, ejecutada en vez de escrita**. 🟢 Paso 10. Es la Convención **C9**, y nació de pisar la misma forma cuatro veces *(H-33, H-53, H-58, H-59)*.
+- `tests/test_h58_documento_varado.py` · `tests/test_h56_esquema_centinela.py` · `tests/test_h59_alertas_diferidas.py`: los tres arreglos del bloque 10.B. 🟢 Paso 10.
 
 ---
 
