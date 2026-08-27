@@ -408,3 +408,45 @@ export interface Ejecucion {
   /** ¿Vive el proceso dueño de una corrida RUNNING? null = no se puede saber (H-43). */
   duenyo_vivo: boolean | null;
 }
+
+
+/**
+ * Diagnóstico de la última prospección — Capa 10, Paso 9.
+ *
+ * Es el tercer canal del contrato de la capa: con el Cockpit ya en marcha, el aviso va a la
+ * pantalla. Existe porque `Ejecucion` sirve el estado de la fila y nada más, y una corrida
+ * puede constar COMPLETED con `errores: 0` habiendo sido incapaz de consultar sus fuentes.
+ */
+export interface Degradacion {
+  componente: string;
+  evento: string;
+  detalle: string;
+  cuando: string | null;
+}
+
+export type EstadoProspeccion =
+  | 'SIN_PROSPECCIONES'
+  | 'EN_CURSO'
+  | 'INTERRUMPIDA_POR_TOPE'
+  | 'INTERRUMPIDA'
+  | 'SIN_CERRAR'
+  | 'FALLIDA'
+  | 'COMPLETADA_CON_DEGRADACION'
+  | 'COMPLETADA'
+  | 'DESCONOCIDA';
+
+export interface DiagnosticoProspeccion {
+  estado: EstadoProspeccion;
+  ejecucion_id: number | null;
+  inicio: string | null;
+  fin: string | null;
+  motivo: string;
+  ultimo_evento: string | null;
+  ultimo_evento_cuando: string | null;
+  degradaciones: Degradacion[];
+  errores_registrados: number;
+  /** Del fichero entero, no de esta corrida: una línea partida no conserva su fecha (H-55). */
+  rastro_degradado: boolean;
+  rastro_lineas_ilegibles: number;
+  rastro_legible: boolean;
+}

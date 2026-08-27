@@ -445,3 +445,78 @@ def test_el_estado_se_persiste_en_la_grafia_que_el_selector_del_cockpit_ofrece(b
             "SELECT estado_operativo FROM lotes WHERE expediente_id='EXP-1';"
         ).fetchone()[0]
     assert estado == "Perdida"
+
+
+# --------------------------------------------------------------------------------------
+# GET /admin/prospeccion/diagnostico  (Capa 10, Paso 9 — el tercer canal)
+# --------------------------------------------------------------------------------------
+
+def _sembrar_corrida(memoria, estado="COMPLETED", errores=0):
+    with memoria.conectar() as conn:
+        with conn:
+            conn.execute(
+                "INSERT INTO ejecuciones (id, start_time, end_time, estado, errores) "
+                "VALUES (?, ?, ?, ?, ?);",
+                (77, "2026-08-27T05:00:00Z", "2026-08-27T05:10:00Z", estado, errores),
+            )
+
+
+def test_el_diagnostico_delata_una_corrida_ciega_que_la_tabla_da_por_buena(client, base_api):
+    """La corrida 16 del 2026-08-27, servida por HTTP: `COMPLETED`, `errores=0`, y ciega.
+
+    Es la razón de ser del endpoint. `/admin/ejecuciones` no puede contar esto: la fila no lo
+    sabe. Sin este canal, el Cockpit pinta verde sobre una prospección que no pudo mirar.
+    """
+    _sembrar_corrida(base_api)
+    rastro = os.path.join(os.path.dirname(base_api.db_path), "pipeline.jsonl")
+    # La línea se escribe con hora explícita en vez de con `registrar_evento()`, que estampa la
+    # actual: la atribución es por ventana temporal, así que la prueba tiene que controlarla.
+    with open(rastro, "a", encoding="utf-8") as fichero:
+        fichero.write(json.dumps({
+            "esquema": 1, "timestamp": "2026-08-27T05:05:00Z", "run_id": 77,
+            "componente": "centinela", "evento": "boletin_fetch_degraded",
+            "estado": "DEGRADADO", "datos": {"fuente": "DOGC", "error": "HTTP Error 404"},
+        }) + "\n")
+
+    respuesta = client.get("/api/v1/admin/prospeccion/diagnostico")
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["estado"] == "COMPLETADA_CON_DEGRADACION"
+    assert cuerpo["errores_registrados"] == 0, "la fila sigue diciendo cero, y ése es el punto"
+    assert len(cuerpo["degradaciones"]) == 1
+    assert cuerpo["degradaciones"][0]["componente"] == "centinela"
+    assert "404" in cuerpo["degradaciones"][0]["detalle"]
+
+
+def test_una_corrida_limpia_se_sirve_como_completada(client, base_api):
+    _sembrar_corrida(base_api)
+
+    cuerpo = client.get("/api/v1/admin/prospeccion/diagnostico").json()
+
+    assert cuerpo["estado"] == "COMPLETADA"
+    assert cuerpo["degradaciones"] == []
+
+
+def test_sin_corridas_el_diagnostico_no_es_un_error(client, base_api):
+    """Un sistema recién instalado no ha prospectado nunca, y eso no es una avería."""
+    respuesta = client.get("/api/v1/admin/prospeccion/diagnostico")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["estado"] == "SIN_PROSPECCIONES"
+
+
+def test_un_rastro_roto_no_devuelve_un_5xx(client, base_api):
+    """Transición prohibida nº 4: el canal de diagnóstico no tumba aquello que diagnostica."""
+    _sembrar_corrida(base_api)
+    rastro = os.path.join(os.path.dirname(base_api.db_path), "pipeline.jsonl")
+    with open(rastro, "a", encoding="utf-8") as fichero:
+        fichero.write('s": 69.11}}\n')
+
+    respuesta = client.get("/api/v1/admin/prospeccion/diagnostico")
+
+    assert respuesta.status_code == 200, "un log roto no puede tumbar el diagnóstico"
+    cuerpo = respuesta.json()
+    assert cuerpo["estado"] == "COMPLETADA"
+    assert cuerpo["rastro_degradado"] is True, "y se declara en vez de callarse"
+    assert cuerpo["rastro_lineas_ilegibles"] >= 1

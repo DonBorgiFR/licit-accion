@@ -16,8 +16,8 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-27)
 
-**El Paso 9 está abierto, con contrato validado y sus bloques 9.B y 9.C cerrados.** La suite está
-en **661/661**. Lo siguiente es el **bloque 9.D**, llevar el diagnóstico a la pantalla.
+**El Paso 9 está abierto, con contrato validado y sus bloques 9.B, 9.C y 9.D cerrados.** La suite
+está en **678/678**. Lo siguiente es el **bloque 9.E**: las dos bocas mudas, H-45 y H-46.
 
 📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
 validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
@@ -38,6 +38,12 @@ descompone el paso.
 * **Las degradaciones ya son un dato, no una insinuación.** Los dos fallos del DOGC y el BOPB de
   la corrida 17 constan con `estado: DEGRADADO`. Antes sólo se podían detectar olfateando la
   subcadena `degraded` dentro del nombre del evento, que es lo que prohíbe la Convención C3.
+* **La pantalla dejó de mentir** *(bloque 9.D)*. `src/diagnostico.py` resuelve la máquina de
+  estados, `GET /api/v1/admin/prospeccion/diagnostico` la sirve y el `ProspeccionIndicator` la
+  pinta. **Verificado en vivo contra la base real (C7)**: sobre la corrida 17 la cabecera dice
+  ahora **«Al día, con 2 avisos» en ámbar**, no «Datos al día» en verde, y al pasar el ratón
+  cuenta *qué* no se pudo hacer, *cuándo* fue el último registro y que el rastro tiene 14 líneas
+  ilegibles. Cero errores de consola y `tsc -b` limpio.
 
 > 📏 **La cifra honesta del 9.C, para que nadie la descubra por su cuenta: la cobertura de estado
 > declarado es 13 de 650.** Las otras 637 líneas dicen `DESCONOCIDO`, que es la verdad —el punto

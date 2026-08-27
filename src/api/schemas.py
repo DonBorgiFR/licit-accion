@@ -546,3 +546,48 @@ class APIErrorResponse(BaseModel):
     details: Optional[Dict[str, Any]] = Field(None, description="Detalles contextuales adicionales")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==============================================================================
+# Diagnóstico de la prospección (Capa 10, Paso 9 — el tercer canal de la capa)
+# ==============================================================================
+
+class DegradacionSchema(BaseModel):
+    """Algo que la corrida no pudo hacer, con quién no pudo y por qué."""
+    componente: str
+    evento: str
+    detalle: str = ""
+    cuando: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DiagnosticoProspeccionSchema(BaseModel):
+    """Lo que el sistema puede afirmar de su última prospección, y con qué respaldo.
+
+    Es el **tercer canal** del contrato de la Capa 10: cuando el Cockpit ya está en marcha, el
+    aviso va a la pantalla y no a un diálogo. Existe porque `GET /admin/ejecuciones` sirve el
+    estado de la fila y nada más, y una corrida puede constar `COMPLETED` con `errores = 0`
+    habiendo sido incapaz de consultar sus fuentes — que es lo que ocurrió el 2026-08-27.
+    """
+    estado: str
+    ejecucion_id: Optional[int] = None
+    inicio: Optional[str] = None
+    fin: Optional[str] = None
+    motivo: str = ""
+    ultimo_evento: Optional[str] = None
+    ultimo_evento_cuando: Optional[str] = None
+    degradaciones: List[DegradacionSchema] = []
+    errores_registrados: int = 0
+
+    #: El rastro traía líneas ilegibles (H-55). **Del fichero entero, no de esta corrida**: una
+    #: línea partida no conserva su fecha. Lo que se afirma es sobre qué se construyó el
+    #: diagnóstico, no cuánto daño tuvo la corrida.
+    rastro_degradado: bool = False
+    rastro_lineas_ilegibles: int = 0
+
+    #: `False` si el rastro no se pudo abrir. **El diagnóstico se sirve igual**, con lo que diga
+    #: la tabla: el canal de diagnóstico no puede tumbar aquello que diagnostica.
+    rastro_legible: bool = True
+
+    model_config = ConfigDict(from_attributes=True)

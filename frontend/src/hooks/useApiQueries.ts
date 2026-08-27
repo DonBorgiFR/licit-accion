@@ -15,7 +15,7 @@ import {
   getLicitacionById,
   getAlertasTempranas,
   getAlertaById,
-  getEjecuciones,
+  getDiagnosticoProspeccion,
 } from '../lib/api-client';
 import type { LicitacionesQueryParams, AlertasQueryParams } from '../types/api';
 
@@ -24,19 +24,22 @@ import type { LicitacionesQueryParams, AlertasQueryParams } from '../types/api';
  * Smart Polling reducido a 15 segundos.
  */
 /**
- * Estado de la última prospección, para el indicador de la cabecera (Capa 10, Paso 7).
+ * El diagnóstico de la última prospección (Capa 10, Paso 9).
  *
- * El sondeo se acelera mientras hay una corrida en marcha —5 s frente a 60 s— porque es el
- * único momento en que el dato cambia y el único en que alguien lo está mirando: quien acaba
- * de hacer doble clic espera ver que el sistema termina. Fuera de ese rato, preguntar cada
- * cinco segundos sería ruido sobre la misma base que el pipeline está escribiendo.
+ * Sustituye al hook del Paso 7, que preguntaba a `/admin/ejecuciones` y **se ha retirado**. La
+ * diferencia no es de forma: aquel sólo podía contar el estado de la fila, y una corrida
+ * `COMPLETED` con `errores: 0` puede haber sido incapaz de consultar sus fuentes — que es lo
+ * que ocurrió el 2026-08-27 y lo que el Cockpit pintaba en verde.
+ *
+ * Mismo ritmo que antes: cinco segundos mientras hay trabajo en marcha, un minuto si no. Un
+ * indicador que parpadea cada cinco segundos sobre una base parada acaba ignorándose.
  */
-export function useUltimaProspeccionQuery() {
+export function useDiagnosticoProspeccionQuery() {
   return useQuery({
-    queryKey: QUERY_KEYS.ultimaProspeccion,
-    queryFn: () => getEjecuciones(1, 1),
+    queryKey: QUERY_KEYS.diagnosticoProspeccion,
+    queryFn: getDiagnosticoProspeccion,
     refetchInterval: (query) =>
-      query.state.data?.items?.[0]?.estado === 'RUNNING' ? 5 * 1000 : 60 * 1000,
+      query.state.data?.estado === 'EN_CURSO' ? 5 * 1000 : 60 * 1000,
   });
 }
 

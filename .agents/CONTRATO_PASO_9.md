@@ -1,7 +1,19 @@
 # Contrato de Servicio — Capa 10, Paso 9: La Voz del Proceso Silencioso
 
-**Versión:** 1.1.0 · **Redactado:** 2026-08-27 · **Estado:** 🟢 **validado por dirección el 2026-08-27**,
-corregido el mismo día al abrir el bloque 9.C.
+**Versión:** 1.2.0 · **Redactado:** 2026-08-27 · **Estado:** 🟢 **validado por dirección el 2026-08-27**,
+corregido el mismo día al abrir los bloques 9.C y 9.D.
+
+> **Qué cambia en la v1.2.0 y por qué** *(2026-08-27, al escribir el bloque 9.D)*. Dos cosas,
+> las dos nacidas de escribir el código que debía obedecer al documento:
+>
+> 1. **Estado nuevo `DESCONOCIDA`** en la máquina de la sección E.1. La tabla agotaba `RUNNING`,
+>    `COMPLETED` y `FAILED`, y un valor inesperado no tenía dónde caer. Las dos salidas fáciles
+>    eran malas: `FALLIDA` afirma una avería que no consta, `COMPLETADA` afirma lo contrario.
+> 2. **El diagnóstico lee el rastro junto a la base que acaba de consultar**, no en
+>    `ruta_datos()`. En producción son el mismo sitio, pero pueden divergir si `DB_PATH_INCOOP`
+>    apunta a otro lado — y entonces se juzgaría una base con el rastro de otra. Es la familia de
+>    H-28: resolver una ruta contra el sitio equivocado. **Lo destapó una prueba del endpoint**,
+>    que falló por esto y no por lo que pretendía comprobar.
 
 > **Qué cambia en la v1.1.0 y por qué** *(2026-08-27, al abrir el bloque 9.C)*. Una sola cosa, y
 > nace de medir el código que debía obedecer al documento — no de releerlo:
@@ -82,8 +94,8 @@ son legibles**, no deducido del código. Todas las cifras son **posteriores a la
 | *(ilegibles)* | 14 | — |
 | **Total** | **4.768** | |
 
-**El Centinela escribe él solo en dos gramáticas distintas**, y ninguno de los seis puntos de
-escritura sabe de la existencia de los otros cinco.
+**El Centinela escribe él solo en dos gramáticas distintas**, y ninguno de los **siete** puntos
+de escritura sabe de la existencia de los otros seis.
 
 > 🔑 **La prueba de que el daño no es teórico ya ocurrió.** El evento que localizó la muerte del
 > pipeline en H-41 —`boletin_fetch_started`— pertenece a la gramática **D**, la de 105 líneas de
@@ -263,6 +275,15 @@ rastro.
 | `FALLIDA` | `FAILED` | Que falló, con su motivo |
 | `COMPLETADA_CON_DEGRADACION` | `COMPLETED` + ≥1 evento `DEGRADADO` en la corrida | **Que terminó, y qué no pudo hacer** |
 | `COMPLETADA` | `COMPLETED` + 0 eventos `DEGRADADO` | Que está al día |
+| `DESCONOCIDA` *(v1.2.0)* | La fila dice cualquier otra cosa | **Que no se sabe interpretar el estado** |
+
+> **`DESCONOCIDA` se añade en el bloque 9.D**, al escribir la máquina de estados. La tabla
+> original agotaba `RUNNING`, `COMPLETED` y `FAILED`, que es lo que `finalizar_ejecucion()`
+> escribe hoy — pero un valor inesperado tenía que ir a alguna parte, y las dos salidas fáciles
+> eran malas: mandarlo a `FALLIDA` **afirma una avería** sobre algo que no se entiende, y
+> mandarlo a `COMPLETADA` afirma lo contrario. La Convención C6 lo prohíbe en las dos
+> direcciones. El `ProspeccionIndicator` ya tenía de hecho una rama para este caso desde el Paso
+> 7; lo que faltaba era nombrarla.
 
 > **`COMPLETADA_CON_DEGRADACION` es el estado que este paso añade, y es el que faltaba.** Es
 > literalmente el estado de la corrida 16 de hoy, que el sistema pinta como `COMPLETADA`. Los cinco
@@ -312,7 +333,7 @@ propia degradación con un campo estructurado**, igual que exige C3 a todo lo de
 
 | | |
 |---|---|
-| **Dónde** | `src/rastro.py`, y los seis puntos de escritura actuales delegan en él |
+| **Dónde** | `src/rastro.py`, y los **siete** puntos de escritura actuales delegan en él |
 | **Entrada** | `componente`, `evento`, `estado` *(obligatorio)*, `datos`, `run_id` |
 | **Postcondiciones** | Una línea, un idioma, un formato de fecha, con `"esquema": 1` |
 | **Errores** | Un fallo de escritura **avisa por `stderr` y no tumba al llamador**, como ya hace `registrar_evento_lanzador()`: que falle la auditoría no puede detener el trabajo, pero tampoco puede pasar desapercibido |
@@ -439,7 +460,7 @@ validado resultó estar equivocado al escribir el código que debía obedecerlo.
 |---|---|---|
 | **9.A** | **Este contrato** | Validación de dirección. **No se codifica antes** (Reglas 8 y 9) |
 | **9.B** | **El lector canónico** (`src/rastro.py`) | Contra el fichero **real**: debe reproducir las cifras de la sección B —4 gramáticas, 14 líneas rotas, 84 nombres— y encontrar el `boletin_fetch_started` de la corrida 16 |
-| **9.C** | **Unificación de los seis escritores** | Suite entera + una corrida real: líneas nuevas en un solo idioma, y el lector sigue leyendo las 4.768 viejas |
+| **9.C** | **Unificación de los siete escritores** | Suite entera + una corrida real: líneas nuevas en un solo idioma, y el lector sigue leyendo las 4.768 viejas |
 | **9.D** | **El diagnóstico llega a la pantalla** | C7: mirar el Cockpit sobre una corrida degradada de verdad |
 | **9.E** | **Las dos bocas mudas** (H-45 y H-46) | C7: el canal Centinela debe delatar sus 26 fallos, y la purga no debe poder lanzarse sin previsualizar |
 | **9.F** | **Cierre** | Suite completa en verde y README / ESTADO / AUDITORÍA al día |
@@ -485,7 +506,7 @@ corresponde cuando la evidencia contradice al dosier en vez de añadirle un caso
    el valor `DEGRADADO` que hoy no existe en ninguna parte del vocabulario.
 2. Existe **un lector** que entiende las cuatro gramáticas históricas y **cuenta** las líneas
    ilegibles en vez de saltarlas, declarando su propia degradación con un campo estructurado.
-3. **Los seis puntos de escritura emiten el mismo idioma**, sin cambiar sus firmas públicas.
+3. **Los siete puntos de escritura emiten el mismo idioma**, sin cambiar sus firmas públicas.
 4. El **traslado del estado histórico se hace por catálogo declarado**, no por inspección de
    subcadenas, y lo no catalogado dice `DESCONOCIDO`.
 5. El Cockpit distingue **`COMPLETADA` de `COMPLETADA_CON_DEGRADACION`**, y en los estados de fallo

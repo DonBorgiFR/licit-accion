@@ -8,6 +8,7 @@
  */
 
 import type {
+  DiagnosticoProspeccion,
   HealthResponse,
   KPISummary,
   Licitacion,
@@ -251,6 +252,10 @@ export async function getEjecuciones(
   limit = 10
 ): Promise<PaginatedResponse<Ejecucion>> {
   return request<PaginatedResponse<Ejecucion>>(`/admin/ejecuciones?page=${page}&limit=${limit}`);
+}
+
+export async function getDiagnosticoProspeccion(): Promise<DiagnosticoProspeccion> {
+  return request<DiagnosticoProspeccion>('/admin/prospeccion/diagnostico');
 }
 
 export async function ejecutarPurga(solicitud: SolicitudPurga): Promise<ResultadoPurga> {

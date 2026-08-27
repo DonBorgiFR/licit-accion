@@ -22,11 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from src import normalizar_estado_operativo
+from src.diagnostico import diagnosticar
 from src.lanzador import leer_marca_servidor
 from src.api.dependencies import get_db, trazabilidad_api
 from src.api.schemas import (
     AlmacenamientoSchema,
     APIErrorResponse,
+    DiagnosticoProspeccionSchema,
     EjecucionSchema,
     EstadoLicitacionEnum,
     PaginatedResponse,
@@ -467,3 +469,59 @@ def post_apagar(solicitud: SolicitudApagado, request: Request):
     trazabilidad_api.registrar_evento("API_ADMIN_APAGADO", {"pid": marca.pid}, estado="INFO")
     _detener_servidor_desde_dentro()
     return {"apagando": True, "pid": marca.pid}
+
+
+@router.get(
+    "/prospeccion/diagnostico",
+    response_model=DiagnosticoProspeccionSchema,
+    summary="Qué le pasó a la última prospección",
+    description="El estado de la última corrida y **por qué**: lo último que llegó a escribir y "
+                "qué no pudo hacer. Existe porque `/admin/ejecuciones` sirve el estado de la "
+                "fila y nada más, y una corrida puede constar COMPLETED con errores=0 habiendo "
+                "sido incapaz de consultar sus fuentes.",
+)
+def get_diagnostico_prospeccion(db: sqlite3.Connection = Depends(get_db)):
+    """El tercer canal del contrato de la Capa 10, servido a la pantalla.
+
+    **No devuelve 5xx cuando el rastro está roto.** Es la transición prohibida nº 4 del contrato
+    del Paso 9: el canal de diagnóstico no puede tumbar aquello que diagnostica. Si el rastro no
+    se deja leer, se responde igual con lo que diga la tabla y se declara en `rastro_legible`.
+    """
+    from src.memoria import Memoria
+
+    memoria = Memoria()
+    try:
+        items, _ = memoria.listar_ejecuciones(page=1, limit=1)
+    except sqlite3.Error as exc:
+        trazabilidad_api.registrar_evento(
+            "API_PROSPECCION_DIAGNOSTICO_FAILED", {"error": str(exc)}, estado="ERROR"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Fallo consultando la última prospección: {exc}",
+        )
+
+    # El rastro se lee **junto a la base que se acaba de consultar**, no en `ruta_datos()`.
+    # Es donde lo escribe `Memoria.registrar_log_json()` (`os.path.dirname(self.db_path)`), y en
+    # producción son el mismo sitio. Pero pueden divergir si `DB_PATH_INCOOP` apunta a otro
+    # lado, y entonces el diagnóstico leería el rastro de una base distinta de la que juzga:
+    # es la familia de H-28, resolver una ruta contra el sitio equivocado.
+    ruta_rastro = os.path.join(os.path.dirname(memoria.db_path), "pipeline.jsonl")
+    diagnostico = diagnosticar(items[0] if items else None, ruta_rastro=ruta_rastro)
+
+    if diagnostico.rastro_degradado or not diagnostico.rastro_legible:
+        # Evento del contrato (sección I). Sin él, un diagnóstico servido sobre un fichero con
+        # agujeros sería indistinguible de uno servido sobre un fichero íntegro.
+        trazabilidad_api.registrar_evento(
+            "RASTRO_LEIDO_DEGRADADO",
+            {"lineas_ilegibles": diagnostico.rastro_lineas_ilegibles,
+             "legible": diagnostico.rastro_legible},
+            estado="DEGRADADO",
+        )
+
+    trazabilidad_api.registrar_evento(
+        "API_PROSPECCION_DIAGNOSTICO",
+        {"estado": diagnostico.estado.value, "degradaciones": len(diagnostico.degradaciones)},
+        estado="INFO",
+    )
+    return DiagnosticoProspeccionSchema.model_validate(diagnostico)

@@ -50,7 +50,7 @@ export const QUERY_KEYS = {
   // Clave propia y no `ejecuciones(1)`: el indicador de la cabecera pide una sola fila
   // y sondea cada pocos segundos, mientras que la pantalla de Administración pide diez
   // y no debe repintarse sola. Compartir clave haría que una consulta pisara a la otra.
-  ultimaProspeccion: ['admin', 'ejecuciones', 'ultima'] as const,
+  diagnosticoProspeccion: ['admin', 'prospeccion', 'diagnostico'] as const,
   licitaciones: (params: LicitacionesQueryParams = {}) =>
     ['licitaciones', params] as const,
   licitacionDetail: (id: string) => ['licitaciones', 'detail', id] as const,
