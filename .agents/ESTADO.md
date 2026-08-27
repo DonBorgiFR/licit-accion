@@ -14,11 +14,45 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-25)
+## ▶️ Para retomar (sesión del 2026-08-27)
+
+**El Paso 9 está abierto, con contrato validado y su primer bloque cerrado.** La suite está en
+**648/648**. Lo siguiente es el **bloque 9.C**, la unificación de los seis escritores.
+
+📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
+validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
+descompone el paso.
+
+**Lo que se hizo hoy, y qué se puede hacer ahora que antes no:**
+
+* **Leer `data/pipeline.jsonl` con un programa, entero y sin mentir.** `src/rastro.py` traduce
+  las cuatro gramáticas a una sola forma y **cuenta** las líneas que no puede leer en vez de
+  saltárselas. **25 regresiones** en `tests/test_paso9_rastro.py`, y
+  `tools/verificar_rastro_real.py` lo mide contra el fichero de verdad.
+* **El bloque 9.B es puramente aditivo**: cuatro ficheros nuevos y **cero líneas tocadas** del
+  código existente. La unificación de escritores —lo que sí toca capas cerradas— es el 9.C.
+
+> 🔑 **La corrida 16 de esta mañana es la prueba viva de para qué sirve el paso.** Consta
+> **`COMPLETED` con `errores = 0`**, y dentro de ella **el Centinela no pudo consultar ninguna de
+> sus dos fuentes** —DOGC 404 y BOPB 500, a las 07:29—. El Cockpit pinta sobre esa corrida un
+> distintivo **verde de «Datos al día»**. H-45 y el distintivo de fallo no son vecinos: son **un
+> solo defecto en dos pantallas**, y el `boletin_fetch_degraded` que lo demuestra vive en la
+> gramática minoritaria, la de 105 líneas de 4.768.
+
+> ⚠️ **Y un defecto propio, cometido en un documento canónico y detectado por el código.** La
+> primera redacción del contrato del Paso 9 mezclaba dos mediciones del mismo fichero —las
+> gramáticas contadas antes de que terminara la corrida 16, el total contado después—, y el
+> cuadro **no sumaba**: 4.591 frente a 4.768. No lo destapó releer el documento, sino ejecutar el
+> lector contra el fichero real. De ahí salió la comprobación de conservación que el verificador
+> hace ahora la primera: *totales = traducidas + ilegibles*. **Un recuento que no suma es lo
+> único que delata dos mediciones fundidas**, y es exactamente la deriva por la que este fichero
+> se separó de `AGENTS.md`.
+
+### 📕 Antes — sesión del 2026-08-25 (referencia, ya no es la cabecera)
 
 **El Paso 8 de la Capa 10 está CERRADO y verificado contra el sistema real.** El pipeline ya se
 ejecuta solo: la tarea está dada de alta en `AROMAN` y su próxima ejecución es a las 06:30. La
-suite está en **623/623**.
+suite quedó en **623/623**.
 
 > ✅ **Verificado disparando la tarea de verdad, no simulándola** *(2026-08-25 19:13)*: nació la
 > corrida **id 13**, terminó **COMPLETED en 88,8 s** con 1 expediente nuevo y 0 errores, **no dejó
@@ -43,7 +77,8 @@ suite está en **623/623**.
 **Lo que ya se puede hacer, y antes no**: **no hacer nada**. El sistema busca licitaciones solo.
 
 **Lo que sigue**: el **Paso 9** de la Capa 10 —la voz del proceso silencioso, que cierra **H-39**—
-y el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`.
+y el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`. *(El Paso 9 se abrió el 2026-08-27;
+ver la cabecera.)*
 
 > ⚠️ **Y una advertencia de método sobre esta sesión, escrita para quien la lea después.** Se
 > cerraron cuatro cosas en un día —H-53, H-54, el tope y el despertador— y **dirección se perdió
