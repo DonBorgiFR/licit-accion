@@ -1,7 +1,16 @@
 # Contrato de Servicio — Capa 10, Paso 9: La Voz del Proceso Silencioso
 
-**Versión:** 1.2.0 · **Redactado:** 2026-08-27 · **Estado:** 🟢 **validado por dirección el 2026-08-27**,
-corregido el mismo día al abrir los bloques 9.C y 9.D.
+**Versión:** 1.2.0 · **Redactado:** 2026-08-27 · **Estado:** 🟢 **CERRADO el 2026-08-27**, sus seis
+bloques. Validado por dirección y corregido dos veces el mismo día, al abrir los bloques 9.C y 9.D.
+
+> ✅ **Cierre del paso.** Los ocho criterios de aceptación de la sección N se cumplen. La suite
+> pasa de **623 a 688**, la verificación C7 se hizo mirando las tres pantallas contra la base
+> real, y quedan cerrados **H-39**, **H-45**, **H-46** y **H-57**. **Dos de los defectos que
+> el paso reparó los encontró mirar la pantalla, no las pruebas**: H-57 —el KPI decía `0`
+> sobre un canal con 5 alertas— y el aviso que repetía cinco veces el mismo mensaje. Es la
+> Convención C7 haciendo exactamente lo que dice su enunciado. El paso destapó además **H-56** —el
+> análisis semántico del Centinela no ha funcionado nunca—, que se cataloga sin asignar porque no
+> pertenece a esta capa.
 
 > **Qué cambia en la v1.2.0 y por qué** *(2026-08-27, al escribir el bloque 9.D)*. Dos cosas,
 > las dos nacidas de escribir el código que debía obedecer al documento:

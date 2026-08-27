@@ -34,9 +34,19 @@ function detalle(d: DiagnosticoProspeccion): string {
   const lineas = [d.motivo];
 
   if (d.degradaciones.length > 0) {
-    lineas.push('');
+    // Se agrupan las idénticas. Detectado mirando la pantalla el 2026-08-27 (Convención C7): las
+    // cinco degradaciones de la corrida 18 eran el mismo fallo repetido —una por alerta— y el
+    // aviso escupía cinco párrafos iguales. Un texto que hay que leer cinco veces para enterarse
+    // de que dice una sola cosa no informa: cansa, y lo que cansa se deja de mirar.
+    const veces = new Map<string, number>();
     for (const g of d.degradaciones) {
-      lineas.push(`· ${g.componente}: ${g.detalle || g.evento}`);
+      const clave = `${g.componente}: ${g.detalle || g.evento}`;
+      veces.set(clave, (veces.get(clave) ?? 0) + 1);
+    }
+
+    lineas.push('');
+    for (const [texto, n] of veces) {
+      lineas.push(n > 1 ? `· ${texto}  (×${n})` : `· ${texto}`);
     }
   }
 

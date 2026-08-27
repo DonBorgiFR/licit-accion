@@ -3321,9 +3321,19 @@ class Memoria:
             # (contrato del Bloque 3, apartado E): el Centinela sólo lee DOGC y BOPB, que son
             # catalanes de origen. Filtrarlas por NUTS sugeriría una criba que no existe, y
             # además una alerta temprana no cuelga de ningún expediente: aún no lo hay.
+            #
+            # **`ANALISIS_DIFERIDO_BOLETIN` cuenta como activa** (H-57, 2026-08-27). Es el estado
+            # de una alerta que pasó las reglas y sobre la que el LLM no pudo opinar: sigue viva,
+            # sigue en la tabla del Cockpit y sigue siendo una oportunidad temprana. Dejarla fuera
+            # del contador hacía que **un análisis degradado borrase la alerta de la cabecera**,
+            # que es exactamente la forma que la Convención C6 vino a impedir —*lo que no se pudo
+            # medir no puntúa en ninguna dirección*—. Se detectó al cerrar el Paso 9: la cabecera
+            # decía `0` sobre un canal que enseñaba 5.
             cur.execute("""
                 SELECT COUNT(*) FROM boletines_alertas
-                WHERE UPPER(estado_operativo) IN ('NUEVA_FASE_TEMPRANA', 'EN_ESTUDIO_PROACTIVO');
+                WHERE UPPER(estado_operativo) IN (
+                    'NUEVA_FASE_TEMPRANA', 'EN_ESTUDIO_PROACTIVO', 'ANALISIS_DIFERIDO_BOLETIN'
+                );
             """)
             alertas_activas = cur.fetchone()[0] or 0
 

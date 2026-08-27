@@ -11,14 +11,24 @@
 > No debe tomarse una decisión de licitación sin verificar el pliego y las fuentes oficiales.
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
-> **3 (identidad y foco)** están cerrados, con la suite en
-> **553/553**. De **51 hallazgos** catalogados, **47 están
-> cerrados**; quedan abiertos **H-39** —con sitio asignado, el Paso 9 de la Capa 10—, **H-41**
-> —un crash nativo del pipeline sobre datos reales, que el 2026-08-18 **no se reprodujo**— y dos
-> de la revisión funcional del 2026-08-18: **H-45** *(el Centinela está ciego: sus dos fuentes
-> devuelven 404 y 500)* y **H-46** *(la purga documental se lanza con un solo clic)*. El tercero,
-> **H-47** *(el Funnel se llenaba de licitaciones fuera del ámbito de Incoop)*, **quedó cerrado el
-> 2026-08-19**. El esquema vigente es **v8** y la política de retención, **v1.2.0**. El Cockpit
+> **3 (identidad y foco)** están cerrados, con la suite en **688/688** *(2026-08-27)*. De
+> **57 hallazgos** catalogados, **52 están cerrados**. Quedan abiertos cinco:
+>
+> * **H-41** — un crash nativo del pipeline sobre datos reales. **Acotado el 2026-08-25**: no
+>   ocurrió leyendo un pliego, sino descargando el feed del DOGC.
+> * **H-52** — OneDrive como canal de distribución entre dos equipos. Diferido.
+> * **H-53** *(cara A)* — Tesseract no está instalado, así que el OCR no se ejecuta. La cara
+>   irreversible quedó reparada el 2026-08-25.
+> * **H-55** — el rastro de auditoría tiene **14 líneas partidas y sigue partiéndose**. Contenido
+>   *(el lector las cuenta en vez de saltarlas)*, pero **sin reparar la causa**.
+> * **H-56** — el análisis semántico del Centinela **no ha funcionado nunca**. Apareció el
+>   2026-08-27 al reparar H-45: hasta entonces no había alertas que analizar.
+>
+> **Cerrados el 2026-08-27 con el Paso 9 de la Capa 10**: **H-39** *(el rastro mezclaba cuatro
+> gramáticas de evento, no dos)*, **H-45** *(el Centinela estaba ciego; el canal pasa de 0 a 5
+> alertas)*, **H-46** *(la purga documental se lanzaba de un clic)* y **H-57** *(el KPI decía 0
+> sobre un canal con 5 alertas — lo destapó la verificación C7, no una prueba)*. El esquema vigente es **v8**,
+> la política de retención **v1.2.0** y la configuración del Centinela **v1.1.0**. El Cockpit
 > compila limpio con `tsc -b` en modo estricto y su bundle está al día.
 >
 > ⚠️ **Desde la Capa 9, cada corrida del pipeline archiva y purga**: no sólo lee, también **borra
@@ -1441,9 +1451,10 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
    - **La identidad de un proceso no es su número.** `data/lanzador.pid` guarda PID **e instante de
      creación**, leído con `GetProcessTimes` vía `ctypes` y sin dependencias nuevas. Ante un PID
      reciclado, o sin instante anotado, la respuesta es *"no es el mío"* y no se toca nada.
-   - **Destapó H-39**: `pipeline.jsonl` mezcla dos esquemas de evento incompatibles desde la Capa 7
-     —`action` frente a `tipo_evento`—. Inocuo mientras nadie leía el fichero con un programa; deja
-     de serlo en el Paso 9, que lo declara canal de diagnóstico. **Se repara allí.**
+   - **Destapó H-39**: `pipeline.jsonl` mezclaba esquemas de evento incompatibles desde la Capa 7
+     —`action` frente a `tipo_evento`—. Inocuo mientras nadie leía el fichero con un programa; dejó
+     de serlo en el Paso 9, que lo declara canal de diagnóstico. **Reparado allí el 2026-08-27**, y
+     de paso corregido el enunciado: no eran dos esquemas, eran **cuatro**.
    - Arranca `uvicorn` en segundo plano con **grupo de procesos propio** y **espera consultando
      `/health`** hasta el tope declarado, nunca durmiendo un tiempo fijo.
    - Escribe `data/lanzador.pid` con **el PID y el instante de creación del proceso**. Con el
@@ -1631,7 +1642,38 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
    > </details>
 
-9. **Paso 9 — La Voz del Proceso Silencioso**: 💤
+9. **Paso 9 — La Voz del Proceso Silencioso**: 🟢 **Completado y Validado el 2026-08-27.**
+   Contrato en [`.agents/CONTRATO_PASO_9.md`](.agents/CONTRATO_PASO_9.md) *(v1.2.0)*. Cierra
+   **H-39**, **H-45**, **H-46** y **H-57**, y la suite pasa de 623 a **688**.
+
+   **Lo que ahora se puede hacer, y antes no:**
+
+   * **Leer el rastro entero con un programa.** `src/rastro.py` traduce a una forma única las
+     cuatro gramáticas que convivían en `pipeline.jsonl` y **cuenta** las líneas ilegibles en
+     lugar de saltárselas. Los **siete** puntos de escritura de las Capas 3 a 7 y la 10 emiten ya
+     el esquema canónico, con `estado` obligatorio, un solo formato de fecha y la versión del
+     esquema estampada en cada línea.
+   * **Enterarse de que una corrida terminó sin poder mirar.** El estado
+     `COMPLETADA_CON_DEGRADACION` separa *«terminó»* de *«terminó pudiendo hacerlo todo»*, y el
+     distintivo de cabecera dice **qué** no se pudo hacer. Antes pintaba verde encima.
+   * **Ver oportunidades tempranas.** El canal Centinela pasa de **0 a 5 alertas**: el BOPB había
+     mudado de dirección y el DOGC ya no publica RSS. Un canal vacío dice ahora **por qué** lo
+     está — no hay novedades, no se pudo consultar, o nadie está mirando.
+   * **No borrar ficheros de un clic.** La purga documental exige previsualizar, como su vecina.
+
+   > 🔑 **La lección del paso, y no es técnica: el papel falló dos veces y lo corrigió el código.**
+   > El contrato validado decía *«dos gramáticas»* —eran cuatro— y *«seis escritores»* —eran
+   > siete—, y ninguna de las dos cosas se vio releyéndolo: se vieron al ejecutar el lector contra
+   > el fichero real y al ir a declarar los estados. La comprobación que las habría cazado antes
+   > es aritmética: **un recuento que no suma delata dos mediciones fundidas**, y por eso el
+   > verificador comprueba ahora *totales = traducidas + ilegibles* antes que nada.
+
+   > 🚨 **Y reparar un defecto destapó otro que vivía detrás: H-56.** Con alertas que analizar por
+   > primera vez, el análisis semántico del Centinela degradó las cinco. Nunca había funcionado, y
+   > no podía saberse porque nunca se había ejecutado. Misma forma que H-53 con el OCR.
+
+   <details><summary>El diseño original del paso, que se conserva</summary>
+
    - **Cuatro canales, y cuál se usa depende de hasta dónde llegó el arranque.** Es lo que hace que
      ninguno sobre y que ninguno se use donde haría daño:
 
@@ -1648,6 +1690,8 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      dirección, 2026-08-13)*, con este distintivo avisando. Negarle a alguien los datos de ayer
      porque la prospección de hoy falló convierte un fallo parcial en una avería total.
    - Es el paso que impide que esta capa convierta el sistema en una caja negra silenciosa.
+
+   </details>
 
 #### **Fase 4: Verificación y Cierre del Ecosistema**
 
@@ -1674,9 +1718,15 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `config/lanzador.yaml`: configuración versionada del lanzador. 🟢 v1.0.0 (Paso 3).
 - `Incoop.vbs`: envoltorio silencioso de Windows para el doble clic. 🟢 Paso 7.
 - `Incoop.ico` y `tools/crear_accesos_directos.py`: icono y accesos directos idempotentes. 🟢 Paso 7.
-- `tools/programar_despertador.py`: alta y baja idempotentes de la tarea programada. 💤
+- `tools/registrar_despertador.py`: alta y baja idempotentes de la tarea programada. 🟢 Paso 8.
+  *(El README anunciaba `programar_despertador.py`; el Paso 8 lo entregó con este otro nombre y
+  la ficha quedó sin corregir hasta el Paso 9.)*
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 🟢 Paso 4.
-- `frontend/src/components/ProspeccionIndicator.tsx`: estado de la prospección en la cabecera. 🟢 Paso 7. El distintivo de **fallo** sigue siendo del Paso 9.
+- `frontend/src/components/ProspeccionIndicator.tsx`: estado de la prospección en la cabecera. 🟢 Paso 7, **reescrito en el Paso 9** sobre los nueve estados del diagnóstico.
+- `src/rastro.py`: el lector y el escritor canónicos del rastro. 🟢 Paso 9.
+- `src/diagnostico.py`: la máquina de estados del diagnóstico y el estado de las fuentes. 🟢 Paso 9.
+- `frontend/src/components/FuentesCentinela.tsx`: por qué el canal Centinela está como está. 🟢 Paso 9.
+- `tools/verificar_rastro_real.py`: el lector, medido contra el rastro de verdad. 🟢 Paso 9.
 - `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
 - `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 116 regresiones de los Pasos 2 a 7.
 
@@ -1738,8 +1788,9 @@ usuario y no como proyecto.
    resulta que **se lo decía la propia pantalla**, con un comando que además no arranca (H-50).
    **Reparado el 2026-08-19** (Paso 6): tres estados a la vista en cada fila —pliego leído, sin
    analizar y lectura degradada—, resueltos en el servidor y con regresiones.
-4. **El Centinela y la purga engañan** (H-45 y H-46). *No se reparan aquí*: encajan en el Paso 9 de
-   la Capa 10, que es el que hace hablar a lo que el sistema ya sabe.
+4. ~~**El Centinela y la purga engañan**~~ (H-45 y H-46). **Cerrados el 2026-08-27** en el Paso 9
+   de la Capa 10, que es donde se decidió que encajaban. El canal Centinela pasa de 0 a 5 alertas
+   y dice por qué está como está; la purga documental exige previsualizar.
 
 ### 🧭 Decisión de dirección ya tomada (2026-08-18)
 

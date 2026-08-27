@@ -1438,7 +1438,38 @@ arreglado con `dist/` sin recompilar.
 
 ---
 
-### H-39 · `pipeline.jsonl` mezcla dos esquemas de evento incompatibles 🔴 ABIERTO (Capa 10, Paso 9)
+### H-39 · `pipeline.jsonl` mezclaba CUATRO esquemas de evento incompatibles 🟢 CERRADO (Capa 10, Paso 9)
+
+> ✅ **CERRADO el 2026-08-27**, en los bloques 9.B y 9.C del Paso 9. Y **corregido de raíz el
+> enunciado**: esta ficha decía *«dos esquemas»* y eran **cuatro**, con el Centinela escribiendo
+> él solo en dos de ellos. Medido sobre el fichero real de 4.768 líneas:
+>
+> | Gramática | Líneas | Quién |
+> |---|---|---|
+> | `action` / `run_id` / `updated_by` | 2.306 | memoria, lector, **lanzador** |
+> | `tipo_evento` / `modulo` / `estado` / `payload` | 1.965 | api (1.938), centinela (27) |
+> | `event` / claves sueltas | 378 | analista |
+> | `componente` / `evento` / `detalles` | 105 | centinela |
+>
+> **Y los puntos de escritura eran siete, no seis.** El séptimo era el del propio lanzador, es
+> decir la capa que declara este fichero canal de diagnóstico.
+>
+> **Cómo se cerró**: `src/rastro.py` traduce las cuatro gramáticas históricas a una forma única y
+> **cuenta** las líneas ilegibles en vez de saltárselas; los siete escritores emiten ya el esquema
+> canónico, con `estado` obligatorio y explícito, un solo formato de fecha y `"esquema": 1`
+> estampado en cada línea. **El histórico no se reescribe** —destruiría rastro—: se lee.
+>
+> **Verificado con una corrida real** (id 17): 650 líneas nuevas, las 650 canónicas, escritas por
+> cinco componentes distintos, y las 4.768 viejas siguen leyéndose. 38 regresiones entre
+> `tests/test_paso9_rastro.py` y la verificación contra el fichero real en
+> `tools/verificar_rastro_real.py`.
+>
+> ⚠️ **Lo que NO cierra**: H-55, las líneas partidas. Son cosas distintas y siguen siéndolo — el
+> lector las tolera y las cuenta, pero nadie ha reparado por qué se parten.
+
+<details><summary>El enunciado original, que se conserva</summary>
+
+**Enunciado original (2026-08-13)**: `pipeline.jsonl` mezcla dos esquemas de evento incompatibles.
 
 **Detectado el 2026-08-13**, verificando en vivo el supervisor del Paso 5: el script que leía
 los eventos del arranque reventó con `KeyError: 'action'`.
@@ -1473,6 +1504,8 @@ ningún diagnóstico en este fichero.
 **No se repara en el Paso 5** porque tocar el gestor de trazabilidad de la Capa 7 desde el
 supervisor sería arreglar una capa cerrada desde un paso que no la tiene en su alcance, y
 porque la decisión de qué esquema gana es de diseño, no de implementación.
+
+</details>
 
 ---
 
@@ -1705,7 +1738,44 @@ marca retirada y código 0. **Regresiones**: cuatro en `tests/test_capa10_lanzad
 > código. Los tres primeros no son defectos de programación: son defectos de **lo que el sistema
 > hace con lo que sabe**, y sólo se ven cuando alguien que conoce el negocio mira la pantalla.
 
-### H-45 · El Centinela no está vacío: está ciego 🔴 ABIERTO (sin asignar)
+### H-45 · El Centinela no está vacío: está ciego 🟢 CERRADO (Capa 10, Paso 9, bloque E)
+
+> ✅ **CERRADO el 2026-08-27**, sus dos caras, y con un resultado medible: **`boletines_alertas`
+> pasa de 0 a 5 filas**, las primeras alertas tempranas de la historia del proyecto.
+>
+> **Cara configuración.** El BOPB había mudado de dirección: la vieja, `https://bop.diba.cat/rss`,
+> daba HTTP 500; hoy publica en `/dades-obertes/butlleti-del-dia/feed`. **53 anuncios, 5 pasan el
+> filtro, y el parser existente los entiende sin tocar una línea.** Se toma el feed completo y no
+> el de `administracio-local`, por el mismo criterio de la decisión del 2026-08-18 sobre el
+> ámbito: no se filtra al ingerir, así no se pierde nada y es reversible en una línea.
+>
+> **El DOGC queda desactivado por decisión de dirección**, y no por dejadez: **ya no publica RSS**.
+> Comprobado, no supuesto — las seis rutas candidatas dan 404, `portaldogc.gencat.cat` ni siquiera
+> resuelve, su servicio de alertas es por correo con registro previo, y ninguno de los 42 datasets
+> del DOGC en el portal de datos abiertos es el boletín diario de anuncios. Se desactiva en vez de
+> dejarlo fallando porque **degradaba 26 de 27 veces**: una alarma que suena todas las noches deja
+> de ser información, y habría dejado el distintivo del Cockpit diciendo *«con avisos»* a
+> perpetuidad, tapando las degradaciones que sí importan. La URL se conserva para poder
+> reactivarla cambiando `activo: true`.
+>
+> **Cara pantalla.** Un canal vacío tiene **tres** causas que no se parecen en nada, y ahora se
+> distinguen: no hay novedades, no se pudo consultar, o nadie está mirando. Lo sirve
+> `GET /api/v1/alertas-tempranas/fuentes` leyendo el rastro con el lector canónico del bloque 9.B,
+> y lo pinta `frontend/src/components/FuentesCentinela.tsx`. **Apagar una fuente tampoco es
+> silencioso**: emite `boletin_fetch_omitido` con su motivo, misma doctrina que el código `30` del
+> lanzador — ni éxito ni avería, omisión deliberada y consta.
+>
+> **La segunda cara que esta ficha no recogía**: además del canal vacío, el **distintivo de
+> cabecera pintaba verde** sobre una corrida degradada. Es el mismo defecto en otra pantalla, y lo
+> cierra el bloque 9.D con el estado `COMPLETADA_CON_DEGRADACION`.
+>
+> **9 regresiones** en `tests/test_paso9_fuentes.py`, y verificación C7 mirando las dos pantallas.
+>
+> 🚨 **Repararlo destapó [H-56](#h-56--el-análisis-semántico-del-centinela-no-ha-funcionado-nunca-🔴-abierto-sin-asignar)**:
+> con alertas que analizar por primera vez, el análisis semántico del Centinela degradó las cinco.
+
+<details><summary>El enunciado original, que se conserva</summary>
+
 
 **Detectado el 2026-08-18.** El canal Centinela del Cockpit no muestra **ni una sola alerta**, y la
 base confirma **0 filas** en `boletines_alertas`. No es que no haya novedades: **las dos fuentes
@@ -1734,7 +1804,24 @@ sin poder mirar"*.
    Es hermano del distintivo que el **Paso 9 de la Capa 10** ya tiene asignado para las corridas
    fallidas, y lo natural es resolverlos juntos.
 
-### H-46 · La purga documental se ejecuta con un solo clic 🔴 ABIERTO (sin asignar)
+</details>
+
+### H-46 · La purga documental se ejecuta con un solo clic 🟢 CERRADO (Capa 10, Paso 9, bloque E)
+
+> ✅ **CERRADO el 2026-08-27.** Se aplicó exactamente la reparación que esta ficha proponía: el
+> mismo patrón de dos tiempos que ya usaba su vecina, apoyándose en la previsualización que la API
+> servía desde el Paso 7 de la Capa 9 **y que la pantalla pintaba sin usar para nada**.
+>
+> El botón **nace deshabilitado**, con el motivo a la vista al pasar el ratón —*«Previsualice
+> primero: esta operación borra ficheros del disco y es irreversible»*—, y sólo se activa tras
+> previsualizar, pasando a decir **«2 · Liberar N documentos»**. Y se corrigió el aviso que
+> describía lo que hacía el botón de al lado, que era peor que no tener ninguno.
+>
+> **Verificado en vivo (C7)**: deshabilitado al abrir, y tras previsualizar se comporta igual que
+> la eliminación de expedientes — mismo texto de dos tiempos, mismo criterio.
+
+<details><summary>El enunciado original, que se conserva</summary>
+
 
 **Detectado el 2026-08-18**, revisando la pantalla de Administración con dirección. El botón
 **«Liberar peso documental»** lanza la purga **inmediatamente**: sin previsualización, sin
@@ -1759,6 +1846,8 @@ salvaguardas radicalmente distintas**, y la más accesible es la que borra fiche
 **Reparación propuesta**: aplicar a la purga documental el mismo patrón de dos tiempos que ya usa
 la eliminación, apoyándose en la previsualización que ya sirve la API. Sin asignar; encaja
 naturalmente en el Paso 9 de la Capa 10 o en una revisión de la pantalla de Administración.
+
+</details>
 
 ### H-47 · El Funnel se llena de licitaciones fuera del ámbito de Incoop 🟢 CERRADO (2026-08-19)
 
@@ -2418,7 +2507,37 @@ copia—; cada mutación la caza la prueba que le corresponde. Suite **569/569**
 
 ---
 
-### H-55 · El rastro de auditoría tiene 11 líneas partidas, y la segunda máquina firma en él 🔴 ABIERTO
+### H-55 · El rastro de auditoría tiene 14 líneas partidas, y sigue partiéndose 🔴 ABIERTO
+
+> ⚠️ **Corregido el 2026-08-27, en el bloque 9.B del Paso 9. Sigue abierto, pero su enunciado y
+> su mecanismo estaban equivocados en dos cosas.**
+>
+> **1. No son 11 líneas, son 14, y el fichero SIGUE rompiéndose.** A las once catalogadas se
+> suman la **4579** y la **4586**, ambas del **2026-08-26**, es decir posteriores a la propia
+> ficha. Esto deja de ser deuda histórica y pasa a ser una condición permanente del fichero:
+> **cualquier lector tiene que tolerar líneas rotas siempre**, no sólo mientras se limpia el
+> pasado.
+>
+> **2. El mecanismo propuesto no explica lo medido.** La ficha lo atribuye a que *«OneDrive
+> reconcilie dos versiones de un fichero de sólo-añadir»* entre dos equipos. Contra eso:
+>
+> * **Las 14 son fragmentos de escrituras de la API**, sin una sola excepción.
+> * Cada una está en el **mismo segundo y la misma máquina** que su línea vecina completa.
+> * La línea **4073 empieza correctamente y se corta a media clave** (`{"timestamp": "…", "modu`).
+>   Eso es un escritor interrumpido, no dos copias de un fichero fundidas.
+> * Y hay un candidato con nombre que la ficha no considera: `src/api/middleware.py:43` escribe en
+>   el rastro **desde el pool de hilos, en cada petición HTTP**.
+>
+> **Qué NO se afirma**: que la causa sea la concurrencia de la API. Se afirma que **la explicación
+> de OneDrive no basta**, y que el sospechoso más probable está dentro de casa. La presencia de la
+> segunda máquina en el rastro sigue siendo cierta y sigue siendo H-52.
+>
+> **Lo que sí se hizo**: el lector canónico del bloque 9.B **cuenta** las líneas ilegibles y anota
+> sus números en vez de saltárselas, y todo consumidor recibe un `degradado: True`. El daño está
+> contenido y declarado; **la causa sigue sin reparar**.
+
+<details><summary>El enunciado original, que se conserva</summary>
+
 
 **Detectado el 2026-08-25**, al intentar leer `data/pipeline.jsonl` para reconstruir la corrida
 que reventó. **No se pudo: el fichero no es JSONL válido.**
@@ -2453,6 +2572,8 @@ pasó cuando algo sale mal, exactamente lo que se ha necesitado hoy para H-41, y
 > mismo sitio, el Paso 9 de la Capa 10, y quien lo abra debe saber que **cualquier lector de
 > `pipeline.jsonl` tiene que tolerar líneas rotas**, porque las hay ya escritas y borrarlas sería
 > destruir rastro.
+
+</details>
 
 ---
 
@@ -2499,6 +2620,36 @@ defecto **no contamina ningún dato**: sólo deja el análisis semántico tempra
 Lo primero que hará falta es mirar **qué devuelve el modelo exactamente** frente a lo que el
 validador exige: puede ser el prompt, el esquema esperado o el parseo, y las tres se distinguen
 con una sola llamada real desde `tools/`.
+
+---
+
+### H-57 · El KPI del Centinela decía 0 sobre un canal con 5 alertas 🟢 CERRADO (Capa 10, Paso 9, bloque F)
+
+**Detectado y cerrado el 2026-08-27**, en la verificación C7 que cierra el Paso 9 — mirando la
+pantalla, que es exactamente para lo que esa convención existe. Ninguna prueba lo habría cazado:
+las dos cifras salían de consultas distintas y las dos eran «correctas» por separado.
+
+| | |
+|---|---|
+| KPI **«Canal Centinela»** en la cabecera | **0** |
+| Filas en la tabla de debajo, en la misma pantalla | **5** |
+
+**La causa.** El contador sólo miraba dos estados —`NUEVA_FASE_TEMPRANA` y
+`EN_ESTUDIO_PROACTIVO`—, y las cinco alertas estaban en **`ANALISIS_DIFERIDO_BOLETIN`**: pasaron
+las reglas, pero el LLM no pudo dictaminar sobre ellas (H-56). Ese estado **no es un descarte**:
+la alerta sigue viva, sigue en la tabla y sigue siendo una oportunidad temprana; el propio
+Centinela sólo la descarta si además baja del umbral de score.
+
+> 🔑 **Es la Convención C6 incumplida, y con la misma forma exacta que la que le dio origen.** C6
+> nació porque *«un fallo de parseo se rellenaba con `NULO` y restaba −30 pts: **la alerta
+> desaparecía**»*. Aquí un fallo de análisis no restaba puntos — **borraba la alerta del
+> contador**. Lo que no se pudo medir no puntúa **en ninguna dirección**, y eso incluye no
+> hacerla desaparecer de la cabecera.
+
+**Reparación**: `ANALISIS_DIFERIDO_BOLETIN` cuenta como activa (`src/memoria.py`,
+`obtener_resumen_kpis`). Regresión en `tests/test_paso9_fuentes.py`, que siembra los cuatro
+estados y exige que cuenten **tres** — sólo `DESCARTADA_POR_REGLAS` queda fuera. Verificado en
+pantalla: el KPI pasa de `0` a `5` y cuadra con su tabla.
 
 ---
 

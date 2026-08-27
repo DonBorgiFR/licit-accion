@@ -16,8 +16,9 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-27)
 
-**El Paso 9 está abierto, con contrato validado y sus bloques 9.B a 9.E cerrados.** La suite está
-en **687/687**. Lo siguiente es el **bloque 9.F**, el cierre del paso.
+**El Paso 9 de la Capa 10 está CERRADO**, sus seis bloques, con contrato validado y verificado
+contra el sistema real. La suite está en **688/688**. **Sólo queda el Paso 10**, que cierra la
+capa y escribe el `MANUAL.md` — y con él se cierra el recorrido entero de la Capa 1 a la 10.
 
 📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
 validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
@@ -77,6 +78,16 @@ descompone el paso.
 > día.** El sistema degrada bien —ningún dictamen a medias se persiste, ninguno altera el score—,
 > así que **no contamina datos**: sólo deja el análisis temprano sin hacer. Sin asignar.
 
+> 🔑 **La lección del Paso 9, y no es técnica: el papel falló dos veces y lo corrigió el código.**
+> El contrato, validado por dirección, decía *«dos gramáticas»* —eran cuatro— y *«seis
+> escritores»* —eran siete—. Ninguna de las dos se vio releyendo el documento: se vieron al
+> **ejecutar el lector contra el fichero real** y al **ir a declarar los estados uno por uno**.
+> Es la misma familia que la lección del Bloque 3 —*«tres veces un contrato validado resultó
+> estar equivocado, y las tres sólo se vio al escribir el código que debía obedecerlo»*—, y aquí
+> hay además una comprobación que las habría cazado antes y ya está incorporada: **un recuento
+> que no suma delata dos mediciones fundidas**. El verificador comprueba ahora
+> *totales = traducidas + ilegibles* antes que nada.
+
 > ⚠️ **Y un segundo defecto del contrato, del mismo tipo que el de las cifras: decía seis
 > escritores y eran siete.** Faltaba el del propio lanzador (`registrar_evento_lanzador`), pese a
 > que la sección B.1 sí lo listaba. Dejarlo fuera habría dado el resultado más absurdo posible:
@@ -129,9 +140,8 @@ suite quedó en **623/623**.
 
 **Lo que ya se puede hacer, y antes no**: **no hacer nada**. El sistema busca licitaciones solo.
 
-**Lo que sigue**: el **Paso 9** de la Capa 10 —la voz del proceso silencioso, que cierra **H-39**—
-y el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`. *(El Paso 9 se abrió el 2026-08-27;
-ver la cabecera.)*
+**Lo que sigue**: el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`. *(El Paso 9 se
+abrió y se cerró el 2026-08-27; ver la cabecera.)*
 
 > ⚠️ **Y una advertencia de método sobre esta sesión, escrita para quien la lea después.** Se
 > cerraron cuatro cosas en un día —H-53, H-54, el tope y el despertador— y **dirección se perdió
@@ -330,7 +340,7 @@ Capa 10**, que llevaba en pausa desde el 2026-08-18.
 
 ## 📍 Dónde estamos
 
-**Estado en una línea**: **Capas 1 a 9 completadas y validadas** y el **Bloque 3 cerrado entero**, con la suite en **623/623**. **H-48, H-49, H-47, H-50 y H-51 quedaron cerrados el 2026-08-19** —el archivado prematuro, el identificador duplicado, el ámbito del Funnel, el comando roto que recomendaba el Cockpit y el total de disco que no cuadraba con su desglose—, así que **la tarea activa vuelve a ser la Capa 10, por su Paso 8**. El esquema de base de datos vigente es **v8** y la política de retención, **v1.2.0**. De **54 hallazgos catalogados, 48 están cerrados**; quedan abiertos **H-39** (Paso 9 de la Capa 10), **H-41** (crash nativo, **acotado el 2026-08-25**: no ocurrió leyendo un pliego), **H-45/46** de la revisión del 18-08, **H-52** (OneDrive como canal de distribución, diferido — pero ver H-55, que le pone daño medido encima) y los tres del 2026-08-25: **H-53** (cara A: Tesseract sin instalar en `AROMAN`; **la cara B, la irreversible, reparada el 2026-08-25**), ~~H-54~~ *(cerrado el 2026-08-25)* y **H-55** (11 líneas partidas en `pipeline.jsonl`). De la **Capa 10** —el Lanzador— quedan cerrados los **Pasos 1 a 7** (1-5 el 2026-08-13, el 6 el 2026-08-17 y el 7 el 2026-08-18) y **el Paso 8 quedó cerrado el 2026-08-25**; espera el **Paso 9**. El sistema ya se usa con un doble clic **y se ejecuta solo**.
+**Estado en una línea**: **Capas 1 a 9 completadas y validadas**, el **Bloque 3 cerrado entero** y de la **Capa 10 quedan cerrados los Pasos 1 a 9**; sólo falta el **Paso 10**, que cierra la capa y escribe el `MANUAL.md`. La suite está en **688/688**. El **Paso 9 se cerró el 2026-08-27** con sus seis bloques, y con él **H-39** *(el rastro mezclaba cuatro gramáticas de evento, no dos)*, **H-45** *(el Centinela estaba ciego: el canal pasa de 0 a 5 alertas, el BOPB cambió de dirección y el DOGC ya no publica RSS)*, **H-46** *(la purga documental se lanzaba de un clic)* y **H-57** *(el KPI de cabecera decía 0 sobre un canal con 5 alertas)*. El esquema de base de datos vigente es **v8**, la política de retención **v1.2.0** y la configuración del Centinela **v1.1.0**. De **57 hallazgos catalogados, 52 están cerrados**; quedan abiertos cinco: **H-41** (crash nativo, **acotado**: no ocurrió leyendo un pliego sino descargando el feed del DOGC), **H-52** (OneDrive como canal de distribución, diferido), **H-53 cara A** (Tesseract sin instalar en `AROMAN`; la cara irreversible se reparó el 2026-08-25), **H-55** (**14** líneas partidas en `pipeline.jsonl`, y **sigue partiéndose**: contenido por el lector, sin reparar la causa) y **H-56** (el análisis semántico del Centinela no ha funcionado nunca, destapado al reparar H-45). El sistema ya se usa con un doble clic, **se ejecuta solo y cuenta lo que le pasa**.
 
 **Control de versiones**: el proyecto vive en **https://github.com/DonBorgiFR/licit-accion** desde el 2026-08-06. Antes de esa fecha no había historial: cualquier estado anterior sólo existe en las actas de este directorio.
 

@@ -177,3 +177,43 @@ def test_el_bopb_apunta_al_feed_vigente():
 
     assert bopb["activo"] is True
     assert bopb["url_feed"] == "https://bop.diba.cat/dades-obertes/butlleti-del-dia/feed"
+
+
+# ==============================================================================
+# H-57 — un análisis degradado no puede borrar la alerta de la cabecera
+# ==============================================================================
+
+
+def test_una_alerta_con_analisis_diferido_sigue_contando(tmp_path):
+    """Convención C6: lo que no se pudo medir no puntúa **en ninguna dirección**.
+
+    Detectado al cerrar el Paso 9 mirando la pantalla (C7): el KPI «Canal Centinela» decía `0`
+    mientras la tabla de debajo enseñaba 5 alertas. Estaban en `ANALISIS_DIFERIDO_BOLETIN` —el
+    LLM no pudo dictaminar, H-56— y el contador sólo miraba dos estados. Es la misma forma del
+    defecto que C6 documenta: un fallo de análisis hacía **desaparecer** la alerta.
+    """
+    from src.memoria import Memoria
+
+    memoria = Memoria(db_path=str(tmp_path / "licitaciones.db"))
+    memoria.setup_db()
+    with memoria.conectar() as conn:
+        with conn:
+            for n, estado in enumerate(
+                ["NUEVA_FASE_TEMPRANA", "EN_ESTUDIO_PROACTIVO",
+                 "ANALISIS_DIFERIDO_BOLETIN", "DESCARTADA_POR_REGLAS"]
+            ):
+                conn.execute(
+                    "INSERT INTO boletines_alertas (id_alerta, fuente, num_boletin, "
+                    "fecha_publicacion, organo_emisor, titulo_anuncio, estado_operativo, "
+                    "score_temprano, fecha_ingesta, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?);",
+                    (f"id-{n}", "BOPB", f"BOPB-{n}", "2026-08-27T07:00:00Z",
+                     "Ajuntament de prueba", f"Anuncio {n}", estado, 40,
+                     "2026-08-27T07:00:00Z", "2026-08-27T07:00:00Z"),
+                )
+
+    kpis = memoria.obtener_resumen_kpis()
+
+    assert kpis["alertas_tempranas_activas"] == 3, (
+        "las tres vivas cuentan; sólo la descartada por reglas queda fuera"
+    )
