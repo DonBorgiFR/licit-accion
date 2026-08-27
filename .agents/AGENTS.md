@@ -183,11 +183,31 @@ python -m uvicorn src.api.main:app --port 8000     # sirve API y Cockpit: http:/
 
 ## 🔧 Herramientas de verificación manual
 
-No forman parte de la suite porque consumen cuota real de la API. Requieren `GEMINI_API_KEY` en el entorno.
+**Ninguna está en la suite, y el motivo no es el mismo en todas**: unas consumen cuota real de la
+API, otras dependen de datos reales que cambian cada día, y una toca el Programador de tareas de
+Windows. Es la Convención C5 aplicada con criterio: *lo que depende del mundo exterior se verifica
+a mano y cuando se quiere*.
+
+**Consumen cuota de la API** *(requieren `GEMINI_API_KEY` en el entorno)*:
 
 ```bash
 python tools/verificar_proveedor_llm.py         # ¿responde el modelo configurado? ¿cuántos tokens gasta?
 python tools/verificar_matriz_subrogacion.py    # ¿dos modelos distintos coinciden? (debe dar 5/5)
+```
+
+**Dependen de los datos reales de este equipo**:
+
+```bash
+python tools/verificar_rastro_real.py           # ¿se lee entero data/pipeline.jsonl? (Paso 9)
+python tools/verificar_session0.py              # ¿se comporta bien sin escritorio? (Paso 8)
+```
+
+**Tocan el sistema o la base, y por eso piden confirmación explícita**:
+
+```bash
+python tools/registrar_despertador.py           # alta y baja de la tarea nocturna (Paso 8)
+python tools/crear_accesos_directos.py          # accesos directos idempotentes (Paso 7)
+python tools/reconciliar_h54.py                 # reparación puntual de H-54, ya ejecutada
 ```
 
 ---

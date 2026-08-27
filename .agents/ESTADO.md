@@ -20,6 +20,11 @@
 contra el sistema real. La suite está en **688/688**. **Sólo queda el Paso 10**, que cierra la
 capa y escribe el `MANUAL.md` — y con él se cierra el recorrido entero de la Capa 1 a la 10.
 
+📌 **Antes de abrir el Paso 10, lee [`APUNTES_PASO_10.md`](APUNTES_PASO_10.md).** Lo escribió
+quien acababa de cerrar el Paso 9, con el contexto fresco: qué queda hecho de verdad *(las cinco
+regresiones E2E que pide el README **ya existen**)*, las cuatro decisiones de dirección que habrá
+que plantear antes de escribir el manual, y las trampas ya pisadas.
+
 📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
 validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
 descompone el paso.
