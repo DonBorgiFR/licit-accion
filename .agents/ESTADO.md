@@ -14,7 +14,77 @@
 
 ---
 
-## ▶️ Para retomar (sesión del 2026-08-27)
+## ▶️ Para retomar (sesión del 2026-08-27, tarde)
+
+**El Paso 10 está ABIERTO** —el último de la capa y del recorrido— con su contrato **validado**
+por dirección: [`CONTRATO_PASO_10.md`](CONTRATO_PASO_10.md), ya en **v1.1.0**. **El bloque 10.B.1
+está CERRADO** y la suite pasa de 688 a **708/708**.
+
+> ✅ **H-58 cerrado, y verificado sobre la base real: los 6 pliegos que estaban perdidos ya están
+> en disco.** 5 descargados —el PCA de 999 KB, el PPT, el quadre, la memòria y la resolució— y 1
+> omitido correctamente por no ser PDF. `count(*) WHERE estado='DESCARGANDO'` devuelve **0**.
+
+> 🔑 **Y al repararlo apareció lo que el diagnóstico no tenía: por qué se varaban.** Eran **dos
+> defectos encadenados**, y ninguno bastaba solo. **El disparador**: `_path_for_document()`
+> troceaba el expediente por el carácter 4 sin comprobar que el trozo fuera un nombre legal, y
+> `"HCA 006/2026"` daba la carpeta `"HCA "` —con espacio final—, que **Windows no puede crear**.
+> *No era el límite de 260 caracteres, que es lo primero que uno supone: la ruta medía 111, y el
+> experimento de control lo confirmó quitando sólo el espacio.* **El amplificador**: esa excepción
+> escapaba del hilo y el `Future` que nadie recogía se la tragaba.
+
+> 🚨 **Un `Future` que nadie recoge es un `except` que silencia, escrito de otra forma — y peor,
+> porque ni siquiera lo parece.** La Convención C2 persigue el `except` amplio; aquí no había
+> bloque sospechoso que revisar, sólo una línea de aspecto correcto y un error que se evaporaba.
+> **Queda anotado en el contrato para que el bloque 10.G decida si sube a convención.**
+
+📌 **Se retiró una operación entera del contrato, y el motivo importa más que el ahorro.** Estaba
+prevista una herramienta de reconciliación copiando la de H-54. No hacía falta: **H-54 dejaba
+filas mintiendo** —reclamaban ficheros borrados— y había que corregirlas una a una; **H-58 deja
+filas diciendo la verdad**, así que en cuanto alguien vuelve a por ellas se resuelven solas.
+
+⚠️ **Y la corrida de verificación subió H-55 de 18 líneas rotas a 19**, lo que **refina su
+diagnóstico**: se creía cosa del pool de hilos de la API, y esto lo produjo el pool del **Lector**.
+No es la API — es **cualquier pool de hilos que escriba en el rastro**.
+
+📌 **Lo que cambió la forma del paso, y hay que saberlo antes de nada.** Dirección tomó las cuatro
+decisiones que el manual necesitaba, y la cuarta invirtió el paso entero: **reparar antes que
+documentar**. El Paso 10 ya no es *«documentar el sistema tal cual»* sino *«arreglar lo que se
+pueda y documentar el resto»*. Las otras tres: **cero terminal**, **manual en catalán**, y el
+**DOGC como fuente apagada pendiente de reponer**.
+
+🚨 **Y el triaje que esa decisión obligó a hacer destapó H-58, que estaba causando daño esa misma
+mañana.** `DESCARGANDO` es el **único estado transitorio del vocabulario que nadie recoge**
+—auditados los diez, uno por uno—: se escribe en `src/lector.py:576` y no aparece en ninguna
+consulta de `src/memoria.py`. Hay **6 pliegos atrapados** de la corrida 17 —el PCA, el PPT, el
+quadre, la memòria— con `intentos = 0`, **en una corrida que consta `COMPLETED` con 0 errores**.
+Es la tercera vez que el proyecto pisa esta forma exacta *(H-33, H-53 cara B)*, y la primera en
+que ocurre mientras el sistema se declara sano.
+
+**Los otros dos diagnosticados, y los dos son baratos ahora que se sabe dónde miran:**
+
+* **H-56** — `GeminiProvider` fija **siempre** el esquema del analista de licitaciones, y la
+  factoría es la misma para los dos consumidores. Cuando el Centinela pide su dictamen, Gemini
+  está **obligado por structured output** a responder con el otro esquema. **Intersección de
+  campos: ∅.** Por eso faltan los cuatro a la vez, siempre. No podía funcionar ningún día, y se
+  vio comparando dos objetos del código, sin gastar cuota.
+* **H-55** — ya **18** líneas rotas de 6.354, creciendo. La 6251 **parsea entera** y la 6252 es la
+  cola de otra: es una carrera **entre hilos del mismo proceso** (el pool de la API), no entre
+  procesos. Eso baja la reparación de un cerrojo de sistema operativo a un cerrojo de módulo.
+
+✅ **Tesseract instalado y verificado** *(v5.5.3, con `cat` y `spa`)*: el Lector reporta
+`ocr_disponible` y `modo_ocr_diferido = False`. **Falta lo único que vale**: que los 4 documentos
+en `OCR_DIFERIDO` se recuperen solos en la corrida siguiente.
+
+📏 **H-41 sigue sin cerrarse, y es deliberado.** 8 corridas seguidas `COMPLETED` con 0 errores y
+sin migaja `documento_en_curso.json`, 4 de ellas ya sin DOGC. **Ocho corridas no cierran un crash
+intermitente**: queda en *«no reproducible desde el 2026-08-25»*.
+
+> 🔑 **La lección de la sesión, y es de método: se buscaba qué escribir sobre las averías y
+> apareció una avería.** El triaje no se hizo para encontrar defectos sino para redactar una
+> sección de un manual. **Preguntarle a los datos qué hay que contar es una forma barata de
+> auditoría**, y es la misma familia que la Convención C7: mirar encuentra lo que las pruebas no.
+
+### 📕 Antes, en la misma sesión — el cierre del Paso 9 (referencia)
 
 **El Paso 9 de la Capa 10 está CERRADO**, sus seis bloques, con contrato validado y verificado
 contra el sistema real. La suite está en **688/688**. **Sólo queda el Paso 10**, que cierra la

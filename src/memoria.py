@@ -497,7 +497,18 @@ CREATE TABLE IF NOT EXISTS documentos (
     tipo TEXT NOT NULL, -- 'PCA', 'PPT', 'Anexo', 'Otro'
     hash_documento TEXT NOT NULL,
     local_path TEXT,
-    estado TEXT NOT NULL DEFAULT 'DETECTADO', -- DETECTADO, DESCARGANDO, DESCARGADO, PROCESADO, ERROR_DESCARGA, OCR_PENDIENTE, ERROR_EXTRACCION
+    -- Vocabulario real, auditado estado por estado el 2026-08-27 (Capa 10, Paso 10).
+    -- La lista anterior estaba equivocada en las DOS direcciones: nombraba OCR_PENDIENTE y
+    -- ERROR_EXTRACCION, que no se escriben nunca, y omitía cinco que sí. Probablemente es
+    -- por eso que H-58 sobrevivió tanto: quien viniera a comprobar si DESCARGANDO tenía
+    -- consumidor leía aquí una lista corta y plausible que no era la del sistema.
+    --
+    --   TRANSITORIOS (cada uno DEBE tener quien lo recoja -- ver obtener_documentos_pendientes):
+    --     DETECTADO . DESCARGANDO . DESCARGADO . ERROR_DESCARGA
+    --     TEXTO_EXTRAIDO . OCR_REQUERIDO . OCR_DIFERIDO
+    --   TERMINALES (nadie los recoge, y es correcto):
+    --     PROCESADO . PURGADO . OMITIDO_FORMATO_NO_PDF
+    estado TEXT NOT NULL DEFAULT 'DETECTADO',
     sha256 TEXT,
     mida_bytes INTEGER,
     idioma TEXT,
@@ -2489,18 +2500,52 @@ class Memoria:
 
     def obtener_documentos_pendientes(self) -> List[Dict[str, Any]]:
         """
-        Devuelve los documentos que están en estado DETECTADO o ERROR_DESCARGA con intentos < 3.
+        Devuelve los documentos pendientes de descarga: `DETECTADO`, `ERROR_DESCARGA`
+        y `DESCARGANDO`, todos con `intentos < 3`.
+
+        **`DESCARGANDO` entra aquí desde el Paso 10 de la Capa 10 (H-58).** Es un estado
+        **transitorio**, y hasta hoy no aparecía en ninguna consulta de recogida: un
+        documento cuya descarga se interrumpiera después de marcarlo se quedaba ahí para
+        siempre. Se midió sobre la base real —6 pliegos de la corrida 17, con `intentos`
+        a 0, en una corrida que constaba `COMPLETED` con 0 errores—.
+
+        Es la tercera vez que el proyecto pisa esta forma exacta *(H-33, y H-53 cara B con
+        `OCR_DIFERIDO`)*, y de ahí sale la invariante que el contrato del paso declara:
+        **todo estado transitorio tiene exactamente un consumidor que lo recoge; uno que se
+        escribe y no se lee sólo es admisible si es terminal declarado.**
+
+        ⚠️ **El guardia `intentos < 3` se aplica también a los varados, y no es un detalle.**
+        Sin él, un documento que hiciera morir la descarga de forma reproducible volvería a
+        intentarse en cada corrida para siempre: se cambiaría un agujero por un bucle.
+
+        Se devuelve `estado` además de los datos de descarga para que el llamador pueda
+        distinguir un documento nuevo de uno rescatado y dejar constancia de ello.
         """
         sql = """
-        SELECT id, expediente_id, titulo, url, tipo, hash_documento, intentos
+        SELECT id, expediente_id, titulo, url, tipo, hash_documento, intentos, estado
         FROM documentos
-        WHERE estado IN ('DETECTADO', 'ERROR_DESCARGA') AND intentos < 3;
+        WHERE estado IN ('DETECTADO', 'ERROR_DESCARGA', 'DESCARGANDO') AND intentos < 3;
         """
         with self.conectar() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(sql)
             return [dict(row) for row in cursor.fetchall()]
+
+    def obtener_estado_documento(self, doc_id: int) -> Optional[str]:
+        """
+        Devuelve el estado actual de un documento, o `None` si no existe.
+
+        Lo usa la red de seguridad del descargador (H-58) para comprobar, al salir del
+        camino de descarga, que el documento **no se quedó en `DESCARGANDO`**. Pregunta por
+        el hecho —qué estado tiene— y no por el síntoma —si hubo excepción—, porque un
+        `return` añadido sin mover el estado dejaría el mismo agujero sin lanzar nada.
+        """
+        with self.conectar() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT estado FROM documentos WHERE id = ?;", (doc_id,))
+            fila = cursor.fetchone()
+            return fila[0] if fila else None
 
     def actualizar_estado_documento(self, doc_id: int, estado: str, error_detalle: Optional[str] = None) -> None:
         """

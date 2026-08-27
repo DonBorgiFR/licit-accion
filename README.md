@@ -1183,7 +1183,7 @@ graph TD
 ---
 
 ## 🚀 Capa 10: El Lanzador y Despertador (Silent Launcher VBS y Tarea Programada)
-* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 7 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.2.0** desde el 2026-08-18. **El sistema ya se usa con un doble clic**: icono en el escritorio, sin consola, Cockpit en ventana de aplicación y prospección por debajo. La tarea activa es el **Paso 8**, el despertador. Suite: **464/464**.
+* **Estado actual**: 🛠️ **Capa activa desde el 2026-08-12.** Los **Pasos 1 a 9 están cerrados**; el contrato vive en [`.agents/CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md), en **v1.3.0** desde el 2026-08-25. **El sistema ya se usa con un doble clic** —icono en el escritorio, sin consola, Cockpit en ventana de aplicación y prospección por debajo— **y prospecta solo cada mañana**. La tarea activa es el **Paso 10**, el último: verificación en vivo, `MANUAL.md` y cierre del recorrido de la Capa 1 a la 10. Suite: **688/688**.
 
 ### 🎯 Objetivo
 
@@ -1695,7 +1695,104 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 
 #### **Fase 4: Verificación y Cierre del Ecosistema**
 
-10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de la Capa 10**: 💤
+10. **Paso 10 — Suite E2E, Verificación en Vivo y Cierre de la Capa 10**: 🛠️ **Abierto el
+    2026-08-27.** Es el último paso de la última capa: al cerrarlo se cierra el recorrido entero
+    de la Capa 1 a la 10. **El contrato del paso vive en
+    [`.agents/CONTRATO_PASO_10.md`](.agents/CONTRATO_PASO_10.md)** *(v1.0.0, 2026-08-27)*, y los
+    apuntes escritos con el contexto fresco del Paso 9 en
+    [`.agents/APUNTES_PASO_10.md`](.agents/APUNTES_PASO_10.md).
+
+    **Lo que ya está hecho, medido y no deducido** *(comprobado el 2026-08-27)*:
+
+    | Pieza que pide este paso | Estado real |
+    |---|---|
+    | Regresiones en `tests/test_capa10_lanzador.py` | 🟢 **128 pruebas**, escritas entre los Pasos 2 y 7. **Las cinco que este paso exige ya existen** *(tabla abajo)* |
+    | **Verificación en vivo del doble clic** | 🔴 Sin hacer. **Es la que de verdad cierra la capa** |
+    | **`MANUAL.md`** | 🔴 No existe |
+    | Los tres arreglos que abrió la decisión D.4 | 🟡 **H-58 cerrado**; H-56 y H-55 diagnosticados y pendientes. Contrato validado, en [v1.1.0](.agents/CONTRATO_PASO_10.md) |
+
+    | Lo que este paso exige probar | Regresión que ya lo cubre |
+    |---|---|
+    | Un healthcheck insatisfactorio impide arrancar | `test_el_espacio_insuficiente_impide_arrancar` |
+    | Una API viva se reutiliza en vez de duplicarse | `test_una_api_propia_viva_se_reutiliza_y_no_se_apaga_al_terminar` |
+    | El pipeline no se lanza con el cerrojo tomado | `test_una_corrida_viva_omite_la_prospeccion_con_codigo_propio` |
+    | El apagado no toca procesos ajenos ni confunde un PID reciclado | `test_el_apagado_no_toca_un_servidor_que_el_lanzador_no_encendio` · `test_un_pid_reciclado_no_se_confunde_con_el_nuestro` |
+    | **Sin sesión interactiva, ni un elemento gráfico** | `test_sin_sesion_interactiva_no_se_invoca_ni_un_elemento_grafico` |
+
+    > 🔑 **La consecuencia para planificar es grande: el trabajo de este paso no son las pruebas.**
+    > Son **el manual y la verificación en vivo**. Confirmar la tabla de arriba cuesta cinco
+    > minutos —ya está hecho— y libera el paso entero para lo que de verdad falta.
+
+    #### Las cuatro decisiones de dirección, tomadas el 2026-08-27
+
+    | | Decisión | Qué implica |
+    |---|---|---|
+    | **D.1 · Lector** | **Cero terminal.** El manual no menciona una línea de comandos | Dar de alta el despertador y preparar un PC nuevo son **hoy** comandos de Python. Para que la decisión sea real y no un recorte del alcance, **necesitan envoltorio de doble clic** — bloque 10.C |
+    | **D.2 · Idioma** | **Català** | Es el idioma del lector, que es el criterio que manda en un documento de usuario. `MANUAL.md` queda como el único documento del proyecto en catalán; el resto sigue en castellano |
+    | **D.3 · DOGC** | **Apagada, pendiente de reponer** | Se presenta como fuente desactivada que volverá si vuelve a publicar, **sin prometer fecha**: nadie tiene programada su reposición |
+    | **D.4 · Averías** | **Reparar antes que documentar** | Dirección redirigió la pregunta: *«resolver todo lo que se pueda antes de lanzar»*. La sección de limitaciones del manual pasa a ser el **residuo** de lo que no se haya podido arreglar, no un inventario decidido de antemano |
+
+    > 🔑 **D.4 cambió la forma del paso, y es la decisión más consecuente de las cuatro.** El Paso
+    > 10 se había diseñado para *documentar* el sistema tal cual. Ahora primero lo repara y
+    > después lo documenta — **y el triaje que la decisión obligó a hacer destapó H-58**, que se
+    > estaba llevando pliegos por delante esa misma mañana. Se buscaba qué escribir en una
+    > sección de averías y se encontró una avería nueva.
+
+    > ⚠️ **Y contradice un consejo escrito, a propósito y con motivo.** Los apuntes del Paso 9
+    > decían *«no reabrir H-56 en este paso»*, y era buen consejo cuando se escribió: parecía del
+    > motor de análisis. El triaje demostró que es **un esquema cruzado en la factoría de
+    > proveedores**, no el motor. Cambió el coste, así que cambió la decisión.
+
+    #### El triaje de hallazgos que abrió D.4 *(medido el 2026-08-27)*
+
+    | Hallazgo | Qué se midió | Decisión |
+    |---|---|---|
+    | 🆕 **H-58** · `DESCARGANDO` no lo lee nadie | Se escribe en `src/lector.py` y **no aparecía en ninguna consulta de recogida**. **6 pliegos atrapados** de la corrida 17 —PCA, PPT, quadre, memòria—, con `intentos = 0`, en una corrida que consta `COMPLETED` con `errores = 0` | 🟢 **CERRADO.** Al repararlo aparecieron **dos** defectos encadenados: una carpeta terminada en espacio que Windows no crea, y un `Future` que nadie recogía |
+    | **H-56** · El análisis del Centinela nunca funcionó | `GeminiProvider` fuerza siempre el esquema del analista de licitaciones, y la factoría es la misma para los dos consumidores. **Intersección de campos: vacía.** No podía funcionar nunca | **Reparar** |
+    | **H-55** · Líneas partidas en el rastro | Ya **18**, y creciendo. La línea 6251 parsea entera y la 6252 es la cola de otra: escritura concurrente desde el pool de hilos de la API | **Reparar** |
+    | **H-53** · El OCR nunca ha funcionado | **Media cara ya estaba cerrada el 2026-08-25**: la consulta mira ya `OCR_DIFERIDO`. La otra media se cerró hoy: **Tesseract v5.5.3 instalado**, con `cat` y `spa`, y el Lector reporta ya `ocr_disponible` | 🟡 **Falta la corrida** que recupere los 4 diferidos |
+    | **H-41** · Crash nativo | **8 corridas seguidas `COMPLETED` con 0 errores** y sin migaja `documento_en_curso.json`; 4 de ellas ya sin DOGC | **Observar**, no cerrar: 8 corridas no cierran un crash intermitente |
+    | **H-52** · OneDrive entre dos equipos | Mitigado con el despertador en un solo equipo | **No tocar** |
+
+    #### Los siete bloques, y por qué en este orden
+
+    | Bloque | Qué entrega | Por qué va aquí y no después |
+    |---|---|---|
+    | **10.A · Estado de partida verificado** | 🟢 **Hecho.** Suite 688/688, las 128 regresiones recolectadas, las cinco confirmadas una a una, y corregidas las cifras del README que ya no eran ciertas | Un manual escrito sobre cifras de papel hereda sus errores. En el Paso 9 el papel falló dos veces y lo corrigió el código |
+    | **10.B · Los tres arreglos** | 🟡 **Uno de tres.** **H-58** 🟢 *(cerrado: eran dos defectos encadenados, no uno)*; **H-56** 🔴 *(el esquema deja de estar fijado y cada consumidor pasa el suyo)*; **H-55** 🔴 *(un cerrojo alrededor del append del rastro)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y H-58 fue el primero de los tres: era el único que estaba causando daño |
+    | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para la preparación de un equipo nuevo | Es lo que hace verdadera la decisión D.1. Sin esto, un manual sin terminal no podría cubrir su propio alcance |
+    | **10.D · Tesseract** | 🟡 **Instalado y verificado el 2026-08-27** *(v5.5.3, `cat`+`spa`, `ocr_disponible`)*. Falta comprobar que los 4 documentos diferidos se recuperan solos | Sólo verificable con una corrida posterior, así que se instaló pronto y se comprueba al final |
+    | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | Ejecutar el `.vbs` de verdad: ninguna consola a la vista, el Cockpit abriendo con datos, y la tarea programada disparando una corrida real | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal |
+    | **10.F · `MANUAL.md`** | El manual de operación, en catalán y sin terminal *(índice abajo)* | Se escribe el último porque sólo puede afirmar lo que los cinco bloques anteriores hayan dejado comprobado |
+    | **10.G · Cierre de la capa y del recorrido** | README, `ESTADO.md` y auditoría al día —con H-58 catalogado—; Capa 10 cerrada y con ella las diez | Lo que no se anota al cerrar se pierde entre sesiones: es la razón por la que `ESTADO.md` existe |
+
+    <details><summary>Índice propuesto para <code>MANUAL.md</code> — el maquetado a validar</summary>
+
+    | § | Sección | Qué contesta | De dónde sale el contenido |
+    |---|---|---|---|
+    | 1 | **Qué hace esto, en cinco líneas** | *«¿para qué sirve el icono del escritorio?»* | README, traducido a lenguaje de usuario |
+    | 2 | **El doble clic: qué pasa y qué verás** | La secuencia real, con sus tiempos | Bloque 10.E. Las corridas medidas van de **36 s a 8,1 min**; sirve para escribir *«un parell de minuts»* sin mentir |
+    | 3 | **Cuando algo va mal** | Cada diálogo y cada código de salida, **con la columna que el contrato no tiene: «¿qué hago yo si veo esto?»** | Códigos ya tabulados en [`CONTRATO_CAPA_10.md`](.agents/CONTRATO_CAPA_10.md). Se traducen, no se reinventan |
+    | 4 | **El despertador** | A qué hora, **en qué equipo**, y qué pasa si el PC está apagado esa noche | Paso 8. Corre **dentro de la sesión**: si el equipo está apagado o la sesión cerrada, esa noche no prospecta, y lo recupera al entrar |
+    | 5 | **Instalar en un equipo nuevo** | El arranque en frío, paso a paso y **sin escribir un comando** | Consideración 12 de esta capa + bloque 10.C |
+    | 6 | **Lo que hoy no hace** | El **residuo** tras los arreglos del bloque 10.B, en lenguaje de síntoma y no de hallazgo | Lo que quede abierto al llegar aquí |
+    | 7 | **Dónde mirar cuando una noche no prospectó** | El distintivo del Cockpit y el registro | Paso 9 |
+
+    > ⚠️ **Los tres códigos que verá una persona real**, y que la sección 3 debe explicar sin
+    > jerga: **`30`** *(no prospectó porque ya había otra corrida en marcha → no hagas nada, es la
+    > protección funcionando)*, **`31`** *(el pipeline falló → mira el distintivo del Cockpit, que
+    > ya dice por qué)* y **`32`** *(se colgó y se cortó al llegar al tope de 60 min → mira por
+    > qué no acababa)*.
+
+    </details>
+
+    > 🚫 **Lo que este paso sigue sin deber hacer.** **No escribir un manual del sistema ideal**,
+    > sino del que hay al terminar los arreglos: un manual que promete lo que no existe es peor
+    > que uno más corto. Y **no dar la capa por cerrada sin ejecutar el `.vbs` de verdad** — aquí
+    > la suite en verde no vale, que es literalmente lo que dice la Convención C7.
+
+    <details><summary>El enunciado original del paso, que se conserva</summary>
+
     - `tests/test_capa10_lanzador.py`, con regresiones sobre lo que de verdad puede romperse: que
       un healthcheck insatisfactorio impide arrancar; que una API viva se reutiliza en vez de
       duplicarse; que el pipeline no se lanza con el cerrojo tomado; que el apagado no toca
@@ -1709,6 +1806,8 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
       despertador y qué mirar cuando una noche no se prospectó. Escrito para quien **usa** el
       sistema, que es el lector para el que este proyecto todavía no ha escrito nada.
     - **Cierre del ecosistema completo**: con esta capa se cierra el recorrido de la Capa 1 a la 10.
+
+    </details>
 
 ---
 
@@ -1727,8 +1826,8 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
 - `src/diagnostico.py`: la máquina de estados del diagnóstico y el estado de las fuentes. 🟢 Paso 9.
 - `frontend/src/components/FuentesCentinela.tsx`: por qué el canal Centinela está como está. 🟢 Paso 9.
 - `tools/verificar_rastro_real.py`: el lector, medido contra el rastro de verdad. 🟢 Paso 9.
-- `MANUAL.md`: manual de operación para quien usa el sistema (Paso 10). 💤
-- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟡 116 regresiones de los Pasos 2 a 7.
+- `MANUAL.md`: manual de operación para quien usa el sistema. 🛠️ **Paso 10, en curso.** Índice propuesto y decisiones pendientes en la ficha del paso.
+- `tests/test_capa10_lanzador.py`: regresiones del arranque, la reutilización y el apagado. 🟢 **128 regresiones** de los Pasos 2 a 7 — *el README dijo 116 hasta el Paso 10, que las contó recolectándolas en vez de leyendo el fichero*. Incluyen ya las cinco que exige este paso.
 
 ---
 

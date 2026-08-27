@@ -14,10 +14,10 @@ import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src import ruta_proyecto, ruta_datos
-from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
+from src.rastro import EstadoEvento, estado_declarado_o_catalogo, registrar_evento, registrar_evento_tolerante
 
 # =====================================================================
 # CONTRATOS DE SERVICIO (DATACLASSES)
@@ -67,6 +67,43 @@ class ExtractionError(LectorException):
 class OCRError(LectorException):
     """Fallo por falta del binario Tesseract o error al invocar la API de OCR"""
     pass
+
+# =====================================================================
+# SANEAMIENTO DE RUTAS (H-58)
+# =====================================================================
+
+#: Nombres de dispositivo reservados por Windows. Una carpeta que se llame así
+#: no se puede crear, aunque el nombre sea perfectamente válido como texto.
+_NOMBRES_RESERVADOS_WINDOWS = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{n}" for n in range(1, 10)]
+    + [f"LPT{n}" for n in range(1, 10)]
+)
+
+
+def _sanear_componente_ruta(componente: str, respaldo: str = "MISC") -> str:
+    """
+    Devuelve un nombre utilizable como **un** componente de ruta en Windows.
+
+    Windows rechaza tres cosas que el texto de un expediente produce sin querer, y
+    las tres se descubrieron con H-58: **espacios o puntos finales** —`os.makedirs`
+    lanza `WinError 3`, no un error que se entienda—, los **nombres de dispositivo
+    reservados** (`CON`, `PRN`, `LPT1`…), y el **componente vacío**.
+
+    Vive aparte del troceado porque el defecto no estaba en cómo se corta el
+    identificador sino en que **nadie comprobaba que el trozo fuera un nombre
+    legal**. Cortar por el carácter 4 es una decisión de reparto; que el resultado
+    se pueda crear en disco es una precondición del sistema de ficheros.
+    """
+    limpio = (componente or "").strip().rstrip(". ")
+    if not limpio:
+        return respaldo
+    # La comprobación va sobre el nombre base: Windows reserva `CON` y también
+    # `CON.txt`, así que se mira lo que hay antes del primer punto.
+    if limpio.split(".")[0].upper() in _NOMBRES_RESERVADOS_WINDOWS:
+        return f"_{limpio}"
+    return limpio
+
 
 # =====================================================================
 # MOTOR DEL LECTOR DOCUMENTAL
@@ -490,7 +527,16 @@ class Lector:
         # Normalizar caracteres problemáticos del expediente_id para rutas de Windows
         exp_clean = re.sub(r'[\\/*?:"<>|]', '_', expediente_id).strip()
         prefix = exp_clean[:4] if len(exp_clean) >= 4 else "MISC"
-        
+
+        # Cada componente pasa por el saneador antes de tocar el disco (H-58).
+        # `prefix` se corta a ciegas por el carácter 4, así que un expediente como
+        # "HCA 006/2026" producía la carpeta "HCA " —con espacio final—, que Windows
+        # no puede crear: `makedirs` lanzaba WinError 3 y el documento se quedaba en
+        # `DESCARGANDO` para siempre. Medido: 1 de 82 expedientes, y volverá a pasar
+        # con cualquier identificador que tenga un espacio en cuarta posición.
+        prefix = _sanear_componente_ruta(prefix, "MISC")
+        exp_clean = _sanear_componente_ruta(exp_clean, "MISC")
+
         dir_path = os.path.join(db_dir, "documents", prefix, exp_clean, str(lote_numero))
         os.makedirs(dir_path, exist_ok=True)
         
@@ -714,6 +760,67 @@ class Lector:
                 with self.metrics_lock:
                     self.metrics["failed"] += 1
 
+    def _descargar_con_red_de_seguridad(self, doc: Dict[str, Any], domain_semaphores: Dict[str, threading.Semaphore]) -> None:
+        """
+        Ejecuta la descarga garantizando la postcondición que H-58 incumplía: **ninguna
+        salida del camino deja el documento en `DESCARGANDO`**.
+
+        **Por qué envolviendo y no metiendo un `try/finally` dentro del camino de
+        descarga.** El camino tiene 130 líneas y cinco salidas; re-indentarlo entero para
+        colgarle un `finally` produciría un diff que nadie puede revisar, sobre código de
+        una capa cerrada *(Regla 14)*. Envolver da la misma garantía, se lee de un vistazo
+        y **sigue valiendo si mañana alguien añade una salida nueva** — que es justo el
+        modo en que nació el defecto.
+
+        **La comprobación es sobre el estado en la base, no sobre si hubo excepción.** Una
+        excepción no es la única forma de dejarlo puesto: un `return` que alguien añada sin
+        mover el estado tendría el mismo efecto y no lanzaría nada. Se pregunta por el
+        hecho, no por el síntoma *(Convención C3)*.
+        """
+        doc_id = doc["id"]
+        exp_id = doc.get("expediente_id")
+        intentos_previos = doc.get("intentos") or 0
+        fallo: Optional[BaseException] = None
+
+        try:
+            self._descargar_documento_hilo(doc, domain_semaphores)
+        except BaseException as exc:      # noqa: BLE001 - se re-registra y se relanza
+            fallo = exc
+        finally:
+            try:
+                estado_final = self.db.obtener_estado_documento(doc_id)
+            except Exception as exc_lectura:
+                print(f"[!] [lector] No se pudo comprobar el estado final del documento {doc_id}: {exc_lectura}")
+                estado_final = None
+
+            if estado_final == "DESCARGANDO":
+                intentos = intentos_previos + 1
+                motivo = (
+                    f"{type(fallo).__name__}: {fallo}" if fallo is not None
+                    else "El camino de descarga terminó sin declarar un estado"
+                )
+                self.db.registrar_intento_fallido(doc_id, f"VARADO_RECUPERADO | {motivo}", intentos)
+                registrar_evento(
+                    componente="lector",
+                    evento="documento_varado_agotado" if intentos >= 3 else "documento_varado_recuperado",
+                    estado=EstadoEvento.DEGRADADO,
+                    run_id=getattr(self, "run_id", None),
+                    datos={
+                        "documento_id": doc_id,
+                        "expediente_id": exp_id,
+                        "intentos": intentos,
+                        "motivo": motivo,
+                    },
+                )
+                print(f"[!] [lector] Documento ID {doc_id} quedó varado en DESCARGANDO y se ha soltado: {motivo}")
+                with self.metrics_lock:
+                    self.metrics["failed"] += 1
+
+        if fallo is not None:
+            # Se relanza para que el orquestador lo vea al recoger el Future. Tragárselo
+            # aquí sería repetir el defecto que este bloque repara, una capa más arriba.
+            raise fallo
+
     def ejecutar_descargas(self) -> None:
         """
         Orquesta la descarga concurrente de todos los documentos en estado DETECTADO
@@ -729,7 +836,23 @@ class Lector:
             return
             
         print(f"[~] [lector] Iniciando descarga concurrente de {len(docs_pendientes)} documentos...")
-        
+
+        # Dejar constancia de los que vienen rescatados de `DESCARGANDO` (H-58). Antes eran
+        # indistinguibles de un documento nuevo, así que un rescate no se podía ni contar.
+        varados = [d for d in docs_pendientes if d.get("estado") == "DESCARGANDO"]
+        if varados:
+            print(f"[~] [lector] {len(varados)} documento(s) rescatados de un estado DESCARGANDO previo.")
+            registrar_evento(
+                componente="lector",
+                evento="documentos_varados_recogidos",
+                estado=EstadoEvento.DEGRADADO,
+                run_id=getattr(self, "run_id", None),
+                datos={
+                    "total": len(varados),
+                    "documentos": [d["id"] for d in varados],
+                },
+            )
+
         # Agrupar y crear semáforos por dominio
         domain_semaphores = {}
         for doc in docs_pendientes:
@@ -752,10 +875,40 @@ class Lector:
         random.shuffle(docs_pendientes)
         
         t_start = time.time()
+        # ⚠️ **Los Future se recogen. No tocar esto sin leer H-58.**
+        # Hasta el 2026-08-27 esto era un `executor.submit(...)` cuyo resultado nadie miraba,
+        # y ahí es donde se perdían las excepciones: el hilo moría, el Future guardaba el
+        # error en silencio, y la corrida terminaba declarándose `COMPLETED` con 0 errores
+        # mientras seis pliegos se quedaban varados. Un `except` que no registra está
+        # prohibido por la Convención C2; un Future que nadie recoge es lo mismo escrito de
+        # otra forma — y peor, porque ni siquiera parece un `except`.
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for doc in docs_pendientes:
-                executor.submit(self._descargar_documento_hilo, doc, domain_semaphores)
-                
+            futuros = {
+                executor.submit(self._descargar_con_red_de_seguridad, doc, domain_semaphores): doc
+                for doc in docs_pendientes
+            }
+            for futuro in as_completed(futuros):
+                doc = futuros[futuro]
+                try:
+                    futuro.result()
+                except BaseException as exc:      # noqa: BLE001 - se registra y se sigue
+                    # El documento ya lo ha soltado la red de seguridad; lo que falta es que
+                    # el fallo conste. Se sigue con los demás: que un pliego reviente no
+                    # puede costar la descarga de los otros.
+                    registrar_evento(
+                        componente="lector",
+                        evento="doc_download_excepcion_no_prevista",
+                        estado=EstadoEvento.ERROR,
+                        run_id=getattr(self, "run_id", None),
+                        datos={
+                            "documento_id": doc.get("id"),
+                            "expediente_id": doc.get("expediente_id"),
+                            "error_tipo": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    )
+                    print(f"[-] [lector] Excepción no prevista descargando ID {doc.get('id')}: {type(exc).__name__}: {exc}")
+
         duration_total = time.time() - t_start
         print(f"[+] [lector] Finalizada la ejecución del descargador de documentos.")
         

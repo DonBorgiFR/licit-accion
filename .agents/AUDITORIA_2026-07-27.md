@@ -2507,7 +2507,7 @@ copia—; cada mutación la caza la prueba que le corresponde. Suite **569/569**
 
 ---
 
-### H-55 · El rastro de auditoría tiene 14 líneas partidas, y sigue partiéndose 🔴 ABIERTO
+### H-55 · El rastro de auditoría tiene líneas partidas, y sigue partiéndose 🟠 DIAGNOSTICADO (2026-08-27)
 
 > ⚠️ **Corregido el 2026-08-27, en el bloque 9.B del Paso 9. Sigue abierto, pero su enunciado y
 > su mecanismo estaban equivocados en dos cosas.**
@@ -2575,11 +2575,31 @@ pasó cuando algo sale mal, exactamente lo que se ha necesitado hoy para H-41, y
 
 </details>
 
+
+**Diagnóstico del 2026-08-27** *(triaje del Paso 10, Capa 10)*. **Ya son 18 líneas rotas de
+6.354**, así que el defecto no está contenido: sigue produciéndose después del Paso 9.
+
+**La causa, medida y no deducida.** Se reconstruyó el par 6251 + 6252 esperando que juntas
+formaran una línea, y **no la forman**: la 6251 **parsea entera y completa por sí sola**, y la
+6252 es la cola de *otra* línea distinta cuya cabeza está en otro sitio. La secuencia sólo puede
+ser ésta: un escritor deja su cabeza, un segundo escritor cuela una línea entera en medio, y el
+primero cierra con su cola.
+
+**Dónde ocurre.** No entre procesos, sino **dentro del de la API**: el propio
+`GestorTrazabilidadAPI` lo advierte en su docstring —*«este gestor se invoca desde el pool de
+hilos en cada petición»*—. `registrar_evento()` abre en modo `"a"`, escribe y cierra, y ese
+`open`+`write`+`close` no es atómico entre hilos. Todos los fragmentos observados son suyos.
+
+> 🔑 **La consecuencia para la reparación es que es barata.** Si fuese una carrera entre procesos
+> haría falta un cerrojo de fichero del sistema operativo; siendo entre hilos del mismo proceso,
+> basta un cerrojo de módulo alrededor del append en `src/rastro.py`. La regresión que lo prueba
+> es directa: N hilos escribiendo a la vez deben dejar N líneas parseables.
+
 ---
 
 ## Hallazgo de la reparación de H-45 — 2026-08-27 (Capa 10, Paso 9, bloque E)
 
-### H-56 · El análisis semántico del Centinela no ha funcionado nunca 🔴 ABIERTO (sin asignar)
+### H-56 · El análisis semántico del Centinela no ha funcionado nunca 🟠 DIAGNOSTICADO (2026-08-27)
 
 **Detectado el 2026-08-27**, minutos después de reparar H-45. No se encontró leyendo código: se
 encontró porque **arreglar la fuente le dio al Centinela, por primera vez, algo que analizar**.
@@ -2621,6 +2641,39 @@ Lo primero que hará falta es mirar **qué devuelve el modelo exactamente** fren
 validador exige: puede ser el prompt, el esquema esperado o el parseo, y las tres se distinguen
 con una sola llamada real desde `tools/`.
 
+
+**Diagnóstico del 2026-08-27** *(triaje del Paso 10, Capa 10)*. **Era el esquema esperado**, la
+segunda de las tres hipótesis que este mismo hallazgo dejó enunciadas. Y no hizo falta gastar
+cuota: se ve comparando dos objetos del propio código.
+
+**La causa.** `GeminiProvider.consultar()` fija `responseSchema` a
+`ESQUEMA_OPENAPI_ANALISIS_SEMANTICO` —el esquema del **analista de licitaciones**— siempre que
+`usar_schema` esté activo. Y `proveedor_llm_factory()` es **la misma factoría para los dos
+consumidores**; su propio docstring lo dice: *«Se utiliza tanto en AnalistaIA como en
+AnalistaBoletinesIA (Centinela)»*. De modo que cuando el Centinela pide su dictamen, la API de
+Gemini está **obligada por structured output** a contestar con el esquema del otro.
+
+| | Campos |
+|---|---|
+| Lo que el proveedor **obliga** a responder | `subrogacion`, `revision_precios`, `criterios`, `dictamen`, `version_esquema` |
+| Lo que el Centinela **exige** | `es_oportunidad_temprana`, `nivel_interes`, `categoria_fase_temprana`, `resumen_ejecutivo` |
+| **Intersección** | **∅** |
+
+Por eso el error de degradación nombra **los cuatro campos a la vez** y siempre los mismos: no es
+un modelo que responde mal, es un modelo obligado a responder otra cosa. **No podía funcionar
+ningún día.**
+
+> 🔑 **Y explica por qué tardó tanto en verse: el defecto necesitaba que otro defecto se
+> reparara.** Con `boletines_alertas` en 0, la ruta jamás se ejecutaba. Es la misma forma que
+> H-53 con el OCR y que H-05 con la factoría —*una factoría compartida que sirve en silencio lo
+> que no le corresponde*—, que es exactamente el defecto del que nació la Convención C4.
+
+**La reparación es pequeña**: el esquema deja de estar fijado en el proveedor y pasa a ser
+parámetro de `consultar()`, con el del analista como valor por defecto para no tocar al llamador
+que ya funciona; el Centinela pasa el suyo. La regresión que lo habría cazado afirma sobre la
+**petición**, no sobre la respuesta: que el esquema enviado contenga los campos que el DTO del
+llamador declara obligatorios.
+
 ---
 
 ### H-57 · El KPI del Centinela decía 0 sobre un canal con 5 alertas 🟢 CERRADO (Capa 10, Paso 9, bloque F)
@@ -2650,6 +2703,136 @@ Centinela sólo la descarta si además baja del umbral de score.
 `obtener_resumen_kpis`). Regresión en `tests/test_paso9_fuentes.py`, que siembra los cuatro
 estados y exige que cuenten **tres** — sólo `DESCARTADA_POR_REGLAS` queda fuera. Verificado en
 pantalla: el KPI pasa de `0` a `5` y cuadra con su tabla.
+
+---
+
+## Hallazgo del triaje del Paso 10 — 2026-08-27 (Capa 10)
+
+### H-58 · `DESCARGANDO` es un estado que nadie recoge, y se está llevando pliegos 🟢 CERRADO (Capa 10, Paso 10, bloque B.1)
+
+**Detectado el 2026-08-27**, durante el triaje que abrió la decisión D.4 del Paso 10 —*reparar
+antes que documentar*—. **Se buscaba qué escribir en la sección de averías del manual y apareció
+una avería nueva.**
+
+**La evidencia, sobre la base real y no sobre datos sintéticos:**
+
+| | |
+|---|---|
+| Documentos atrapados en `DESCARGANDO` | **6** |
+| Cuándo entraron | Corrida **17**, el 2026-08-27 entre las 07:15:42 y las 07:16:04 |
+| `intentos` de cada uno | **0** |
+| Qué son | El PCA, el PPT, el quadre de característiques, la memòria justificativa, la resolució d'aprovació y un ZIP d'annexos |
+| Cómo consta esa corrida | **`COMPLETED`, con `errores = 0`** |
+
+**La causa.** `DESCARGANDO` se escribe en un solo punto —`src/lector.py:576`, como marca de paso
+antes de bajar el fichero— y **no aparece en ninguna de las consultas que reparten trabajo**.
+Comprobado una por una en `src/memoria.py`: las de recogida buscan `DETECTADO`,
+`ERROR_DESCARGA`, `DESCARGADO`, `OCR_REQUERIDO`, `OCR_DIFERIDO` y `TEXTO_EXTRAIDO`. Si algo
+interrumpe la descarga después de marcar el estado y antes de moverlo, el documento queda ahí
+**para siempre**, y ni siquiera lo salva el guardia de reintentos: `intentos` sigue en `0` porque
+el contador se incrementa más adelante.
+
+> 🚨 **Es la tercera vez que este proyecto pisa exactamente la misma forma.** H-33 fue un estado
+> terminal que nadie reconsultaba; H-53 cara B fue `OCR_DIFERIDO`, el mismo defecto en otro punto
+> del vocabulario, reparado el 2026-08-25. **Un estado que se escribe y no se lee es un agujero
+> por el que se cae trabajo en silencio**, y el vocabulario de estados del proyecto no tiene hoy
+> ninguna comprobación que impida crear otro. Merece la pena preguntarse si la reparación debe
+> incluir una prueba que recorra **todos** los estados escritos y exija que alguien los lea.
+
+> ⚠️ **Y es más grave que sus dos hermanos por lo que dice la corrida.** H-33 y H-53 dejaban
+> documentos sin procesar; éste lo hace **mientras la corrida se declara `COMPLETED` con cero
+> errores**, que es justo lo que la Capa 10 entera existe para impedir. La pantalla del Paso 9
+> tampoco lo delata: no hubo degradación que declarar, porque nadie se enteró de que faltaban.
+
+**Lo que hace falta para cerrarlo**, y son tres cosas distintas que conviene no fundir:
+
+1. **Que los atrapados salgan**: `DESCARGANDO` entra en la consulta de recogida, junto a
+   `DETECTADO` y `ERROR_DESCARGA`.
+2. **Que no vuelvan a atraparse**: el estado se suelta en un `finally`, de modo que ninguna
+   salida del camino de descarga lo deje puesto.
+3. **Reconciliar los 6 que ya están dentro**, como se hizo con H-54: contarlos antes, dejarlos en
+   un estado que alguien recoja y verificar después que la corrida siguiente los procesa.
+
+---
+
+**Reparación y cierre — 2026-08-27** *(bloque 10.B.1)*.
+
+> 🔑 **Al implementarlo apareció lo que el diagnóstico no tenía: por qué se varaban.** El
+> hallazgo describía **el agujero** —un estado sin consumidor— pero no **qué empujaba dentro**.
+> Son dos defectos encadenados, y ninguno bastaba solo: sin el disparador no se varaba nadie, y
+> sin el amplificador el fallo se habría visto el primer día.
+
+**El disparador: una carpeta terminada en espacio.** `_path_for_document()` trocea el expediente
+por el carácter 4 sin comprobar que el trozo sea un nombre legal. `"HCA 006/2026"` se sanea a
+`"HCA 006_2026"` y su prefijo es `exp_clean[:4]` = **`"HCA "`**. Windows **no puede crear un
+directorio cuyo nombre acabe en espacio**, así que `os.makedirs` lanzaba
+`FileNotFoundError [WinError 3]` — un error que no se parece en nada a su causa.
+
+> 📏 **Y no era el límite de 260 caracteres, que es lo primero que uno supone.** La ruta medía
+> **111**. Se comprobó con un experimento de control: la misma ruta **sin el espacio final** se
+> crea sin una queja. *Un error de «ruta no encontrada» sobre una ruta que se acaba de construir
+> invita a culpar a la longitud; medirlo costó un minuto y señalaba a otro sitio.*
+
+**Alcance medido**: **1 de 82** expedientes con documentos. Pero es una **clase**, no un caso:
+le ocurre a cualquier identificador con un espacio en cuarta posición, que es una forma
+frecuentísima (`"HCA 006/2026"`, `"EXP 12/2026"`). Se cubre además el vecino que habría dado un
+fallo idéntico y aún más raro: un prefijo como `"CON "` queda en `CON`, que es un **nombre de
+dispositivo reservado** de Windows.
+
+**El amplificador: un `Future` que nadie recogía.** `ejecutar_descargas()` hacía
+`executor.submit(...)` sin mirar el resultado. La excepción del hilo quedaba guardada en el
+`Future`, nadie la leía, y la corrida terminaba `COMPLETED` con `errores = 0`.
+
+> 🔑 **Y esto merece una convención, porque no se parece a lo que la C2 prohíbe.** La Convención
+> C2 persigue el `except` amplio que silencia sin registrar. **Un `Future` que nadie recoge es
+> exactamente lo mismo escrito de otra forma, y es peor: ni siquiera parece un `except`.** No hay
+> bloque sospechoso que revisar — hay una línea que parece correcta y un error que se evapora.
+
+**Las cuatro piezas de la reparación:**
+
+| Pieza | Dónde | Qué garantiza |
+|---|---|---|
+| `_sanear_componente_ruta()` | `src/lector.py` | Ningún componente de ruta acaba en espacio o punto, ni coincide con un nombre reservado |
+| `DESCARGANDO` en la cola | `src/memoria.py`, `obtener_documentos_pendientes()` | Los varados vuelven al circuito, **con el mismo tope `intentos < 3`**: el agujero no se cambia por un bucle |
+| `_descargar_con_red_de_seguridad()` | `src/lector.py` | **Ninguna salida deja `DESCARGANDO` puesto.** Mira el estado en la base, no si hubo excepción — un `return` añadido mañana tendría el mismo efecto y no lanzaría nada |
+| Los `Future` se recogen | `src/lector.py`, `ejecutar_descargas()` | Una excepción de hilo **consta** en el rastro en vez de evaporarse |
+
+**Y se corrigió el comentario que probablemente hizo que esto durara tanto.** El único sitio del
+código que declaraba el vocabulario —`src/memoria.py`, el DDL de `documentos`— estaba equivocado
+**en las dos direcciones**: nombraba `OCR_PENDIENTE` y `ERROR_EXTRACCION`, que no se escriben
+nunca, y omitía cinco que sí. *Quien viniera a comprobar si `DESCARGANDO` tenía consumidor leía
+allí una lista corta y plausible que no era la del sistema.* Ahora separa **transitorios** de
+**terminales**, que es la distinción que importa.
+
+**Verificado sobre la base real, no sobre datos sembrados:**
+
+| | |
+|---|---|
+| Documentos que la cola recogió | **6**, con su evento `documentos_varados_recogidos` en estado `DEGRADADO` |
+| Descargados y validados | **5** — PCA (999 KB), PPT (625 KB), QC (441 KB), memòria (541 KB), resolució (338 KB) |
+| Omitido correctamente | **1** — `ANNEXOS.zip`, a `OMITIDO_FORMATO_NO_PDF`, que es su terminal legítimo |
+| Carpeta creada | `data/documents/HCA/HCA 006_2026/1/` — **sin el espacio final** |
+| `count(*) WHERE estado='DESCARGANDO'` | **0** |
+
+**Regresiones**: **20** en `tests/test_h58_documento_varado.py`, y **validadas mutando la
+reparación, no revirtiéndola** —revertir no probaría nada, porque `_sanear_componente_ruta` no
+existía antes y media suite caería por `ImportError` en vez de por el defecto—. Las cuatro
+mutaciones tumban exactamente las pruebas que deben y ninguna otra:
+
+| Mutación | Caen |
+|---|---|
+| Se retira `DESCARGANDO` de la consulta | **3**, las de recogida |
+| El saneador no sanea | **4**, las de ruta |
+| La red de seguridad deja de mirar el estado | **4**, las del amplificador |
+| Se quita el tope de intentos a los varados | **1**, la del bucle |
+
+Suite: **688 → 708**.
+
+> ⚠️ **Un efecto colateral que conviene no callar: la descarga de verificación subió H-55 de 18
+> líneas rotas a 19**, y refina su diagnóstico. Se creía cosa del pool de hilos **de la API**;
+> esta corrida lo produjo desde el pool **del Lector**. No es la API: es **cualquier pool de hilos
+> que escriba en el rastro**, que es lo que el bloque 10.B.3 tendrá que cerrar.
+
 
 ---
 
