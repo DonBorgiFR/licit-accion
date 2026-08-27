@@ -40,6 +40,7 @@ Cuatro decisiones de diseño gobiernan el fichero, y ninguna es estilística:
 
 import json
 import os
+import sys
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -447,3 +448,138 @@ def a_instante(valor: Any) -> Optional[datetime]:
     if instante.tzinfo is None:
         return instante.replace(tzinfo=timezone.utc)
     return instante.astimezone(timezone.utc)
+
+
+# ==============================================================================
+# Operación 2 — Escribir un evento canónico (bloque 9.C)
+# ==============================================================================
+
+
+class EventoInvalido(ValueError):
+    """Falta un campo obligatorio, o `estado` no pertenece al vocabulario.
+
+    **Se rechaza antes de escribir**, no después: media línea en el rastro es peor que ninguna,
+    y de eso ya hay 14 (H-55).
+    """
+
+
+def registrar_evento(
+    componente: str,
+    evento: str,
+    estado: Any,
+    datos: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    ruta: Optional[str] = None,
+) -> None:
+    """Escribe **un** evento canónico en el rastro. Es el único punto de escritura del proyecto.
+
+    `estado` es obligatorio y **no tiene valor por defecto**. Un punto de llamada que se lo
+    dejara olvidado estaría declarando éxito por descuido, que es la familia de la Convención
+    C2: un fallo indistinguible de un éxito no es un fallo gestionado, es un fallo escondido.
+    Cuesta explicitarlo en los sitios de llamada, y ésa es exactamente la intención.
+
+    `run_id=None` significa **el escritor no sabe a qué corrida pertenece** *(contrato v1.1.0)*.
+    No es `0`, que significa «fuera de una corrida». El Centinela entero cae en el primer caso.
+
+    **Un fallo de escritura no tumba al llamador**: avisa por `stderr` y sigue. Que falle la
+    auditoría no puede costar una prospección — pero tampoco puede pasar desapercibido, así que
+    no se silencia (Convención C2). Es la conducta que ya tenía `registrar_evento_lanzador()`.
+
+    Raises:
+        EventoInvalido: `componente` o `evento` vacíos, o `estado` fuera del vocabulario.
+    """
+    if not componente or not str(componente).strip():
+        raise EventoInvalido("un evento sin componente no dice quién lo escribió")
+    if not evento or not str(evento).strip():
+        raise EventoInvalido("un evento sin nombre no dice qué ocurrió")
+
+    try:
+        estado_valido = estado if isinstance(estado, EstadoEvento) else EstadoEvento(str(estado))
+    except ValueError:
+        raise EventoInvalido(
+            f"estado '{estado}' no pertenece al vocabulario "
+            f"{[e.value for e in EstadoEvento]}"
+        ) from None
+
+    entrada = {
+        "esquema": ESQUEMA_EVENTO,
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "run_id": run_id,
+        "componente": str(componente),
+        "evento": str(evento),
+        "estado": estado_valido.value,
+        "datos": datos if isinstance(datos, dict) else {},
+    }
+
+    destino = ruta or ruta_datos("pipeline.jsonl")
+    try:
+        directorio = os.path.dirname(os.path.abspath(destino))
+        if directorio:
+            os.makedirs(directorio, exist_ok=True)
+        with open(destino, "a", encoding="utf-8") as fichero:
+            # `default=str` para que un valor no serializable —una fecha, un objeto del
+            # dominio— no convierta un evento en una excepción dentro del pipeline. El rastro
+            # registra lo que pasó; no es el sitio donde validar los tipos de negocio.
+            fichero.write(json.dumps(entrada, ensure_ascii=False, default=str) + "\n")
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"[!] No se pudo registrar el evento {evento}: {exc}", file=sys.stderr)
+
+
+def estado_declarado_o_catalogo(estado: Any, nombre_evento: str) -> EstadoEvento:
+    """Resuelve el `estado` de un envoltorio cuyo llamador todavía no lo declara.
+
+    **Es andamio de migración, y por eso está acotado.** Los seis envoltorios de las capas 3 a 7
+    conservan su firma —Regla 14: no se rompe lo que ya funciona— y ganan un `estado` opcional.
+    Mientras un punto de llamada no lo declare, se resuelve por el mismo catálogo cerrado que usa
+    la lectura, y lo que no esté en él dice `DESCONOCIDO`.
+
+    **Lo que esto NO hace es sustituir la declaración explícita.** El catálogo se construyó con
+    los ocho nombres que están escritos en el fichero, y el código emite bastantes más que
+    todavía no han disparado nunca —`boletin_llm_degraded`, `doc_ocr_failed`,
+    `LLM_REQUEST_FAILED`—: sin declararlos en su sitio, el rastro seguiría acumulando
+    `DESCONOCIDO` sobre degradaciones reales.
+    """
+    if estado is not None:
+        try:
+            return estado if isinstance(estado, EstadoEvento) else EstadoEvento(str(estado))
+        except ValueError:
+            # No se valida aquí: si el valor es inválido se deja pasar para que lo rechace el
+            # escritor, que es quien sabe registrar el rechazo. Lanzar desde el andamio se
+            # saltaría la puerta tolerante y le costaría una prospección a la Capa 3.
+            return estado
+    return CATALOGO_HISTORICO.get(nombre_evento, EstadoEvento.DESCONOCIDO)
+
+
+def registrar_evento_tolerante(
+    componente: str,
+    evento: str,
+    estado: Any,
+    datos: Optional[Dict[str, Any]] = None,
+    run_id: Optional[int] = None,
+    ruta: Optional[str] = None,
+) -> None:
+    """Como `registrar_evento`, pero **nunca lanza**: es la puerta que usan los envoltorios.
+
+    Concilia dos exigencias del contrato que, juntas, parecen contradictorias: la sección G
+    tipifica `EventoInvalido` y a la vez declara que *«ninguno de los tres detiene el pipeline:
+    un fallo de auditoría no puede costar una prospección»*.
+
+    La conciliación es que **el rechazo se registra en vez de propagarse**. Un evento inválido no
+    se escribe —media línea es peor que ninguna—, pero su rechazo sí, con `RASTRO_EVENTO_RECHAZADO`
+    y estado `ERROR`. Así el defecto queda en el propio rastro en lugar de desaparecer, que es la
+    Convención C2: degradar a algo indistinguible del éxito está prohibido.
+
+    **La versión estricta sigue existiendo y es la que usa el código nuevo**, para que una
+    equivocación se note al escribirla y no seis meses después leyendo el fichero.
+    """
+    try:
+        registrar_evento(componente, evento, estado, datos, run_id, ruta)
+    except EventoInvalido as exc:
+        registrar_evento(
+            componente="memoria",
+            evento="RASTRO_EVENTO_RECHAZADO",
+            estado=EstadoEvento.ERROR,
+            datos={"evento_rechazado": str(evento), "motivo": str(exc)},
+            run_id=run_id,
+            ruta=ruta,
+        )

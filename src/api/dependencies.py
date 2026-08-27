@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Generator, Dict, Any, Optional
 
 from src import ruta_datos
+from src.rastro import registrar_evento_tolerante
 from src.memoria import Memoria, PROJECT_ROOT
 
 
@@ -88,21 +89,30 @@ class GestorTrazabilidadAPI:
 
     def registrar_evento(self, tipo_evento: str, payload: Dict[str, Any], estado: str = "INFO") -> None:
         """
-        Registra de forma síncrona un evento estructurado en data/pipeline.jsonl con rotación defensiva.
+        Registra de forma síncrona un evento estructurado con rotación defensiva.
+
+        **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C). Es el
+        escritor más prolífico del proyecto —1.938 de las 4.768 líneas del rastro— y el único
+        que ya declaraba su estado, así que el valor por defecto se conserva: sus puntos de
+        llamada lo pasan explícitamente y quitárselo rompería la Capa 7 sin ganar nada.
+
+        **La rotación se queda aquí y no baja a `src/rastro.py`**: es una política de la API
+        —10 MB, 5 archivos— y no una propiedad del formato de evento. Bajarla convertiría a
+        cualquier escritor del pipeline en alguien capaz de rotar el fichero por debajo de otro.
+
+        ⚠️ **Nota para quien investigue H-55**: las 14 líneas partidas del rastro real son todas
+        fragmentos escritos por aquí, y este gestor se invoca **desde el pool de hilos** en cada
+        petición (`src/api/middleware.py`). La migración **no repara eso** ni lo pretende; sólo
+        cambia el formato de lo que se escribe.
         """
         rotar_log_si_excede_tamano(self.log_path)
-        evento = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "modulo": "api",
-            "tipo_evento": tipo_evento,
-            "estado": estado,
-            "payload": payload
-        }
-        try:
-            with open(self.log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(evento, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"[!] Error en GestorTrazabilidadAPI al escribir JSONL: {e}")
+        registrar_evento_tolerante(
+            componente="api",
+            evento=tipo_evento,
+            estado=estado,
+            datos=payload,
+            ruta=self.log_path,
+        )
 
 
 # Instancia global por defecto del logger de trazabilidad API

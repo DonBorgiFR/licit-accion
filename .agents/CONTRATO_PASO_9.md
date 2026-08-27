@@ -1,6 +1,25 @@
 # Contrato de Servicio — Capa 10, Paso 9: La Voz del Proceso Silencioso
 
-**Versión:** 1.0.0 · **Redactado:** 2026-08-27 · **Estado:** 🟡 **pendiente de validación por dirección**
+**Versión:** 1.1.0 · **Redactado:** 2026-08-27 · **Estado:** 🟢 **validado por dirección el 2026-08-27**,
+corregido el mismo día al abrir el bloque 9.C.
+
+> **Qué cambia en la v1.1.0 y por qué** *(2026-08-27, al abrir el bloque 9.C)*. Una sola cosa, y
+> nace de medir el código que debía obedecer al documento — no de releerlo:
+>
+> **`run_id` deja de ser obligatorio y `null` pasa a ser un valor legítimo**, con el significado
+> *«el escritor no sabe a qué corrida pertenece»*. **No es lo mismo que `0`**, que significa
+> *«evento del lanzador fuera de una corrida»*.
+>
+> **El motivo, medido**: `src/centinela.py` **no tiene ninguna noción de `run_id`** —cero
+> apariciones en todo el módulo—, así que sus 105 eventos de la gramática D no pueden declarar
+> una corrida. Las dos alternativas eran peores: **escribir `0`** sería afirmar que un evento
+> ocurrido dentro de la corrida 16 estaba fuera de ella, es decir mentir con un dato estructurado;
+> y **atravesar la Capa 6 para enhebrar el `run_id`** sería reformar una capa cerrada para
+> conseguir lo que la ventana temporal del lector ya resuelve — que es, además, exactamente como
+> se atribuyó a mano el evento que acotó H-41.
+>
+> Es la Convención C6 otra vez: lo que no se pudo medir no se rellena con un valor que parezca
+> bueno. **Se retira la promesa del documento con su motivo**, tal como manda su sección J.
 
 Corresponde al **Paso 9** de la Capa 10 (Reglas 1, 2 y 8). Se subordina al
 [`CONTRATO_CAPA_10.md`](CONTRATO_CAPA_10.md) v1.3.0, que sigue rigiendo: este documento **no
@@ -167,7 +186,7 @@ expedientes— exige previsualizar. **La previsualización documental ya la sirv
 |---|---|---|---|
 | `esquema` | sí | *nuevo* | Entero. **Es lo que hace el fichero autodescriptivo**: sin él, distinguir una línea canónica de una histórica vuelve a ser adivinar |
 | `timestamp` | sí | los dos formatos actuales | **Un solo formato**: ISO-8601 UTC con `Z` y sin microsegundos |
-| `run_id` | sí | `run_id` | Entero. **`0` = evento fuera de una corrida**, convención ya adoptada por el lanzador. `9999` sigue reservado al `--dry-run` |
+| `run_id` | **no** *(v1.1.0)* | `run_id` | Entero o `null`. **`0` = evento fuera de una corrida**, convención ya adoptada por el lanzador; **`null` = el escritor no lo sabe**, que es el caso del Centinela entero. `9999` sigue reservado al `--dry-run`. Los tres son distintos y ninguno se sustituye por otro |
 | `componente` | sí | `updated_by` · `modulo` · `componente` | Vocabulario cerrado: `radar`, `lector`, `analista`, `centinela`, `depurador`, `memoria`, `api`, `lanzador` |
 | `evento` | sí | `action` · `tipo_evento` · `event` · `evento` | El nombre se conserva **tal cual está hoy**: renombrarlos rompería cualquier búsqueda sobre el histórico |
 | `estado` | **sí, explícito** | `estado` (sólo existía en B) | `INFO` · `WARNING` · `ERROR` · `DEGRADADO` · `DESCONOCIDO` |
@@ -298,7 +317,7 @@ propia degradación con un campo estructurado**, igual que exige C3 a todo lo de
 | **Postcondiciones** | Una línea, un idioma, un formato de fecha, con `"esquema": 1` |
 | **Errores** | Un fallo de escritura **avisa por `stderr` y no tumba al llamador**, como ya hace `registrar_evento_lanzador()`: que falle la auditoría no puede detener el trabajo, pero tampoco puede pasar desapercibido |
 
-**Los seis puntos que se migran**, todos a la misma función:
+**Los SIETE puntos que se migran** *(corregido de seis en la v1.1.0)*, todos a la misma función:
 
 | Módulo | Punto | Capa |
 |---|---|---|
@@ -308,10 +327,34 @@ propia degradación con un campo estructurado**, igual que exige C3 a todo lo de
 | `centinela.py:312` | `log_evento_jsonl()` | 6 |
 | `centinela.py:1159` | `GestorTrazabilidadCentinela` | 6 |
 | `api/dependencies.py:89` | `GestorTrazabilidadAPI` | 7 |
+| **`lanzador.py:1598`** | **`registrar_evento_lanzador()`** | **10** |
+
+> ⚠️ **Eran siete y este documento contó seis, y el que faltaba era el peor de todos.** La
+> sección B.1 sí lo listaba —el lanzador aparece bajo la gramática A junto a `memoria` y
+> `lector`—, pero la tabla de migración lo perdió por el camino. Dejarlo fuera habría producido
+> el resultado más absurdo posible: **la capa que declara `pipeline.jsonl` canal de diagnóstico,
+> hablando ella sola un idioma que su propio lector tendría que seguir traduciendo.** Se detectó
+> al ir a declarar los estados de los puntos de llamada, no releyendo el contrato — igual que las
+> cifras de la sección B.
 
 **Las firmas públicas no cambian.** Cada función conserva sus parámetros actuales y traduce por
 dentro. Es lo que permite migrar y revertir **un escritor cada vez** sin dejar el rastro a medio
 idioma, y lo que acota el riesgo de tocar cinco capas cerradas (Regla 14).
+
+> 📏 **La cobertura real de `estado` tras el 9.C, medida y sin disimular.** La corrida 17 del
+> 2026-08-27 escribió **650 líneas, las 650 canónicas**, y de ellas **sólo 13 declaran su estado**
+> — las dos degradaciones del Centinela y once eventos informativos. **Las otras 637 dicen
+> `DESCONOCIDO`.**
+>
+> **Eso es correcto y a la vez mejorable, y conviene no confundir las dos cosas.** Es correcto
+> porque `DESCONOCIDO` significa *«el punto de llamada no lo ha declarado»*, que es la verdad; lo
+> incorrecto habría sido darles `INFO` por defecto, que es declarar éxito por descuido. Y es
+> mejorable porque **el riesgo residual del paso vive justo ahí**: un evento de fallo que se
+> añada mañana sin declarar su estado será invisible para la pantalla, y el catálogo no lo
+> cubrirá porque el catálogo sólo mira hacia atrás.
+>
+> **La cifra a batir es 13/650**, y se sube declarando `estado` en los puntos de llamada, no
+> tocando el lector.
 
 ### Operación 3 — Servir el diagnóstico
 

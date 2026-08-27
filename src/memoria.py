@@ -10,6 +10,8 @@ import shutil
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 from contextlib import contextmanager
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -1980,36 +1982,38 @@ class Memoria:
                     (importe_garantia, fecha_devolucion.strip(), now_str, expediente_id, lote_numero)
                 )
 
-    def registrar_log_json(self, run_id: int, action: str, expediente_id: Optional[str] = None, reason: Optional[str] = None, duration_ms: Optional[int] = None, updated_by: str = "radar") -> None:
+    def registrar_log_json(self, run_id: int, action: str, expediente_id: Optional[str] = None, reason: Optional[str] = None, duration_ms: Optional[int] = None, updated_by: str = "radar", estado: Any = None) -> None:
         """
-        Registra un evento clave en formato JSON Lines (JSONL) en data/pipeline.jsonl para auditoría y observabilidad.
+        Registra un evento clave en `data/pipeline.jsonl` para auditoría y observabilidad.
+
+        **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C). Antes
+        escribía la gramática `action`/`run_id`/`updated_by`, una de las cuatro que convivían en
+        el mismo fichero y que juntas hacían H-39. Ahora delega en `src/rastro.py`, que pasa a
+        ser el único punto de escritura del proyecto.
+
+        **La firma no cambia**: los 19 puntos de llamada siguen valiendo tal cual (Regla 14). Lo
+        que se añade es `estado`, opcional, para que quien sepa que está registrando una
+        degradación pueda decirlo con un dato en vez de dejarlo insinuado en el nombre del
+        evento (Convención C3). Quien no lo declare se resuelve por el catálogo cerrado, y lo
+        que no esté en él dirá `DESCONOCIDO`.
         """
-        log_dir = os.path.dirname(self.db_path)
-        if not log_dir:
-            log_dir = ruta_datos()
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "pipeline.jsonl")
-        
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        log_entry = {
-            "timestamp": timestamp,
-            "run_id": run_id,
-            "action": action,
-            "updated_by": updated_by
-        }
+        log_dir = os.path.dirname(self.db_path) or ruta_datos()
+        datos: Dict[str, Any] = {}
         if expediente_id:
-            log_entry["expediente_id"] = expediente_id
+            datos["expediente_id"] = expediente_id
         if reason:
-            log_entry["reason"] = reason
+            datos["reason"] = reason
         if duration_ms is not None:
-            log_entry["duration_ms"] = duration_ms
-            
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"[!] Error al escribir log estructurado JSONL: {e}")
+            datos["duration_ms"] = duration_ms
+
+        registrar_evento_tolerante(
+            componente=updated_by,
+            evento=action,
+            estado=estado_declarado_o_catalogo(estado, action),
+            datos=datos,
+            run_id=run_id,
+            ruta=os.path.join(log_dir, "pipeline.jsonl"),
+        )
 
     def upsert_oportunidades_batch(self, oportunidades: List[tuple], run_id: int, batch_size: int = 200) -> Dict[str, int]:
         """
@@ -2357,7 +2361,7 @@ class Memoria:
                 except Exception:
                     pass
             self.registrar_log_json(
-                run_id=run_id, action="backup_failed",
+                run_id=run_id, action="backup_failed", estado="ERROR",
                 reason=str(e), duration_ms=int((time.perf_counter() - start_time) * 1000)
             )
             raise e

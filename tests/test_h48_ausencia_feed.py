@@ -195,18 +195,22 @@ def test_conservar_una_licitacion_viva_deja_rastro_en_el_jsonl(memoria):
 
     barrer(memoria, run_id=77)
 
+    # Se lee por el lector canónico y no abriendo el fichero a mano: desde el Paso 9 de la
+    # Capa 10 el rastro tiene una sola gramática y una sola puerta de lectura (H-39).
     import os
+
+    from src.rastro import leer_rastro
+
     ruta = os.path.join(os.path.dirname(memoria.db_path), "pipeline.jsonl")
-    with open(ruta, encoding="utf-8") as f:
-        eventos = [json.loads(l) for l in f if l.strip()]
+    eventos = leer_rastro(ruta=ruta).eventos
 
-    acciones = [e.get("action") for e in eventos]
-    assert "RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO" in acciones
-    assert "RADAR_OBSOLESCENCIA_RESUMEN" in acciones
+    nombres = [e.evento for e in eventos]
+    assert "RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO" in nombres
+    assert "RADAR_OBSOLESCENCIA_RESUMEN" in nombres
 
-    conservada = next(e for e in eventos if e.get("action") == "RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO")
-    assert conservada["expediente_id"] == "EXP-RASTRO"
-    assert conservada["run_id"] == 77
+    conservada = next(e for e in eventos if e.evento == "RADAR_AUSENCIA_IGNORADA_PLAZO_ABIERTO")
+    assert conservada.datos["expediente_id"] == "EXP-RASTRO"
+    assert conservada.run_id == 77
 
 
 def test_sin_run_id_no_se_escribe_jsonl_pero_se_decide_igual(memoria):

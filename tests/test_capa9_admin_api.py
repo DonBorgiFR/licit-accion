@@ -231,13 +231,13 @@ def test_la_previsualizacion_deja_constancia_de_quien_miro(client, base_api):
 
     # El rastro del Depurador se escribe junto a la base, igual que los documentos
     # (`Memoria.registrar_log_json`). En producción ambos caen en `data/`.
+    from src.rastro import leer_rastro
+
     registro = os.path.join(os.path.dirname(base_api.db_path), "pipeline.jsonl")
-    with open(registro, encoding="utf-8") as fichero:
-        lineas = [json.loads(linea) for linea in fichero if linea.strip()]
     previsualizaciones = [
-        linea for linea in lineas
-        if linea.get("action") == "DEPURADOR_PURGA_PREVISUALIZADA"
-        and "direccion" in str(linea.get("reason", ""))
+        evento for evento in leer_rastro(ruta=registro).eventos
+        if evento.evento == "DEPURADOR_PURGA_PREVISUALIZADA"
+        and "direccion" in str(evento.datos.get("reason", ""))
     ]
     assert previsualizaciones, "Debe constar quién consultó qué se borraría"
 

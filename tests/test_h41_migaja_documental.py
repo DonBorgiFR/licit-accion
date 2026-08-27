@@ -83,7 +83,7 @@ class BaseFalsa:
         return self.documentos
 
     def registrar_log_json(self, run_id, action, expediente_id=None, reason=None,
-                           duration_ms=None, updated_by="lector"):
+                           duration_ms=None, updated_by="lector", estado=None):
         self.eventos.append((action, reason))
 
     def guardar_resultado_extraccion_texto(self, doc_id, estado, texto_extraido, metodo,

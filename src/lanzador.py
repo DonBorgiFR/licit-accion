@@ -51,6 +51,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from src import PROJECT_ROOT, ruta_datos, ruta_proyecto
+from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 from src.proceso import es_el_mismo_proceso, es_pid_activo, instante_creacion_proceso
 
 # ==============================================================================
@@ -1600,6 +1601,7 @@ def registrar_evento_lanzador(
     motivo: Optional[str] = None,
     run_id: int = 0,
     db_path: Optional[str] = None,
+    estado: Any = None,
 ) -> None:
     """Escribe un evento `LANZADOR_*` en `data/pipeline.jsonl`.
 
@@ -1609,26 +1611,21 @@ def registrar_evento_lanzador(
 
     `run_id=0` es el valor reservado por el contrato para "evento del lanzador fuera de una
     corrida", porque estos eventos ocurren antes de que exista una ejecución de pipeline.
+
+    **Migrado al esquema canónico el 2026-08-27** (Paso 9, bloque 9.C). Escribía la gramática
+    `action` a mano, y era el **séptimo** punto de escritura del proyecto — uno más de los seis
+    que el contrato del Paso 9 había contado. Dejarlo fuera habría sido lo peor de todos los
+    casos: la capa que declara `pipeline.jsonl` canal de diagnóstico, hablando ella sola un
+    idioma que su propio lector tendría que seguir traduciendo.
     """
-    ruta = _ruta_base(db_path)
-    directorio = os.path.dirname(ruta) or ruta_datos()
-    try:
-        os.makedirs(directorio, exist_ok=True)
-        entrada = {
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "run_id": run_id,
-            "action": accion,
-            "updated_by": "lanzador",
-        }
-        if motivo:
-            entrada["reason"] = motivo
-        with open(os.path.join(directorio, "pipeline.jsonl"), "a", encoding="utf-8") as fichero:
-            fichero.write(json.dumps(entrada, ensure_ascii=False) + "\n")
-    except Exception as e:
-        # Sin registro quedan el código de salida y la consola. Se avisa por stderr en vez
-        # de silenciar (C2): que falle la auditoría no puede tumbar el arranque, pero
-        # tampoco puede pasar desapercibido.
-        print(f"[!] No se pudo registrar el evento {accion}: {e}", file=sys.stderr)
+    registrar_evento_tolerante(
+        componente="lanzador",
+        evento=accion,
+        estado=estado_declarado_o_catalogo(estado, accion),
+        datos={"reason": motivo} if motivo else {},
+        run_id=run_id,
+        ruta=os.path.join(os.path.dirname(_ruta_base(db_path)) or ruta_datos(), "pipeline.jsonl"),
+    )
 
 
 def comunicar_fallo_fatal(

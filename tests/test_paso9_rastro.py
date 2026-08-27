@@ -20,10 +20,15 @@ import pytest
 
 from src.rastro import (
     CATALOGO_HISTORICO,
+    ESQUEMA_EVENTO,
     EstadoEvento,
+    EventoInvalido,
     Gramatica,
     RastroIlegible,
+    estado_declarado_o_catalogo,
     leer_rastro,
+    registrar_evento,
+    registrar_evento_tolerante,
 )
 
 
@@ -398,3 +403,127 @@ def test_un_componente_fuera_del_vocabulario_se_conserva(tmp_path):
         "run_id": 0, "updated_by": "reconciliacion_h54",
     })])
     assert leer_rastro(ruta=ruta).eventos[0].componente == "reconciliacion_h54"
+
+
+# ==============================================================================
+# Operación 2 — El escritor canónico (bloque 9.C)
+# ==============================================================================
+
+
+def test_lo_escrito_se_vuelve_a_leer_como_canonico(tmp_path):
+    """El viaje completo: lo que escribe la Operación 2 lo entiende la Operación 1."""
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento("centinela", "boletin_fetch_degraded", EstadoEvento.DEGRADADO,
+                     {"fuente": "DOGC", "error": "HTTP 404"}, run_id=16, ruta=ruta)
+    evento = leer_rastro(ruta=ruta).eventos[0]
+
+    assert evento.gramatica is Gramatica.CANONICA
+    assert evento.componente == "centinela"
+    assert evento.estado is EstadoEvento.DEGRADADO
+    assert evento.run_id == 16
+    assert evento.datos["fuente"] == "DOGC"
+
+
+def test_cada_linea_lleva_su_version_de_esquema(tmp_path):
+    """Es lo que hace el fichero autodescriptivo, y lo que faltaba para no tener que adivinar."""
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento("radar", "run_start", EstadoEvento.INFO, run_id=1, ruta=ruta)
+
+    crudo = json.loads(open(ruta, encoding="utf-8").read().strip())
+    assert crudo["esquema"] == ESQUEMA_EVENTO
+
+
+def test_un_solo_formato_de_fecha(tmp_path):
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento("radar", "run_start", EstadoEvento.INFO, run_id=1, ruta=ruta)
+
+    crudo = json.loads(open(ruta, encoding="utf-8").read().strip())
+    assert crudo["timestamp"].endswith("Z")
+    assert "." not in crudo["timestamp"], "sin microsegundos: un solo formato"
+
+
+def test_el_estado_no_tiene_valor_por_defecto():
+    """Convención C2: declarar éxito por descuido es la forma de esconder un fallo."""
+    with pytest.raises(TypeError):
+        registrar_evento("radar", "run_start")  # type: ignore[call-arg]
+
+
+def test_un_estado_fuera_del_vocabulario_se_rechaza(tmp_path):
+    with pytest.raises(EventoInvalido):
+        registrar_evento("radar", "run_start", "MAS_O_MENOS_BIEN", ruta=str(tmp_path / "r.jsonl"))
+
+
+def test_un_evento_sin_componente_o_sin_nombre_se_rechaza(tmp_path):
+    ruta = str(tmp_path / "r.jsonl")
+    with pytest.raises(EventoInvalido):
+        registrar_evento("", "run_start", EstadoEvento.INFO, ruta=ruta)
+    with pytest.raises(EventoInvalido):
+        registrar_evento("radar", "   ", EstadoEvento.INFO, ruta=ruta)
+
+
+def test_lo_rechazado_no_llega_a_escribirse(tmp_path):
+    """Media línea en el rastro es peor que ninguna: de eso ya hay 14."""
+    ruta = tmp_path / "r.jsonl"
+    with pytest.raises(EventoInvalido):
+        registrar_evento("radar", "run_start", "INVENTADO", ruta=str(ruta))
+
+    assert not ruta.exists()
+
+
+def test_run_id_nulo_es_distinto_de_cero(tmp_path):
+    """Contrato v1.1.0: el Centinela no sabe su corrida, y escribir `0` sería mentir."""
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento("centinela", "boletin_fetch_started", EstadoEvento.INFO, ruta=ruta)
+    registrar_evento("lanzador", "LANZADOR_INICIADO", EstadoEvento.INFO, run_id=0, ruta=ruta)
+
+    sin_corrida, fuera_de_corrida = leer_rastro(ruta=ruta).eventos
+    assert sin_corrida.run_id is None
+    assert fuera_de_corrida.run_id == 0
+
+
+def test_un_fallo_de_escritura_avisa_pero_no_tumba_al_llamador(capsys, tmp_path):
+    """Que falle la auditoría no puede costar una prospección, y tampoco puede pasar callado."""
+    # Un fichero donde el destino espera un directorio: no hay forma de escribir ahí.
+    obstaculo = tmp_path / "soy_un_fichero"
+    obstaculo.write_text("no soy un directorio", encoding="utf-8")
+
+    registrar_evento("radar", "run_end", EstadoEvento.INFO, ruta=str(obstaculo / "r.jsonl"))
+
+    assert "No se pudo registrar el evento run_end" in capsys.readouterr().err
+
+
+def test_un_dato_no_serializable_no_revienta_el_pipeline(tmp_path):
+    """El rastro registra lo que pasó; no es el sitio donde validar tipos de negocio."""
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento("radar", "run_end", EstadoEvento.INFO,
+                     {"cuando": datetime(2026, 8, 27, tzinfo=timezone.utc)}, ruta=ruta)
+
+    assert leer_rastro(ruta=ruta).eventos[0].datos["cuando"].startswith("2026-08-27")
+
+
+def test_el_andamio_de_migracion_respeta_lo_declarado(tmp_path):
+    """Lo que el punto de llamada declara manda sobre el catálogo."""
+    assert estado_declarado_o_catalogo("ERROR", "boletin_fetch_degraded") is EstadoEvento.ERROR
+    assert estado_declarado_o_catalogo(None, "boletin_fetch_degraded") is EstadoEvento.DEGRADADO
+    assert estado_declarado_o_catalogo(None, "boletin_llm_degraded") is EstadoEvento.DESCONOCIDO
+
+
+def test_un_evento_invalido_no_tumba_al_llamador_pero_deja_rastro(tmp_path):
+    """Sección G contra sección I: el rechazo se registra en vez de propagarse (C2)."""
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento_tolerante("radar", "run_start", "ESTADO_INVENTADO", ruta=ruta)
+
+    eventos = leer_rastro(ruta=ruta).eventos
+    assert len(eventos) == 1
+    assert eventos[0].evento == "RASTRO_EVENTO_RECHAZADO"
+    assert eventos[0].estado is EstadoEvento.ERROR
+    assert eventos[0].datos["evento_rechazado"] == "run_start"
+
+
+def test_la_puerta_tolerante_escribe_normal_cuando_el_evento_es_valido(tmp_path):
+    ruta = str(tmp_path / "r.jsonl")
+    registrar_evento_tolerante("radar", "run_start", EstadoEvento.INFO, run_id=7, ruta=ruta)
+
+    evento = leer_rastro(ruta=ruta).eventos[0]
+    assert evento.evento == "run_start"
+    assert evento.run_id == 7

@@ -151,7 +151,7 @@ def main():
         if not radar.fuentes:
             print("[-] No se encontraron fuentes configuradas en config/fuentes.yaml")
             if not args.dry_run:
-                db.registrar_log_json(run_id=ejecucion_id, action="run_failed", reason="no_sources_configured")
+                db.registrar_log_json(run_id=ejecucion_id, action="run_failed", reason="no_sources_configured", estado="ERROR")
             sys.exit(1)
             
         print(f"Fuentes cargadas: {[f['nombre'] for f in radar.fuentes if f.get('activo', True)]}\n")

@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from src import ruta_proyecto, ruta_datos, titulo_legible
+from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 
 # =====================================================================
 # JERARQUÍA DE ERRORES ESTRUCTURADOS DE LA CAPA 5
@@ -1077,21 +1078,27 @@ class AnalistaIA:
             usar_schema=bool(gemini_cfg.get("usar_response_schema", True))
         )
 
-    def registrar_log_jsonl(self, event_type: str, data: Dict[str, Any], log_dir: str = "data") -> None:
-        log_dir = ruta_datos() if log_dir == "data" else ruta_proyecto(log_dir)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "pipeline.jsonl")
-        payload = {
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "event": event_type,
-            **data
-        }
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+    def registrar_log_jsonl(self, event_type: str, data: Dict[str, Any], log_dir: str = "data", estado: Any = None) -> None:
+        """Registra un evento del Analista en el rastro.
+
+        **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C). Era la
+        gramática `event`, la que volcaba sus claves sueltas en la raíz del objeto: 378 líneas
+        que ningún lector de las otras tres entendía. Ahora esas claves viajan dentro de `datos`
+        y el evento habla el idioma común.
+
+        **La firma no cambia** salvo por `estado`, opcional (Regla 14).
+        """
+        ruta = None
+        if log_dir != "data":
+            ruta = os.path.join(ruta_proyecto(log_dir), "pipeline.jsonl")
+
+        registrar_evento_tolerante(
+            componente="analista",
+            evento=event_type,
+            estado=estado_declarado_o_catalogo(estado, event_type),
+            datos=dict(data),
+            ruta=ruta,
+        )
 
     def recalibrar_score(
         self,
@@ -1217,7 +1224,7 @@ class AnalistaIA:
                 # Se distingue el fallo de contrato (respuesta inservible) del fallo de
                 # transporte (red/servicio), porque exigen acciones operativas distintas.
                 tipo_fallo = "ESQUEMA_INVALIDO" if isinstance(e, ValidationError) else "TRANSPORTE"
-                self.registrar_log_jsonl("LLM_REQUEST_FAILED", {
+                self.registrar_log_jsonl("LLM_REQUEST_FAILED", estado="ERROR", data={
                     "expediente_id": expediente_id,
                     "provider": prov_name,
                     "tipo_fallo": tipo_fallo,
@@ -1240,7 +1247,7 @@ class AnalistaIA:
             "version_prompt": v_prompt
         }
 
-        self.registrar_log_jsonl("LLM_REQUEST_DEGRADED", {
+        self.registrar_log_jsonl("LLM_REQUEST_DEGRADED", estado="DEGRADADO", data={
             "expediente_id": expediente_id,
             "error_detail": err_msg
         })
@@ -1290,7 +1297,10 @@ class AnalistaIA:
         estado_operativo = "ANALISIS_DIFERIDO" if es_degradado else "COMPLETADO"
 
         event_name = "doc_analysis_degraded" if es_degradado else "doc_analysis_completed"
-        self.registrar_log_jsonl(event_name, {
+        # El estado sale del mismo booleano que elige el nombre del evento, y no de leerlo:
+        # afirmar la degradación con un dato es lo que exige la Convención C3.
+        estado_evento = "DEGRADADO" if es_degradado else "INFO"
+        self.registrar_log_jsonl(event_name, estado=estado_evento, data={
             "expediente_id": expediente_id,
             "estado_operativo": estado_operativo,
             "modelo_llm": metadatos.get("modelo_llm"),

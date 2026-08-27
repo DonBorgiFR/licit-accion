@@ -291,13 +291,17 @@ def test_lo_ocurrido_se_reconstruye_leyendo_solo_la_auditoria(base, politica, tm
     assert all(r[2] == "1.2.0" for r in registros), "Y bajo qué versión de política"
     assert all(r[3] == "COMPLETADA" for r in registros)
 
+    # Por el lector canónico: desde el Paso 9 de la Capa 10 reconstruir la corrida es
+    # justamente lo que el rastro promete poder hacer, y con una sola gramática (H-39).
+    from src.rastro import leer_rastro
+
     registro_jsonl = os.path.join(os.path.dirname(base.db_path), "pipeline.jsonl")
-    with open(registro_jsonl, encoding="utf-8") as fichero:
-        eventos = [json.loads(linea) for linea in fichero if linea.strip()]
-    acciones = {e["action"] for e in eventos if str(e.get("action", "")).startswith("DEPURADOR")}
+    eventos = leer_rastro(ruta=registro_jsonl).eventos
+    del_depurador = [e for e in eventos if e.evento.startswith("DEPURADOR")]
+    acciones = {e.evento for e in del_depurador}
 
     assert {"DEPURADOR_ARCHIVADO", "DEPURADOR_PURGA_INICIADA", "DEPURADOR_PURGA_COMPLETADA"} <= acciones
-    assert all(e["run_id"] == 77 for e in eventos if str(e.get("action", "")).startswith("DEPURADOR")), (
+    assert all(e.run_id == 77 for e in del_depurador), (
         "Cada evento queda atado a la corrida que lo produjo"
     )
 

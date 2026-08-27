@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 from src import ruta_proyecto, ruta_datos
+from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 
 # =====================================================================
 # CONTRATOS DE SERVICIO (DATACLASSES)
@@ -150,8 +151,16 @@ class Lector:
             print(f"[!] Lector: Error cargando config/lector.yaml: {e}. Usando valores por defecto.")
             return default_config
 
-    def registrar_log_JSONL(self, action: str, expediente_id: Optional[str] = None, reason: Optional[str] = None, duration_ms: Optional[int] = None):
-        """Registra un evento estructurado JSONL. Delega en la Capa 3 si está disponible, o escribe a pipeline.jsonl directamente."""
+    def registrar_log_JSONL(self, action: str, expediente_id: Optional[str] = None, reason: Optional[str] = None, duration_ms: Optional[int] = None, estado: Any = None):
+        """Registra un evento estructurado JSONL. Delega en la Capa 3 si está disponible.
+
+        **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C): la caída
+        sin base de datos escribía la gramática `action` a mano, duplicando el formato que ahora
+        gobierna `src/rastro.py`. Delega en él y deja de tener formato propio.
+
+        H-28 sigue respetado: la ruta sale de `ruta_datos()`, no del directorio de trabajo, así
+        que la suite no escribe en el `data/` real del proyecto (H-25).
+        """
         if self.db:
             try:
                 self.db.registrar_log_json(
@@ -160,41 +169,34 @@ class Lector:
                     expediente_id=expediente_id,
                     reason=reason,
                     duration_ms=duration_ms,
-                    updated_by="lector"
+                    updated_by="lector",
+                    estado=estado,
                 )
                 return
-            except Exception:
-                pass
-                
-        # Fallback a escritura directa en pipeline.jsonl si no hay DB.
-        #
-        # H-28: esta ruta se resolvía como `os.path.join("data", ...)`, contra el directorio
-        # de trabajo. Era el último resto del defecto que el Paso D3 cerró como H-18, y
-        # sobrevivió porque sólo se ejecuta cuando la base no está disponible. Además de
-        # escribir fuera de sitio al lanzar el proceso desde otra carpeta, ignoraba
-        # `DATA_DIR_INCOOP`: durante la suite habría escrito en el `data/` real del
-        # proyecto, que es justamente lo que H-25 vino a impedir.
-        log_path = ruta_datos("pipeline.jsonl")
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        entry = {
-            "timestamp": timestamp,
-            "run_id": self.run_id,
-            "action": action,
-            "updated_by": "lector"
-        }
+            except Exception as exc:
+                # Antes era `except Exception: pass`. Se conserva la caída —existe para cuando
+                # la base no está disponible—, pero deja de ser muda: el 2026-08-27 escondió un
+                # `TypeError` de firma y la suite entera pasó sin que nadie viera que el evento
+                # se estaba escribiendo por la otra puerta. Es la Convención C2 aplicada a un
+                # camino de reserva: degradar es legítimo, hacerlo en silencio no.
+                print(f"[!] [lector] La Capa 3 no pudo registrar '{action}' ({exc}); "
+                      f"se escribe directamente en el rastro.", file=sys.stderr)
+
+        datos: Dict[str, Any] = {}
         if expediente_id:
-            entry["expediente_id"] = expediente_id
+            datos["expediente_id"] = expediente_id
         if reason:
-            entry["reason"] = reason
+            datos["reason"] = reason
         if duration_ms is not None:
-            entry["duration_ms"] = duration_ms
-            
-        try:
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"[!] Error al escribir log de inicialización en caliente: {e}")
+            datos["duration_ms"] = duration_ms
+
+        registrar_evento_tolerante(
+            componente="lector",
+            evento=action,
+            estado=estado_declarado_o_catalogo(estado, action),
+            datos=datos,
+            run_id=self.run_id,
+        )
 
     # =====================================================================
     # 🍞 LA MIGAJA DE H-41 — QUÉ SE ESTABA LEYENDO CUANDO EL PROCESO MURIÓ
@@ -300,7 +302,7 @@ class Lector:
             )
             print("[+] [lector] Bootstrap del Lector finalizado con éxito.")
         else:
-            self.registrar_log_JSONL(action="bootstrap_failed", reason="Healthcheck no superado")
+            self.registrar_log_JSONL(action="bootstrap_failed", reason="Healthcheck no superado", estado="ERROR")
             print("[-] [lector] Bootstrap del Lector fallido.")
             
         return self.inicializado
@@ -707,7 +709,7 @@ class Lector:
                             
             if not exito:
                 self.db.registrar_intento_fallido(doc_id, error_msg, intentos)
-                self.registrar_log_JSONL(action="doc_download_failed", expediente_id=exp_id, reason=f"ID: {doc_id} | Fallos: {intentos} | Error: {error_msg}")
+                self.registrar_log_JSONL(action="doc_download_failed", expediente_id=exp_id, reason=f"ID: {doc_id} | Fallos: {intentos} | Error: {error_msg}", estado="ERROR")
                 print(f"[-] [lector] Descarga fallida definitiva para ID {doc_id} tras {intentos} intentos: {error_msg}")
                 with self.metrics_lock:
                     self.metrics["failed"] += 1
@@ -1010,7 +1012,8 @@ class Lector:
                 self.registrar_log_JSONL(
                     action="doc_extraction_failed",
                     expediente_id=exp_id,
-                    reason=f"ID: {doc_id} | Error: {resultado.error_detalle}"
+                    reason=f"ID: {doc_id} | Error: {resultado.error_detalle}",
+                    estado="ERROR",
                 )
                 print(f"[!] [lector] Fallo en la extracción de texto para ID {doc_id}: {resultado.error_detalle}")
 
@@ -1219,7 +1222,8 @@ class Lector:
                     self.registrar_log_JSONL(
                         action="doc_ocr_degraded",
                         expediente_id=exp_id,
-                        reason=f"ID: {doc_id} | Motivo: Tesseract no disponible | Texto previo conservado"
+                        reason=f"ID: {doc_id} | Motivo: Tesseract no disponible | Texto previo conservado",
+                        estado="DEGRADADO",
                     )
                     print(f"[~] [lector] Documento ID {doc_id} ('{titulo[:30]}') pasado a OCR_DIFERIDO (Modo degradado: Tesseract no instalado).")
                 else:
@@ -1256,7 +1260,8 @@ class Lector:
                 self.registrar_log_JSONL(
                     action="doc_ocr_failed",
                     expediente_id=exp_id,
-                    reason=f"ID: {doc_id} | Error: {resultado.error_detalle}"
+                    reason=f"ID: {doc_id} | Error: {resultado.error_detalle}",
+                    estado="ERROR",
                 )
                 print(f"[!] [lector] Fallo al ejecutar OCR sobre ID {doc_id}: {resultado.error_detalle}")
 

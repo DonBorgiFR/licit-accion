@@ -117,11 +117,16 @@ def test_gestor_trazabilidad_api(tmp_path):
     
     logger.registrar_evento("API_TEST_EVENT", {"param": 123}, estado="INFO")
     
+    # Desde el Paso 9 de la Capa 10 el rastro tiene una sola gramática, así que se comprueba
+    # por el lector canónico en vez de por las claves crudas de la que tenía la Capa 7 (H-39).
+    from src.rastro import EstadoEvento, Gramatica, leer_rastro
+
     assert os.path.exists(log_file)
-    with open(log_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-        assert len(lines) == 1
-        data = json_loads_safe = pytest.importorskip("json").loads(lines[0])
-        assert data["modulo"] == "api"
-        assert data["tipo_evento"] == "API_TEST_EVENT"
-        assert data["payload"]["param"] == 123
+    resultado = leer_rastro(ruta=log_file)
+    assert resultado.lineas_totales == 1
+    evento = resultado.eventos[0]
+    assert evento.gramatica is Gramatica.CANONICA
+    assert evento.componente == "api"
+    assert evento.evento == "API_TEST_EVENT"
+    assert evento.estado is EstadoEvento.INFO
+    assert evento.datos["param"] == 123

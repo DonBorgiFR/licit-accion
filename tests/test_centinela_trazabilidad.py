@@ -23,16 +23,19 @@ def test_registrar_evento_jsonl(tmp_path):
 
     gestor.registrar_evento("test_event", {"param": 123}, estado="INFO")
 
+    # Igual que en la Capa 7: se comprueba por el lector canónico del Paso 9 de la Capa 10.
+    from src.rastro import EstadoEvento, Gramatica, leer_rastro
+
     assert os.path.exists(log_file)
-    with open(log_file, "r", encoding="utf-8") as f:
-        lineas = f.readlines()
-        assert len(lineas) == 1
-        data = json.loads(lineas[0])
-        assert data["modulo"] == "centinela"
-        assert data["tipo_evento"] == "test_event"
-        assert data["estado"] == "INFO"
-        assert data["payload"]["param"] == 123
-        assert "timestamp" in data
+    resultado = leer_rastro(ruta=log_file)
+    assert resultado.lineas_totales == 1
+    evento = resultado.eventos[0]
+    assert evento.gramatica is Gramatica.CANONICA
+    assert evento.componente == "centinela"
+    assert evento.evento == "test_event"
+    assert evento.estado is EstadoEvento.INFO
+    assert evento.datos["param"] == 123
+    assert evento.instante is not None
 
 
 def test_healthcheck_trazabilidad_centinela(tmp_path):

@@ -16,8 +16,8 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-27)
 
-**El Paso 9 está abierto, con contrato validado y su primer bloque cerrado.** La suite está en
-**648/648**. Lo siguiente es el **bloque 9.C**, la unificación de los seis escritores.
+**El Paso 9 está abierto, con contrato validado y sus bloques 9.B y 9.C cerrados.** La suite está
+en **661/661**. Lo siguiente es el **bloque 9.D**, llevar el diagnóstico a la pantalla.
 
 📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
 validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
@@ -30,7 +30,29 @@ descompone el paso.
   saltárselas. **25 regresiones** en `tests/test_paso9_rastro.py`, y
   `tools/verificar_rastro_real.py` lo mide contra el fichero de verdad.
 * **El bloque 9.B es puramente aditivo**: cuatro ficheros nuevos y **cero líneas tocadas** del
-  código existente. La unificación de escritores —lo que sí toca capas cerradas— es el 9.C.
+  código existente.
+* **Escribirlo en un solo idioma: H-39 cerrado en la práctica** *(bloque 9.C)*. Los **siete**
+  puntos de escritura de las Capas 3, 4, 5, 6, 7 y 10 delegan ya en `src/rastro.py`. Verificado
+  con la **corrida real 17**: **650 líneas nuevas, las 650 canónicas**, escritas por cinco
+  componentes distintos, y las 4.770 viejas se siguen leyendo en sus cuatro gramáticas.
+* **Las degradaciones ya son un dato, no una insinuación.** Los dos fallos del DOGC y el BOPB de
+  la corrida 17 constan con `estado: DEGRADADO`. Antes sólo se podían detectar olfateando la
+  subcadena `degraded` dentro del nombre del evento, que es lo que prohíbe la Convención C3.
+
+> 📏 **La cifra honesta del 9.C, para que nadie la descubra por su cuenta: la cobertura de estado
+> declarado es 13 de 650.** Las otras 637 líneas dicen `DESCONOCIDO`, que es la verdad —el punto
+> de llamada no lo declara— y no `INFO`, que habría sido declarar éxito por descuido. **Ahí vive
+> el riesgo residual del paso**: un evento de fallo que se añada mañana sin declarar su estado
+> será invisible para la pantalla, y el catálogo no lo cubrirá porque sólo mira hacia atrás. Se
+> sube declarando `estado` en los puntos de llamada, nunca tocando el lector.
+
+> ⚠️ **Y un segundo defecto del contrato, del mismo tipo que el de las cifras: decía seis
+> escritores y eran siete.** Faltaba el del propio lanzador (`registrar_evento_lanzador`), pese a
+> que la sección B.1 sí lo listaba. Dejarlo fuera habría dado el resultado más absurdo posible:
+> **la capa que declara `pipeline.jsonl` canal de diagnóstico, hablando ella sola un idioma que
+> su propio lector tendría que seguir traduciendo.** Lo destapó ir a declarar los estados, no
+> releer el documento — igual que las cifras. **Dos veces en un día el papel falló y el código lo
+> corrigió.**
 
 > 🔑 **La corrida 16 de esta mañana es la prueba viva de para qué sirve el paso.** Consta
 > **`COMPLETED` con `errores = 0`**, y dentro de ella **el Centinela no pudo consultar ninguna de

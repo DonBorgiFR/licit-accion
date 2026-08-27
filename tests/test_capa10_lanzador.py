@@ -370,9 +370,9 @@ def test_el_evento_del_lanzador_usa_run_id_reservado_y_su_autor(tmp_path):
 
     entradas = _entradas_registradas(tmp_path / "pipeline.jsonl")
     assert len(entradas) == 1
-    assert entradas[0]["run_id"] == 0, "0 es el valor reservado para eventos fuera de una corrida"
-    assert entradas[0]["updated_by"] == "lanzador"
-    assert entradas[0]["action"] == "LANZADOR_INICIADO"
+    assert entradas[0].run_id == 0, "0 es el valor reservado para eventos fuera de una corrida"
+    assert entradas[0].componente == "lanzador"
+    assert entradas[0].evento == "LANZADOR_INICIADO"
 
 
 # ==============================================================================
@@ -770,14 +770,20 @@ def _puerto_libre() -> int:
 
 
 def _entradas_registradas(ruta):
-    if not os.path.exists(ruta):
-        return []
-    with open(ruta, "r", encoding="utf-8") as fichero:
-        return [json.loads(linea) for linea in fichero if linea.strip()]
+    """Los eventos del rastro, leídos por la única puerta que hay desde el Paso 9.
+
+    Antes abría el fichero y leía `entrada["action"]` a mano, que es la gramática que el
+    lanzador escribía él solo. Desde el bloque 9.C **todos los escritores hablan el mismo
+    idioma**, así que la comprobación pasa por `leer_rastro()` — y de paso estas pruebas dejan
+    de ser un octavo lector del fichero con criterio propio, que es como nació H-39.
+    """
+    from src.rastro import leer_rastro
+
+    return leer_rastro(ruta=str(ruta)).eventos
 
 
 def _acciones_registradas(ruta):
-    return [entrada["action"] for entrada in _entradas_registradas(ruta)]
+    return [entrada.evento for entrada in _entradas_registradas(ruta)]
 
 
 class _ServidorDePrueba:

@@ -15,6 +15,7 @@ import os
 from typing import List, Optional, Dict, Any, Tuple
 
 from src import ruta_proyecto, ruta_datos
+from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 
 
 # ==============================================================================
@@ -309,26 +310,28 @@ class CentinelaConfigError(CentinelaError):
 # Helpers de Trazabilidad y Normalización de Fechas (Paso 3)
 # ==============================================================================
 
-def log_evento_jsonl(evento_tipo: str, detalles: Dict[str, Any], log_path: str = "data/pipeline.jsonl") -> None:
+def log_evento_jsonl(evento_tipo: str, detalles: Dict[str, Any], log_path: str = "data/pipeline.jsonl", estado: Any = None) -> None:
     """
     Registra eventos estructurados deterministas en el log central JSONL (Regla 3).
+
+    **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C). Era la
+    gramática `componente`/`evento`/`detalles`: 105 líneas de 4.768, la minoritaria de las
+    cuatro — y **la que contenía el evento que acotó H-41**. Un lector que sólo hablara `action`
+    la habría descartado en silencio, que es exactamente el daño que H-39 describía.
+
+    **`run_id` va sin declarar, y es deliberado** *(contrato del Paso 9, v1.1.0)*: el Centinela
+    no tiene noción de corrida —cero apariciones de `run_id` en este módulo—, y escribir `0`
+    afirmaría que el evento ocurrió fuera de una corrida cuando ocurre dentro. Se deja `null`,
+    que significa «no consta», y la atribución se hace por ventana temporal al leer.
     """
-    log_path = ruta_datos("pipeline.jsonl") if log_path == "data/pipeline.jsonl" else ruta_proyecto(log_path)
-    try:
-        log_dir = os.path.dirname(log_path)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-            
-        payload = {
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "componente": "centinela",
-            "evento": evento_tipo,
-            "detalles": detalles
-        }
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"[!] Error al escribir evento JSONL en {log_path}: {e}")
+    ruta = ruta_datos("pipeline.jsonl") if log_path == "data/pipeline.jsonl" else ruta_proyecto(log_path)
+    registrar_evento_tolerante(
+        componente="centinela",
+        evento=evento_tipo,
+        estado=estado_declarado_o_catalogo(estado, evento_tipo),
+        datos=detalles,
+        ruta=ruta,
+    )
 
 
 def normalizar_fecha_boletin_utc(fecha_raw: str) -> str:
@@ -564,7 +567,7 @@ class IngestorBoletines:
             log_evento_jsonl("boletin_fetch_succeeded", {"fuente": "DOGC", "total_alertas": len(alertas)})
             return alertas
         except Exception as e:
-            log_evento_jsonl("boletin_fetch_degraded", {"fuente": "DOGC", "error": str(e)})
+            log_evento_jsonl("boletin_fetch_degraded", {"fuente": "DOGC", "error": str(e)}, estado="DEGRADADO")
             print(f"[!] Modo Degradado Activo (Centinela DOGC): {e}")
             return []
 
@@ -584,7 +587,7 @@ class IngestorBoletines:
             log_evento_jsonl("boletin_fetch_succeeded", {"fuente": "BOPB", "total_alertas": len(alertas)})
             return alertas
         except Exception as e:
-            log_evento_jsonl("boletin_fetch_degraded", {"fuente": "BOPB", "error": str(e)})
+            log_evento_jsonl("boletin_fetch_degraded", {"fuente": "BOPB", "error": str(e)}, estado="DEGRADADO")
             print(f"[!] Modo Degradado Activo (Centinela BOPB): {e}")
             return []
 
@@ -920,7 +923,7 @@ Devuelve un JSON con: es_oportunidad_temprana (bool), nivel_interes ("ALTO"|"MED
         Si el LLM no responde, aplica Modo Degradado sin interrumpir la alerta.
         """
         if not self.proveedor_llm:
-            log_evento_jsonl("boletin_llm_degraded", {"id_alerta": alerta.id_alerta, "motivo": "Sin proveedor LLM configurado"})
+            log_evento_jsonl("boletin_llm_degraded", {"id_alerta": alerta.id_alerta, "motivo": "Sin proveedor LLM configurado"}, estado="DEGRADADO")
             alerta.dictamen_ia = self._dictamen_fallback_degradado("Sin proveedor LLM disponible")
             alerta.estado_operativo = "ANALISIS_DIFERIDO_BOLETIN"
             return alerta
@@ -959,7 +962,7 @@ Devuelve un JSON con: es_oportunidad_temprana (bool), nivel_interes ("ALTO"|"MED
             return alerta
 
         except Exception as e:
-            log_evento_jsonl("boletin_llm_degraded", {"id_alerta": alerta.id_alerta, "error": str(e)})
+            log_evento_jsonl("boletin_llm_degraded", {"id_alerta": alerta.id_alerta, "error": str(e)}, estado="DEGRADADO")
             print(f"[!] Modo Degradado (Analista Centinela LLM): {e}")
             alerta.dictamen_ia = self._dictamen_fallback_degradado(f"Error LLM: {e}")
             alerta.estado_operativo = "ANALISIS_DIFERIDO_BOLETIN"
@@ -1158,20 +1161,20 @@ class GestorTrazabilidadCentinela:
 
     def registrar_evento(self, tipo_evento: str, payload: Dict[str, Any], estado: str = "INFO") -> None:
         """
-        Registra de forma síncrona y determinista un evento en data/pipeline.jsonl.
+        Registra de forma síncrona y determinista un evento en `data/pipeline.jsonl`.
+
+        **Migrado al esquema canónico el 2026-08-27** (Capa 10, Paso 9, bloque 9.C). Era la
+        gramática `tipo_evento`, la única que ya traía su estado escrito — por eso aquí `estado`
+        conserva su valor por defecto: los puntos de llamada ya lo declaran y quitárselo sería
+        romper la Capa 6 sin ganar nada (Regla 14).
         """
-        evento = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "modulo": "centinela",
-            "tipo_evento": tipo_evento,
-            "estado": estado,
-            "payload": payload
-        }
-        try:
-            with open(self.log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(evento, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"[!] Error crítico en GestorTrazabilidadCentinela al escribir JSONL: {e}")
+        registrar_evento_tolerante(
+            componente="centinela",
+            evento=tipo_evento,
+            estado=estado,
+            datos=payload,
+            ruta=self.log_path,
+        )
 
     def healthcheck_trazabilidad_centinela(self) -> Dict[str, Any]:
         """
