@@ -2599,7 +2599,7 @@ hilos en cada petición»*—. `registrar_evento()` abre en modo `"a"`, escribe 
 
 ## Hallazgo de la reparación de H-45 — 2026-08-27 (Capa 10, Paso 9, bloque E)
 
-### H-56 · El análisis semántico del Centinela no ha funcionado nunca 🟠 DIAGNOSTICADO (2026-08-27)
+### H-56 · El análisis semántico del Centinela no ha funcionado nunca 🟢 CERRADO (Capa 10, Paso 10, bloque B.2)
 
 **Detectado el 2026-08-27**, minutos después de reparar H-45. No se encontró leyendo código: se
 encontró porque **arreglar la fuente le dio al Centinela, por primera vez, algo que analizar**.
@@ -2640,6 +2640,67 @@ defecto **no contamina ningún dato**: sólo deja el análisis semántico tempra
 Lo primero que hará falta es mirar **qué devuelve el modelo exactamente** frente a lo que el
 validador exige: puede ser el prompt, el esquema esperado o el parseo, y las tres se distinguen
 con una sola llamada real desde `tools/`.
+
+**Reparación y cierre — 2026-08-27** *(bloque 10.B.2)*.
+
+**El esquema deja de estar fijado en el proveedor y pasa a ponerlo el llamador.**
+`consultar()` acepta `response_schema`, con `None` conservando el esquema del analista para
+no tocar al llamador que ya funcionaba *(Regla 14)*. El Centinela declara el suyo,
+`ESQUEMA_OPENAPI_DICTAMEN_CENTINELA`, **en `src/centinela.py` y no junto al proveedor**: un
+esquema describe un DTO, así que pertenece al módulo que define ese DTO.
+
+**Ollama acepta el parámetro y lo ignora, y consta por qué.** Sólo ofrece `format: "json"`,
+que garantiza JSON válido pero no su forma. *Emular aquí una validación propia daría la
+ilusión de una garantía que el proveedor no da* — es justo lo que la auditoría anotó el
+2026-07-27 al degradarlo a opcional.
+
+**Y se añade la comprobación que habría cazado esto el primer día**, que cuesta una resta de
+conjuntos: `verificar_esquema_cubre()` exige que el esquema obligue a devolver los campos que
+el DTO del llamador declara obligatorios. Se ejecuta al construir el analista, así que una
+incompatibilidad **detiene la llamada en vez de degradarla** — gastar cuota sabiendo que la
+respuesta no puede servir sería peor, y dejaría el modo degradado documentando un fallo del
+modelo que en realidad es un defecto de configuración nuestro.
+
+> ⚠️ **`DESCONOCIDO` no se ofrece al modelo, y es una decisión, no un olvido.** El DTO lo
+> admite porque es el valor del Modo Degradado. Ponerlo en el enum dejaría que un modelo
+> dubitativo **se declarase degradado**, y esa declaración entraría como si fuera un veredicto
+> real. Es la Convención C6 leída desde el otro lado: *lo que no se pudo medir no puntúa, y
+> quien decide que no se pudo medir es quien mide*.
+
+**Verificado contra el modelo real** con `tools/verificar_dictamen_centinela.py`, fuera de la
+suite porque gasta cuota *(C5)*:
+
+| | Antes | Después |
+|---|---|---|
+| `estado_operativo` | `ANALISIS_DIFERIDO_BOLETIN` | **`ANALIZADA_IA`** |
+| `modo_degradado` | `True` | **`False`** |
+| `boletin_llm_succeeded` en todo el rastro | **0** *(desde el primer día del proyecto)* | **1** |
+
+El dictamen llegó completo: `nivel_interes` **ALTO**, categoría **PRESUPUESTO**, resumen
+coherente y **tres acciones recomendadas** concretas con estimación de 6 meses.
+
+**Regresiones**: **10** en `tests/test_h56_esquema_centinela.py`, que **afirman sobre la
+petición y no sobre la respuesta** —comprobar el dictamen exigiría llamar al modelo, y eso lo
+prohíbe la C5—. Dos de ellas interceptan `urlopen` y miran **el cuerpo HTTP que sale por el
+cable**, no lo que creemos que sale. Validadas con cinco mutaciones, y cada una cae donde debe:
+
+| Mutación | Caen |
+|---|---|
+| El proveedor vuelve a fijar el esquema del analista *(el defecto original)* | **1**, la del cuerpo HTTP |
+| El Centinela deja de pasar su esquema | **1**, la del espía |
+| El esquema pierde un campo obligatorio | **4** |
+| Se ofrece `DESCONOCIDO` al modelo | **1** |
+| La comprobación de cobertura no comprueba | **2** |
+
+> 📌 **Un doble de prueba tuvo que actualizarse, y lo que reveló merece anotarse.** El
+> `MockProvider` de `test_centinela_llm_factory.py` no aceptaba el parámetro nuevo, y el
+> `TypeError` resultante **el Centinela lo convirtió en modo degradado**: la prueba falló
+> diciendo *«el modelo falló»* cuando lo que fallaba era la firma de una función. Un error de
+> programación disfrazado de degradación es la familia de la Convención C2, y aquí lo produce
+> el `except Exception` de `analizar_alerta`. **Se anota; no se toca en este bloque.**
+
+Suite: **708 → 718**.
+
 
 
 **Diagnóstico del 2026-08-27** *(triaje del Paso 10, Capa 10)*. **Era el esquema esperado**, la
@@ -2833,6 +2894,47 @@ Suite: **688 → 708**.
 > esta corrida lo produjo desde el pool **del Lector**. No es la API: es **cualquier pool de hilos
 > que escriba en el rastro**, que es lo que el bloque 10.B.3 tendrá que cerrar.
 
+
+---
+
+### H-59 · `ANALISIS_DIFERIDO_BOLETIN` tampoco lo recoge nadie 🔴 ABIERTO
+
+**Detectado el 2026-08-27**, al verificar la reparación de H-56. Es **la cuarta vez que este
+proyecto pisa la misma forma**, y las cuatro en el mismo mes: H-33, H-53 cara B
+*(`OCR_DIFERIDO`)*, H-58 *(`DESCARGANDO`)* y ésta.
+
+**El nombre dice *diferido* y el comportamiento es *descartado*** — la misma frase, literal,
+con la que se catalogó H-53.
+
+**La evidencia.** El flujo del Centinela es *ingesta → filtro → análisis → score →
+persistencia*: **sólo analiza lo que acaba de ingerir**. Ninguna consulta saca de
+`boletines_alertas` las alertas en `ANALISIS_DIFERIDO_BOLETIN` para volver a intentarlo.
+
+| | |
+|---|---|
+| Alertas en el canal Centinela | **5**, el 100 % |
+| Su estado | **Todas** en `ANALISIS_DIFERIDO_BOLETIN` |
+| Con dictamen real | **0** |
+| Quién volverá a por ellas | **Nadie** |
+
+> 🚨 **Y esto es lo que convierte a H-56 en media reparación.** El Centinela ya sabe emitir un
+> dictamen completo —verificado contra el modelo real—, pero **las cinco alertas que hay en
+> pantalla seguirán sin análisis para siempre**, porque se analizaron el día que el motor
+> estaba roto y nadie vuelve a preguntar. *Reparar el motor no rescata a quien se quedó en la
+> cuneta mientras estaba averiado.*
+
+> 🔑 **Cuatro veces el mismo defecto en un mes pide dejar de tratarlo como casualidad.** El
+> contrato del Paso 10 ya declara la invariante —*todo estado transitorio tiene exactamente un
+> consumidor; uno que se escribe y no se lee sólo vale si es terminal declarado*— pero la
+> declara **para el vocabulario documental**. Aquí aparece en el vocabulario de alertas, que es
+> otra tabla y otro módulo. **Lo que falta no es otra reparación puntual: es una comprobación
+> que recorra los vocabularios y exija que cada estado transitorio tenga lector.**
+
+**Lo que hace falta para cerrarlo**, y las piezas ya existen: una consulta que devuelva las
+alertas diferidas, reanalizarlas con `analizar_lote_alertas()` y volver a guardarlas.
+`AlertaBoletinDTO.from_dict()` ya reconstruye desde la fila y `guardar_alerta_boletin()` ya
+persiste. **Con el tope de reintentos puesto desde el principio**, que es la lección de H-58:
+sin él, una alerta que degrade siempre se reintentaría en cada corrida para siempre.
 
 ---
 

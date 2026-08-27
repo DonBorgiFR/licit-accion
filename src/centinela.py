@@ -15,6 +15,7 @@ import os
 from typing import List, Optional, Dict, Any, Tuple
 
 from src import ruta_proyecto, ruta_datos
+from src.analista import verificar_esquema_cubre
 from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
 
 
@@ -71,6 +72,54 @@ NIVELES_INTERES_VALIDOS = {
     # como un desinterés real, aunque quien lo lea ignore `modo_degradado`.
     "DESCONOCIDO"
 }
+
+# ==============================================================================
+# Esquema de respuesta del Centinela (H-56)
+# ==============================================================================
+
+#: Forma que el Centinela **exige** a la respuesta del modelo, en el dialecto OpenAPI
+#: que Gemini admite como `responseSchema`.
+#:
+#: **Nace de H-56, y el defecto que repara es de los que no se ven leyendo código.**
+#: `GeminiProvider` fijaba *siempre* `ESQUEMA_OPENAPI_ANALISIS_SEMANTICO` —el esquema del
+#: analista de licitaciones— y la factoría de proveedores es **la misma para los dos
+#: consumidores**. De modo que cuando el Centinela pedía su dictamen, la API estaba
+#: **obligada por structured output** a contestar con el esquema del otro: la intersección
+#: entre lo que el proveedor imponía y lo que este DTO exige era **vacía**. Por eso el error
+#: de degradación nombraba los cuatro campos a la vez, siempre los mismos, y por eso no
+#: podía funcionar ningún día.
+#:
+#: **Vive aquí y no junto al proveedor a propósito**: un esquema describe un DTO, así que
+#: pertenece al módulo que define ese DTO. `src/centinela.py` ya importa de `src/analista.py`;
+#: hacerlo al revés dejaría al analista de licitaciones sabiendo del Centinela para nada.
+#:
+#: ⚠️ **`DESCONOCIDO` NO figura en el enum de `nivel_interes`, y es deliberado.** El DTO lo
+#: admite porque es el valor del Modo Degradado, pero **declarar una degradación es potestad
+#: del sistema, no del modelo**: si el enum lo ofreciera, un modelo dubitativo podría
+#: declararse degradado y ese veredicto entraría como si fuera un análisis real. Es la
+#: Convención C6 leída desde el otro lado — lo que no se pudo medir no puntúa, y quien
+#: decide que no se pudo medir es quien mide.
+ESQUEMA_OPENAPI_DICTAMEN_CENTINELA = {
+    "type": "OBJECT",
+    "properties": {
+        "es_oportunidad_temprana": {"type": "BOOLEAN"},
+        "nivel_interes": {"type": "STRING", "enum": ["ALTO", "MEDIO", "BAJO", "NULO"]},
+        "categoria_fase_temprana": {
+            "type": "STRING",
+            "enum": ["PRESUPUESTO", "SUBVENCION", "CONVENIO", "CONSULTA_PRELIMINAR", "OTROS"],
+        },
+        "resumen_ejecutivo": {"type": "STRING"},
+        "acciones_recomendadas": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "estimacion_meses_hasta_licitacion": {"type": "INTEGER", "nullable": True},
+    },
+    "required": [
+        "es_oportunidad_temprana",
+        "nivel_interes",
+        "categoria_fase_temprana",
+        "resumen_ejecutivo",
+    ],
+}
+
 
 # ==============================================================================
 # Estructuras DTO Defensivas (Paso 1)
@@ -870,6 +919,16 @@ class AnalistaBoletinesIA:
         forma de ejercitar el Modo Degradado ni de mantener las pruebas herméticas.
         """
         self.config_prompts_path = ruta_proyecto(config_prompts_path)
+
+        # Se comprueba una vez, al construir, que el esquema que vamos a imponer cubra lo
+        # que el DTO exige. Es H-56 y cuesta una resta de conjuntos: la incompatibilidad se
+        # detiene aquí, antes de gastar cuota en una llamada cuya respuesta no puede servir.
+        verificar_esquema_cubre(
+            ESQUEMA_OPENAPI_DICTAMEN_CENTINELA,
+            DictamenCentinelaDTO.CAMPOS_OBLIGATORIOS,
+            contexto="el Centinela",
+        )
+
         if proveedor_llm is not None:
             self.proveedor_llm = proveedor_llm
         elif autoinicializar_proveedor:
@@ -972,7 +1031,15 @@ Devuelve un JSON con: es_oportunidad_temprana (bool), nivel_interes ("ALTO"|"MED
         )
 
         try:
-            res_llm = self.proveedor_llm.consultar(prompt_sistema, prompt_usuario, timeout=120)
+            # El esquema se pasa siempre. Omitirlo devolvería el defecto de H-56: el
+            # proveedor caería a su valor por defecto, que es el esquema del analista de
+            # licitaciones, y el dictamen volvería vacío de los cuatro campos de siempre.
+            res_llm = self.proveedor_llm.consultar(
+                prompt_sistema,
+                prompt_usuario,
+                timeout=120,
+                response_schema=ESQUEMA_OPENAPI_DICTAMEN_CENTINELA,
+            )
             raw_json = res_llm.get("raw_response", "")
 
             clean_text = raw_json.strip()

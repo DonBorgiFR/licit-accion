@@ -20,6 +20,24 @@
 por dirección: [`CONTRATO_PASO_10.md`](CONTRATO_PASO_10.md), ya en **v1.1.0**. **El bloque 10.B.1
 está CERRADO** y la suite pasa de 688 a **708/708**.
 
+> ✅ **H-56 cerrado: el Centinela emitió su primer dictamen completo de la historia del
+> proyecto.** Verificado contra el modelo real con `tools/verificar_dictamen_centinela.py`:
+> `estado_operativo` **`ANALIZADA_IA`**, `modo_degradado` **`False`**, nivel **ALTO**, tres
+> acciones recomendadas concretas. **`boletin_llm_succeeded` pasa de 0 a 1** — valía 0 desde el
+> primer día del proyecto. La reparación: el esquema deja de estar fijado en el proveedor y lo
+> pone el llamador, con `None` conservando el del analista para no tocar lo que ya iba *(Regla
+> 14)*. **10 regresiones** que afirman sobre la **petición** y no sobre la respuesta —dos de
+> ellas mirando el cuerpo HTTP que sale por el cable—, validadas con 5 mutaciones. Suite **718**.
+
+> 🚨 **Y verificarlo destapó H-59, que convierte a H-56 en media reparación.**
+> `ANALISIS_DIFERIDO_BOLETIN` **tampoco lo recoge nadie**: el flujo del Centinela sólo analiza lo
+> que acaba de ingerir, así que **las 5 alertas del canal seguirán sin dictamen para siempre**
+> aunque el motor ya funcione. *Reparar el motor no rescata a quien se quedó en la cuneta
+> mientras estaba averiado.* **Es la cuarta vez este mes con la misma forma** —H-33, H-53 cara B,
+> H-58 y ésta—, y la frase con la que se catalogó H-53 vale literal: **el nombre dice diferido y
+> el comportamiento es descartado**. Pendiente de decisión: el contrato del Paso 10 declara la
+> invariante sólo para el vocabulario documental, y esto pasa en el de alertas.
+
 > ✅ **H-58 cerrado, y verificado sobre la base real: los 6 pliegos que estaban perdidos ya están
 > en disco.** 5 descargados —el PCA de 999 KB, el PPT, el quadre, la memòria y la resolució— y 1
 > omitido correctamente por no ser PDF. `count(*) WHERE estado='DESCARGANDO'` devuelve **0**.

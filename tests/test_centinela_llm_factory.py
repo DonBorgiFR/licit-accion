@@ -32,7 +32,11 @@ def test_analista_boletines_ia_analizar_alerta_mock_provider():
     Verifica el correcto parseo del DictamenCentinelaDTO cuando el proveedor responde estructuradamente.
     """
     class MockProvider(LLMProvider):
-        def consultar(self, prompt_sistema: str, prompt_usuario: str, timeout: int = 60):
+        # `response_schema` se añadió a la interfaz al reparar H-56 (2026-08-27). Un doble
+        # que no lo acepte deja de ser un doble de `LLMProvider`: la llamada revienta con un
+        # TypeError que el modo degradado del Centinela convierte en «el modelo falló».
+        def consultar(self, prompt_sistema: str, prompt_usuario: str, timeout: int = 60,
+                      response_schema=None):
             return {
                 "raw_response": '{"es_oportunidad_temprana": true, "nivel_interes": "ALTO", "categoria_fase_temprana": "PRESUPUESTO", "resumen_ejecutivo": "Oportunidad presupuestaria en educación", "acciones_recomendadas": ["Revisar borrador"], "estimacion_meses_hasta_licitacion": 4}',
                 "modelo": "mock-test",

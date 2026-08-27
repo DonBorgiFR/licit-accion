@@ -28,6 +28,50 @@ class ProviderError(AnalistaException):
     """Fallo en la llamada o respuesta del proveedor LLM (Ollama / Gemini)"""
     pass
 
+class EsquemaIncompatibleError(AnalistaException):
+    """El esquema que se va a imponer a la respuesta no cubre lo que el llamador exige.
+
+    Nace de H-56. **Se detiene, no se degrada**, y ésa es toda la decisión: emitir la
+    llamada sabiendo que la respuesta no puede servir gastaría cuota real para producir
+    un dictamen inservible, y el modo degradado quedaría documentando un fallo del modelo
+    que en realidad es un defecto de configuración nuestro.
+    """
+    pass
+
+
+def campos_obligatorios_de_esquema(esquema: Dict[str, Any]) -> set:
+    """Devuelve los campos que un esquema OpenAPI declara obligatorios en su raíz."""
+    if not isinstance(esquema, dict):
+        return set()
+    return set(esquema.get("required") or [])
+
+
+def verificar_esquema_cubre(esquema: Dict[str, Any], campos_exigidos, contexto: str = "") -> None:
+    """
+    Comprueba que `esquema` obligue a devolver todos los `campos_exigidos`.
+
+    **Es la comprobación que habría cazado H-56 el primer día, y cuesta una resta de
+    conjuntos.** El defecto era exactamente esto: la intersección entre lo que el proveedor
+    imponía y lo que el llamador exigía era vacía, y nadie lo miraba porque cada mitad era
+    correcta por su cuenta.
+
+    ⚠️ **Afirma sobre la PETICIÓN, no sobre la respuesta.** Comprobar que el dictamen sale
+    bien exigiría llamar al modelo, y eso lo prohíbe la Convención C5. Lo que sí se puede
+    afirmar sin salir a la red —y es donde estaba el fallo— es que **se está pidiendo lo
+    que se necesita**.
+
+    Raises:
+        EsquemaIncompatibleError: si falta alguno.
+    """
+    declarados = campos_obligatorios_de_esquema(esquema)
+    ausentes = sorted(set(campos_exigidos) - declarados)
+    if ausentes:
+        raise EsquemaIncompatibleError(
+            f"El esquema de respuesta{' de ' + contexto if contexto else ''} no obliga a devolver "
+            f"{ausentes}. Una respuesta que obedezca a este esquema no podrá satisfacer al "
+            f"llamador, así que la llamada no se emite."
+        )
+
 
 # =====================================================================
 # DATACLASSES DTO DE ANÁLISIS SEMÁNTICO (CONTRATOS DE SERVICIO v5.1.0)
@@ -364,11 +408,27 @@ class AnalisisSemanticoDTO:
 class LLMProvider(ABC):
     """Interfaz abstracta del contrato de servicio para conectores de IA."""
     @abstractmethod
-    def consultar(self, prompt_sistema: str, prompt_usuario: str, timeout: int = 60) -> Dict[str, Any]:
+    def consultar(
+        self,
+        prompt_sistema: str,
+        prompt_usuario: str,
+        timeout: int = 60,
+        response_schema: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Envía una petición al proveedor LLM esperando respuesta en formato JSON.
         Devuelve un dict con: 'raw_response', 'modelo', 'prompt_tokens', 'completion_tokens', 'tiempo_seg'.
         Eleva ProviderError si falla la comunicación.
+
+        `response_schema` es **la forma que el llamador exige a la respuesta**, y existe
+        desde H-56 *(2026-08-27)*. Antes el esquema estaba fijado dentro del proveedor, que
+        es compartido por dos consumidores con DTOs incompatibles: el Centinela pedía su
+        dictamen y recibía, garantizado por el propio mecanismo de salida estructurada, el
+        esquema del analista de licitaciones.
+
+        **`None` conserva el comportamiento anterior** —el esquema del analista— para no
+        tocar al llamador que ya funcionaba *(Regla 14)*. No todos los proveedores admiten
+        esquemas: quien no pueda **lo documenta, no lo emula**.
         """
         pass
 
@@ -445,7 +505,23 @@ class OllamaProvider(LLMProvider):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
 
-    def consultar(self, prompt_sistema: str, prompt_usuario: str, timeout: int = 60) -> Dict[str, Any]:
+    def consultar(
+        self,
+        prompt_sistema: str,
+        prompt_usuario: str,
+        timeout: int = 60,
+        response_schema: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        ⚠️ **`response_schema` se acepta y se ignora, y consta por qué.** Ollama sólo ofrece
+        `format: "json"`, que garantiza **JSON válido pero no su forma**: no hay equivalente
+        a las salidas estructuradas de Gemini. Se documenta en vez de emularse —fabricar aquí
+        una validación propia daría la ilusión de una garantía que el proveedor no da—, y la
+        forma se sigue exigiendo donde ya se exigía: al deserializar en modo estricto.
+
+        Es exactamente lo que la auditoría anotó el 2026-07-27 al degradar Ollama a opcional:
+        *«era el proveedor con más probabilidad de fabricar un dictamen vacío»*.
+        """
         url = f"{self.host}/api/chat"
         opts = {"temperature": self.temperature}
         if self.vram_options:
@@ -519,19 +595,31 @@ class GeminiProvider(LLMProvider):
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
 
-    def consultar(self, prompt_sistema: str, prompt_usuario: str, timeout: int = 120) -> Dict[str, Any]:
+    def consultar(
+        self,
+        prompt_sistema: str,
+        prompt_usuario: str,
+        timeout: int = 120,
+        response_schema: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         api_key = self.api_key or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ProviderError("Variable de entorno GEMINI_API_KEY no configurada para GeminiProvider")
-            
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.modelo}:generateContent?key={api_key}"
-        
+
         gen_config = {
             "responseMimeType": "application/json",
             "temperature": self.temperature
         }
         if self.usar_schema:
-            gen_config["responseSchema"] = ESQUEMA_OPENAPI_ANALISIS_SEMANTICO
+            # ⚠️ **El esquema lo pone el llamador. No volver a fijarlo aquí — es H-56.**
+            # Esta línea decía `= ESQUEMA_OPENAPI_ANALISIS_SEMANTICO` a secas, y como la
+            # factoría sirve el mismo proveedor al analista y al Centinela, obligaba a la
+            # API a contestarle al Centinela con el esquema del otro. El `structured
+            # output` hacía el resto: respuestas impecables, válidas, y sin ninguno de los
+            # cuatro campos que el Centinela exige.
+            gen_config["responseSchema"] = response_schema or ESQUEMA_OPENAPI_ANALISIS_SEMANTICO
 
         payload = {
             "contents": [
