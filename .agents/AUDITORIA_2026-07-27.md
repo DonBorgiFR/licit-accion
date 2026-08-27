@@ -2456,6 +2456,52 @@ pasó cuando algo sale mal, exactamente lo que se ha necesitado hoy para H-41, y
 
 ---
 
+## Hallazgo de la reparación de H-45 — 2026-08-27 (Capa 10, Paso 9, bloque E)
+
+### H-56 · El análisis semántico del Centinela no ha funcionado nunca 🔴 ABIERTO (sin asignar)
+
+**Detectado el 2026-08-27**, minutos después de reparar H-45. No se encontró leyendo código: se
+encontró porque **arreglar la fuente le dio al Centinela, por primera vez, algo que analizar**.
+
+| Medido en todo `pipeline.jsonl` | Cifra |
+|---|---|
+| `boletin_llm_started` | **5** |
+| `boletin_llm_degraded` | **5** |
+| `boletin_llm_succeeded` | **0** |
+
+**Cinco intentos en la historia del proyecto, los cinco de hoy, los cinco degradados.** El error
+es siempre el mismo:
+
+```
+Dictamen incompleto: faltan o vienen vacíos ['es_oportunidad_temprana', 'nivel_interes',
+'categoria_fase_temprana', 'resumen_ejecutivo']. Un dictamen sin estos campos no procede de un
+análisis real.
+```
+
+**Por qué no se había visto, y por qué eso es lo interesante.** `boletines_alertas` tenía **0
+filas** desde siempre: las fuentes fallaban (H-45), así que no llegaba nada al analista y esta
+ruta **nunca se ejecutó**. Es exactamente la forma de H-53 —*«el OCR nunca ha funcionado»*— y de
+la factoría LLM del Centinela que estuvo rota toda la Capa 6: **un defecto que vive detrás de
+otro defecto y sólo aparece cuando el primero se repara.**
+
+> 🔑 **Y es la mejor prueba de para qué sirve el Paso 9.** Este hallazgo se ve porque el bloque
+> 9.C hizo que `boletin_llm_degraded` declarase `estado: DEGRADADO` con un dato estructurado, y
+> el 9.D lo lleva al distintivo del Cockpit. Antes habría sido un evento cuyo único indicio era
+> su propio nombre, escrito en la gramática minoritaria, sobre un canal que enseñaba un `0`.
+> **Tres capas de silencio, y el paso las quitó las tres el mismo día.**
+
+**Lo que el sistema hace bien, y consta**: degrada correctamente. Los cinco dictámenes se
+rechazan en vez de persistirse a medias, ninguno altera el score y las alertas llegan al Cockpit
+marcadas. Es la Convención C6 funcionando —*lo que no se pudo medir no puntúa*—, así que el
+defecto **no contamina ningún dato**: sólo deja el análisis semántico temprano sin hacer.
+
+**Sin asignar.** No pertenece al Paso 9, que es la voz del proceso y no el motor de análisis.
+Lo primero que hará falta es mirar **qué devuelve el modelo exactamente** frente a lo que el
+validador exige: puede ser el prompt, el esquema esperado o el parseo, y las tres se distinguen
+con una sola llamada real desde `tools/`.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |

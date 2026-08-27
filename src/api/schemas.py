@@ -591,3 +591,19 @@ class DiagnosticoProspeccionSchema(BaseModel):
     rastro_legible: bool = True
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EstadoFuenteSchema(BaseModel):
+    """Qué pasó la última vez que se consultó una fuente oficial del Centinela (H-45).
+
+    Un canal vacío tiene tres causas que no se parecen en nada —no hay novedades, no se pudo
+    consultar, nadie está mirando— y en pantalla se veían iguales. Esto las separa.
+    """
+    fuente: str
+    #: `OK` · `DEGRADADA` · `OMITIDA` · `SIN_DATOS`
+    estado: str
+    detalle: str = ""
+    cuando: Optional[str] = None
+    alertas: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)

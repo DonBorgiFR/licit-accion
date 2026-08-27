@@ -92,12 +92,30 @@ def test_parsear_xml_bopb():
     assert a.num_boletin == "BOPB-2026-6789"
 
 
+def ingestor_con_las_dos_fuentes_activas():
+    """Un ingestor con DOGC y BOPB activos, **declarado por la prueba y no heredado del YAML**.
+
+    El 2026-08-27 el DOGC se desactivó en `config/centinela_config.yaml` por decisión de
+    dirección (H-45: ya no publica RSS), y dos pruebas de este fichero se apoyaban en que la
+    configuración de producción tuviera las dos fuentes encendidas. Una falló en el acto; la
+    otra —el modo degradado— **siguió pasando en verde sin ejercitar ya nada**, porque una
+    fuente apagada no llega a fallar. Un falso verde es peor que un rojo.
+
+    Lo que estas pruebas afirman es sobre la consolidación multifuente, no sobre qué fuentes
+    estén encendidas hoy: así que las encienden ellas.
+    """
+    ingestor = IngestorBoletines()
+    for fuente in ("dogc", "bopb"):
+        ingestor.config.setdefault("fuentes_oficiales", {}).setdefault(fuente, {})["activo"] = True
+    return ingestor
+
+
 @patch.object(IngestorBoletines, "_http_get_with_retry")
 def test_ejecutar_ingesta_completa_y_deduplicacion(mock_http):
     """Verifica la ingesta consolidada multifuente y deduplicación por SHA256."""
     mock_http.side_effect = lambda url: MOCK_DOGC_ATOM_XML if "dogc" in url else MOCK_BOPB_RSS_XML
 
-    ingestor = IngestorBoletines()
+    ingestor = ingestor_con_las_dos_fuentes_activas()
     alertas = ingestor.ejecutar_ingesta_completa()
 
     assert len(alertas) == 2
@@ -115,8 +133,15 @@ def test_modo_degradado_fallo_red(mock_http):
 
     mock_http.side_effect = mock_side_effect
 
-    ingestor = IngestorBoletines()
+    ingestor = ingestor_con_las_dos_fuentes_activas()
     alertas = ingestor.ejecutar_ingesta_completa()
+
+    # Que se haya INTENTADO el DOGC es parte de lo que esta prueba afirma. Sin esto, apagar la
+    # fuente en configuración la dejaba pasando en verde sin ejercitar el modo degradado, que es
+    # exactamente lo que ocurrió el 2026-08-27.
+    assert any("dogc" in str(llamada) for llamada in mock_http.call_args_list), (
+        "el modo degradado no se prueba si la fuente que debe fallar no se llega a consultar"
+    )
 
     # BOPB debe responder exitosamente aunque DOGC haya fallado
     assert len(alertas) == 1

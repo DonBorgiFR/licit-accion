@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAlertasTempranasQuery } from '../hooks/useApiQueries';
+import { FuentesCentinela } from './FuentesCentinela';
 import { useMutateEstadoAlerta } from '../hooks/useApiMutations';
 import { Card } from './ui/Card';
 import { Badge, ScoreBadge } from './ui/Badge';
@@ -105,6 +106,11 @@ export const AlertasTable: React.FC<AlertasTableProps> = ({ onSelectAlerta }) =>
 
   return (
     <div className="space-y-4">
+      {/* Por qué el canal está como está (H-45). Va lo primero y sólo aparece cuando alguna
+          fuente no está bien: un canal vacío tiene que decir si es que no hay novedades o es
+          que no se ha podido mirar. */}
+      <FuentesCentinela />
+
       {/* Barra Superior de Filtros del Centinela */}
       <Card className="p-4 bg-surface border-line">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">

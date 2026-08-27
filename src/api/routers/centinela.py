@@ -11,7 +11,9 @@ import sqlite3
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 
-from src.api.schemas import AlertaBoletinSchema, PaginatedResponse, APIErrorResponse, TransicionEstadoAlertaSchema
+from src.api.schemas import (AlertaBoletinSchema, PaginatedResponse, APIErrorResponse,
+                             EstadoFuenteSchema, TransicionEstadoAlertaSchema)
+from src.diagnostico import estado_de_las_fuentes
 from src.api.dependencies import get_db, trazabilidad_api
 from src.memoria import Memoria
 
@@ -93,6 +95,46 @@ def list_alertas_tempranas(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Fallo en la consulta de alertas tempranas: {e}"
         )
+
+
+# ORDEN IMPORTANTE: esta ruta se declara **antes** de `/{id_alerta:path}`. FastAPI resuelve
+# por orden de declaracion y `:path` es un convertidor codicioso, asi que puesta despues
+# `fuentes` se toma por un identificador de alerta y el endpoint devuelve un 404 con un
+# mensaje que no tiene nada que ver. Ocurrio al escribirlo, el 2026-08-27.
+@router.get(
+    "/fuentes",
+    response_model=list[EstadoFuenteSchema],
+    summary="Qué pasó la última vez que se consultó cada fuente oficial",
+    description="Permite distinguir en pantalla las tres causas de un canal vacío: que no haya "
+                "novedades, que no se hayan podido consultar las fuentes, o que una fuente esté "
+                "desactivada a propósito. Antes se veían las tres igual (H-45).",
+)
+def get_estado_fuentes():
+    """H-45, cara pantalla: un canal vacío tiene que decir **por qué** lo está.
+
+    Las fuentes esperadas salen de `config/centinela_config.yaml`, no de una lista escrita aquí:
+    una fuente que se añada mañana al fichero tiene que aparecer sola, y si no consta ninguna
+    consulta suya debe salir como `SIN_DATOS` en vez de no salir.
+    """
+    from src.centinela import IngestorBoletines
+
+    esperadas = []
+    try:
+        esperadas = list(IngestorBoletines().config.get("fuentes_oficiales", {}).keys())
+    except Exception as exc:
+        # Sin la configuración se informa igual de lo que diga el rastro. Que no se pueda leer
+        # el YAML no puede dejar la pantalla sin la mitad honesta que este endpoint aporta.
+        trazabilidad_api.registrar_evento(
+            "API_CENTINELA_FUENTES_SIN_CONFIG", {"error": str(exc)}, estado="WARNING"
+        )
+
+    fuentes = estado_de_las_fuentes(fuentes_esperadas=esperadas)
+    trazabilidad_api.registrar_evento(
+        "API_CENTINELA_FUENTES",
+        {"total": len(fuentes), "degradadas": sum(1 for f in fuentes if f.estado != "OK")},
+        estado="INFO",
+    )
+    return [EstadoFuenteSchema.model_validate(f) for f in fuentes]
 
 
 @router.get(
@@ -194,4 +236,5 @@ def update_alerta_estado(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Fallo al actualizar la alerta temprana '{id_alerta}': {e}"
         )
+
 

@@ -450,3 +450,18 @@ export interface DiagnosticoProspeccion {
   rastro_lineas_ilegibles: number;
   rastro_legible: boolean;
 }
+
+
+/**
+ * Qué pasó la última vez que se consultó una fuente oficial del Centinela (H-45, Paso 9).
+ *
+ * Separa las tres causas de un canal vacío, que hasta el 2026-08-27 se veían iguales en
+ * pantalla: no hay novedades, no se pudo consultar, nadie está mirando.
+ */
+export interface EstadoFuente {
+  fuente: string;
+  estado: 'OK' | 'DEGRADADA' | 'OMITIDA' | 'SIN_DATOS';
+  detalle: string;
+  cuando: string | null;
+  alertas: number | null;
+}

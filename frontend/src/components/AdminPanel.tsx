@@ -135,6 +135,17 @@ export const AdminPanel: React.FC = () => {
   const bloqueados = previa.data?.bloqueados ?? [];
   const puedeEliminar = previsualizado && eliminables.length > 0 && !eliminacion.isPending;
 
+  // H-46, reparado el 2026-08-27. La purga documental se lanzaba **de un solo clic**, mandando
+  // `confirmar: true` de antemano, mientras su vecina de esta misma pantalla exigía previsualizar
+  // primero. Dos operaciones destructivas, en el mismo sitio, con salvaguardas radicalmente
+  // distintas — y la más accesible era la que borra ficheros del disco de forma irreversible.
+  //
+  // La mitad honesta ya existía: la API sirve la previsualización documental desde el Paso 7 de
+  // la Capa 9, y esta pantalla la pintaba sin usarla para nada. Ahora la usa.
+  const documentosPurgables = previa.data?.documental.documentos_candidatos ?? 0;
+  const puedePurgarDocumental =
+    previsualizado && documentosPurgables > 0 && !purgaDocumental.isPending;
+
   return (
     <div className="space-y-6">
       {aviso && (
@@ -294,10 +305,19 @@ export const AdminPanel: React.FC = () => {
             <Button
               variant="secondary"
               onClick={() => purgaDocumental.mutate()}
-              disabled={purgaDocumental.isPending}
+              disabled={!puedePurgarDocumental}
+              title={
+                previsualizado
+                  ? undefined
+                  : 'Previsualice primero: esta operación borra ficheros del disco y es irreversible'
+              }
             >
               <FileText className="w-4 h-4 mr-2" />
-              {purgaDocumental.isPending ? 'Purgando…' : 'Liberar peso documental'}
+              {purgaDocumental.isPending
+                ? 'Purgando…'
+                : previsualizado
+                  ? `2 · Liberar ${documentosPurgables} documentos`
+                  : 'Liberar peso documental'}
             </Button>
           </div>
 
@@ -308,7 +328,11 @@ export const AdminPanel: React.FC = () => {
                 <p className="text-ink-dim">
                   {previa.data.documental.documentos_candidatos} documentos perderían su fichero y su
                   texto, liberando {formatearBytes(previa.data.documental.bytes_estimados)}.{' '}
-                  <span className="text-ink-faint">Ninguna fila de negocio se toca.</span>
+                  <span className="text-ink-faint">Ninguna fila de negocio se toca.</span>{' '}
+                  <span className="text-ink-faint">
+                    Sólo alcanza a documentos que ya cumplieron su plazo de retención, pero borra
+                    sus ficheros del disco y eso no tiene vuelta atrás.
+                  </span>
                 </p>
               </div>
 

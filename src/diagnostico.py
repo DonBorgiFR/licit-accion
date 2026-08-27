@@ -215,3 +215,86 @@ def _eventos_de_la_corrida(ultima, ruta_rastro):
     except RastroIlegible:
         return [], False, 0
     return resultado.eventos, True, resultado.lineas_ilegibles
+
+
+# ==============================================================================
+# El estado de las fuentes del Centinela (bloque 9.E — H-45, cara pantalla)
+# ==============================================================================
+
+#: Los tres finales posibles de una consulta a una fuente. `started` no está: un arranque sin
+#: final es información sobre un proceso muerto, no sobre la fuente.
+EVENTOS_TERMINALES_FUENTE = {
+    "boletin_fetch_succeeded": "OK",
+    "boletin_fetch_degraded": "DEGRADADA",
+    "boletin_fetch_omitido": "OMITIDA",
+}
+
+
+@dataclass(frozen=True)
+class EstadoFuente:
+    """Qué pasó la última vez que se consultó una fuente oficial, y cuándo fue.
+
+    Existe porque **un canal vacío tiene tres causas que no se parecen en nada** y en pantalla
+    se veían iguales: no hay novedades, no se pudo consultar, o nadie está mirando. Es H-45, y
+    la evidencia de que no era teórico son las 26 descargas degradadas de 27 con las que el
+    Cockpit enseñaba un `0` que se leía como *«no hay oportunidades»*.
+    """
+
+    fuente: str
+    estado: str
+    """`OK` · `DEGRADADA` · `OMITIDA` · `SIN_DATOS`."""
+
+    detalle: str = ""
+    cuando: Optional[str] = None
+    alertas: Optional[int] = None
+    """Cuántas trajo la última consulta correcta. `None` si no la hubo."""
+
+
+def estado_de_las_fuentes(
+    fuentes_esperadas: Optional[List[str]] = None,
+    ruta_rastro: Optional[str] = None,
+) -> List[EstadoFuente]:
+    """El último desenlace conocido de cada fuente del Centinela.
+
+    **No se acota a la última corrida, a diferencia de `diagnosticar()`**, y es deliberado: la
+    pregunta que responde no es *«¿qué pasó anoche?»* sino *«¿cuándo fue la última vez que pude
+    mirar aquí?»*. Una fuente que lleva tres semanas caída tiene que poder decirlo aunque la
+    corrida de anoche ni la intentara.
+
+    Args:
+        fuentes_esperadas: las declaradas en `config/centinela_config.yaml`. Las que no aparezcan
+            en el rastro se devuelven como `SIN_DATOS` — **no se omiten**: una fuente configurada
+            de la que no consta nada es justo lo que hay que enseñar.
+    """
+    try:
+        eventos = leer_rastro(ruta=ruta_rastro).eventos
+    except RastroIlegible:
+        eventos = []
+
+    ultimos: Dict[str, EstadoFuente] = {}
+    for evento in eventos:
+        estado = EVENTOS_TERMINALES_FUENTE.get(evento.evento)
+        if estado is None:
+            continue
+        nombre = str(evento.datos.get("fuente") or "").upper()
+        if not nombre:
+            continue
+        # El rastro es cronológico, así que el último que se lee es el más reciente.
+        ultimos[nombre] = EstadoFuente(
+            fuente=nombre,
+            estado=estado,
+            detalle=str(evento.datos.get("error") or evento.datos.get("motivo") or ""),
+            cuando=evento.timestamp or None,
+            alertas=evento.datos.get("total_alertas") if estado == "OK" else None,
+        )
+
+    for nombre in (fuentes_esperadas or []):
+        clave = nombre.upper()
+        if clave not in ultimos:
+            ultimos[clave] = EstadoFuente(
+                fuente=clave,
+                estado="SIN_DATOS",
+                detalle="No consta ninguna consulta a esta fuente en el registro.",
+            )
+
+    return sorted(ultimos.values(), key=lambda f: f.fuente)

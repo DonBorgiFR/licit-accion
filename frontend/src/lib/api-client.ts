@@ -9,6 +9,7 @@
 
 import type {
   DiagnosticoProspeccion,
+  EstadoFuente,
   HealthResponse,
   KPISummary,
   Licitacion,
@@ -252,6 +253,10 @@ export async function getEjecuciones(
   limit = 10
 ): Promise<PaginatedResponse<Ejecucion>> {
   return request<PaginatedResponse<Ejecucion>>(`/admin/ejecuciones?page=${page}&limit=${limit}`);
+}
+
+export async function getFuentesCentinela(): Promise<EstadoFuente[]> {
+  return request<EstadoFuente[]>('/alertas-tempranas/fuentes');
 }
 
 export async function getDiagnosticoProspeccion(): Promise<DiagnosticoProspeccion> {

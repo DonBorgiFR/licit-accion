@@ -16,6 +16,7 @@ import {
   getAlertasTempranas,
   getAlertaById,
   getDiagnosticoProspeccion,
+  getFuentesCentinela,
 } from '../lib/api-client';
 import type { LicitacionesQueryParams, AlertasQueryParams } from '../types/api';
 
@@ -40,6 +41,20 @@ export function useDiagnosticoProspeccionQuery() {
     queryFn: getDiagnosticoProspeccion,
     refetchInterval: (query) =>
       query.state.data?.estado === 'EN_CURSO' ? 5 * 1000 : 60 * 1000,
+  });
+}
+
+/**
+ * El estado de las fuentes oficiales del Centinela (Capa 10, Paso 9 — H-45).
+ *
+ * Se consulta cada minuto y no cada cinco segundos: las fuentes se miran una vez por corrida,
+ * así que preguntar más a menudo sería releer un dato que no cambia.
+ */
+export function useFuentesCentinelaQuery() {
+  return useQuery({
+    queryKey: QUERY_KEYS.fuentesCentinela,
+    queryFn: getFuentesCentinela,
+    refetchInterval: 60 * 1000,
   });
 }
 

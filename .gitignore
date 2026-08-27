@@ -50,6 +50,10 @@ data/documents/
 data/backups/
 data/pipeline.jsonl
 data/reports/*.csv
+# Informe del Centinela. Vive en la raíz de data/ y no en data/reports/, así que se escapaba de
+# la línea de arriba y quedó versionado por descuido en el cierre de la Capa 9. Es un artefacto
+# que el pipeline reescribe en cada corrida: dejarlo dentro mete ruido en todos los commits.
+data/alertas_tempranas.csv
 # Volcado de cada prospeccion lanzada por el lanzador (Capa 10, Paso 6): es salida de
 # ejecucion, no codigo, y es donde queda el rastro cuando el pipeline corre sin consola.
 data/logs/

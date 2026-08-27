@@ -554,10 +554,25 @@ class IngestorBoletines:
     def obtener_feed_dogc(self) -> List[AlertaBoletinDTO]:
         cfg = self.config.get("fuentes_oficiales", {}).get("dogc", {})
         if not cfg.get("activo", True):
+            # Una fuente apagada a propósito **no puede parecerse a una sin novedades** (H-45).
+            # Hasta el 2026-08-27 esto devolvía una lista vacía en silencio, así que el Cockpit
+            # enseñaba un canal vacío sin forma de saber si es que no había nada o es que nadie
+            # estaba mirando. Es la misma doctrina que el código 30 del lanzador: ni éxito ni
+            # avería, **omisión deliberada, y consta**.
+            log_evento_jsonl(
+                "boletin_fetch_omitido",
+                {"fuente": "DOGC", "motivo": "fuente desactivada en config/centinela_config.yaml"},
+                estado="INFO",
+            )
             return []
 
         url = cfg.get("url_feed")
         if not url:
+            log_evento_jsonl(
+                "boletin_fetch_omitido",
+                {"fuente": "DOGC", "motivo": "la fuente está activa pero no declara url_feed"},
+                estado="WARNING",
+            )
             return []
 
         log_evento_jsonl("boletin_fetch_started", {"fuente": "DOGC", "url": url})
@@ -574,10 +589,25 @@ class IngestorBoletines:
     def obtener_feed_bopb(self) -> List[AlertaBoletinDTO]:
         cfg = self.config.get("fuentes_oficiales", {}).get("bopb", {})
         if not cfg.get("activo", True):
+            # Una fuente apagada a propósito **no puede parecerse a una sin novedades** (H-45).
+            # Hasta el 2026-08-27 esto devolvía una lista vacía en silencio, así que el Cockpit
+            # enseñaba un canal vacío sin forma de saber si es que no había nada o es que nadie
+            # estaba mirando. Es la misma doctrina que el código 30 del lanzador: ni éxito ni
+            # avería, **omisión deliberada, y consta**.
+            log_evento_jsonl(
+                "boletin_fetch_omitido",
+                {"fuente": "BOPB", "motivo": "fuente desactivada en config/centinela_config.yaml"},
+                estado="INFO",
+            )
             return []
 
         url = cfg.get("url_feed")
         if not url:
+            log_evento_jsonl(
+                "boletin_fetch_omitido",
+                {"fuente": "BOPB", "motivo": "la fuente está activa pero no declara url_feed"},
+                estado="WARNING",
+            )
             return []
 
         log_evento_jsonl("boletin_fetch_started", {"fuente": "BOPB", "url": url})

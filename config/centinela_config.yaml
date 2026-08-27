@@ -1,7 +1,7 @@
 # Configuración del Centinela de Boletines (Capa 6 - Fase Temprana)
 # Ecosistema Automático de Licitaciones (bfr_incoop)
 
-version: "1.0.0"
+version: "1.1.0"
 
 fuentes_oficiales:
   dogc:
@@ -9,11 +9,46 @@ fuentes_oficiales:
     tipo: "RSS_ATOM"
     url_feed: "https://dogc.gencat.cat/es/rss/index.html"
     dominio: "dogc.gencat.cat"
-    activo: true
+    # DESACTIVADA el 2026-08-27 por decisión de dirección (H-45). **El DOGC ya no publica RSS.**
+    # Comprobado, no supuesto: las seis rutas candidatas devuelven 404, el portal antiguo
+    # `portaldogc.gencat.cat` ni siquiera resuelve, su servicio de alertas es por correo y exige
+    # registro, y ninguno de los 42 datasets del DOGC en el portal de datos abiertos es el
+    # boletín diario de anuncios — son extractos temáticos (oposiciones, premios, normativa).
+    #
+    # Por qué desactivarla en vez de dejarla fallando: llevaba 26 descargas degradadas de 27, es
+    # decir que la degradación saltaba SIEMPRE. Una alarma que suena todas las noches deja de ser
+    # información, y desde el Paso 9 haría que el distintivo del Cockpit dijera "con avisos" a
+    # perpetuidad, tapando las degradaciones que sí importan.
+    #
+    # La URL se conserva a propósito: documenta qué se intentaba y permite reactivar la fuente
+    # cambiando una sola línea el día que el DOGC reponga un feed.
+    #
+    # Desactivada NO es silenciosa: `obtener_feed_dogc()` emite `boletin_fetch_omitido` con su
+    # motivo, para que la pantalla pueda distinguir "no hay novedades" de "no la estoy mirando".
+    activo: false
   bopb:
     nombre: "Butlletí Oficial de la Província de Barcelona"
     tipo: "OPEN_DATA_RSS"
-    url_feed: "https://bop.diba.cat/rss"
+    # Actualizado el 2026-08-27 (H-45). La anterior, https://bop.diba.cat/rss, devolvía HTTP 500
+    # desde antes del 2026-08-18: 26 descargas degradadas de 27, y el Cockpit enseñando un canal
+    # vacío que se leía como "no hay oportunidades". El BOPB publica hoy sus feeds bajo
+    # /dades-obertes/butlleti-del-dia/.
+    #
+    # Se toma el feed COMPLETO y no el de "administracio-local", que es donde están el 100 % de
+    # los objetivos de Incoop. Mismo criterio que la decisión de dirección del 2026-08-18 sobre
+    # el ámbito territorial: no se filtra al ingerir, porque así no se pierde ni un dato y la
+    # decisión es reversible cambiando esta línea. El filtrado por palabras clave y las
+    # exclusiones tempranas de este mismo fichero ya se encargan del ruido.
+    #
+    # Los otros siete feeds, por si algún día procede acotar:
+    #   .../butlleti-del-dia/administracio-local/feed        <- los ayuntamientos
+    #   .../butlleti-del-dia/generalitat-de-catalunya/feed
+    #   .../butlleti-del-dia/administracio-general-estat/feed
+    #   .../butlleti-del-dia/administracio-justicia/feed
+    #   .../butlleti-del-dia/altres-comunitats/feed
+    #   .../butlleti-del-dia/administracio-electoral/feed
+    #   .../butlleti-del-dia/entitats-diverses/feed
+    url_feed: "https://bop.diba.cat/dades-obertes/butlleti-del-dia/feed"
     dominio: "bop.diba.cat"
     activo: true
 

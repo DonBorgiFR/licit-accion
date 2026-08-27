@@ -51,6 +51,7 @@ export const QUERY_KEYS = {
   // y sondea cada pocos segundos, mientras que la pantalla de Administración pide diez
   // y no debe repintarse sola. Compartir clave haría que una consulta pisara a la otra.
   diagnosticoProspeccion: ['admin', 'prospeccion', 'diagnostico'] as const,
+  fuentesCentinela: ['centinela', 'fuentes'] as const,
   licitaciones: (params: LicitacionesQueryParams = {}) =>
     ['licitaciones', params] as const,
   licitacionDetail: (id: string) => ['licitaciones', 'detail', id] as const,

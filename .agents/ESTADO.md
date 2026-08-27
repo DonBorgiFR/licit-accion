@@ -16,8 +16,8 @@
 
 ## ▶️ Para retomar (sesión del 2026-08-27)
 
-**El Paso 9 está abierto, con contrato validado y sus bloques 9.B, 9.C y 9.D cerrados.** La suite
-está en **678/678**. Lo siguiente es el **bloque 9.E**: las dos bocas mudas, H-45 y H-46.
+**El Paso 9 está abierto, con contrato validado y sus bloques 9.B a 9.E cerrados.** La suite está
+en **687/687**. Lo siguiente es el **bloque 9.F**, el cierre del paso.
 
 📌 **Lee [`CONTRATO_PASO_9.md`](CONTRATO_PASO_9.md) antes de tocar nada del rastro.** Está
 validado por dirección el 2026-08-27, con sus tres decisiones y las seis piezas en las que se
@@ -38,6 +38,18 @@ descompone el paso.
 * **Las degradaciones ya son un dato, no una insinuación.** Los dos fallos del DOGC y el BOPB de
   la corrida 17 constan con `estado: DEGRADADO`. Antes sólo se podían detectar olfateando la
   subcadena `degraded` dentro del nombre del evento, que es lo que prohíbe la Convención C3.
+* **El Centinela dejó de estar ciego, y el canal se llenó** *(bloque 9.E, H-45)*. El BOPB cambió
+  de dirección —la vieja daba HTTP 500 desde antes del 18-08— y hoy sirve 53 anuncios, de los que
+  **5 pasan el filtro**: `boletines_alertas` pasa de **0 a 5** por primera vez en el proyecto. El
+  DOGC queda **desactivado por decisión de dirección**: comprobado que ya no publica RSS por
+  ninguna ruta, y una degradación que saltaba 26 de 27 veces habría dejado el distintivo nuevo
+  diciendo «con avisos» a perpetuidad.
+* **Apagar una fuente ya no es otro silencio.** `boletin_fetch_omitido` deja constancia, y la
+  pantalla del Centinela distingue las **tres** causas de un canal vacío: no hay novedades, no se
+  pudo consultar, o nadie está mirando.
+* **La purga documental exige previsualizar** *(H-46)*. Nacía habilitada y mandaba
+  `confirmar: true` de un clic, mientras su vecina de la misma pantalla pedía dos tiempos. Ahora
+  usa la previsualización que la API ya servía desde la Capa 9.
 * **La pantalla dejó de mentir** *(bloque 9.D)*. `src/diagnostico.py` resuelve la máquina de
   estados, `GET /api/v1/admin/prospeccion/diagnostico` la sirve y el `ProspeccionIndicator` la
   pinta. **Verificado en vivo contra la base real (C7)**: sobre la corrida 17 la cabecera dice
@@ -51,6 +63,19 @@ descompone el paso.
 > el riesgo residual del paso**: un evento de fallo que se añada mañana sin declarar su estado
 > será invisible para la pantalla, y el catálogo no lo cubrirá porque sólo mira hacia atrás. Se
 > sube declarando `estado` en los puntos de llamada, nunca tocando el lector.
+
+> 🚨 **H-56, y es la mejor prueba de para qué sirve este paso: el análisis semántico del
+> Centinela no ha funcionado nunca.** Medido en todo el rastro: `boletin_llm_started` **5**,
+> `boletin_llm_degraded` **5**, `boletin_llm_succeeded` **0**. Los cinco intentos son de hoy,
+> porque hasta hoy `boletines_alertas` tenía 0 filas y esa ruta jamás se ejecutó. **Es un defecto
+> que vivía detrás de otro defecto** —la misma forma que H-53 con el OCR—, y sólo apareció al
+> reparar H-45.
+>
+> Se ve porque el 9.C hizo que `boletin_llm_degraded` declare `DEGRADADO` con un dato, y el 9.D
+> lo lleva al distintivo. Antes era un evento cuyo único indicio era su nombre, en la gramática
+> minoritaria, sobre un canal que enseñaba un `0`. **Tres capas de silencio, quitadas el mismo
+> día.** El sistema degrada bien —ningún dictamen a medias se persiste, ninguno altera el score—,
+> así que **no contamina datos**: sólo deja el análisis temprano sin hacer. Sin asignar.
 
 > ⚠️ **Y un segundo defecto del contrato, del mismo tipo que el de las cifras: decía seis
 > escritores y eran siete.** Faltaba el del propio lanzador (`registrar_evento_lanzador`), pese a
