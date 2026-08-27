@@ -2897,7 +2897,7 @@ Suite: **688 → 708**.
 
 ---
 
-### H-59 · `ANALISIS_DIFERIDO_BOLETIN` tampoco lo recoge nadie 🔴 ABIERTO
+### H-59 · `ANALISIS_DIFERIDO_BOLETIN` tampoco lo recoge nadie 🟢 CERRADO (Capa 10, Paso 10, bloque B.2)
 
 **Detectado el 2026-08-27**, al verificar la reparación de H-56. Es **la cuarta vez que este
 proyecto pisa la misma forma**, y las cuatro en el mismo mes: H-33, H-53 cara B
@@ -2935,6 +2935,69 @@ alertas diferidas, reanalizarlas con `analizar_lote_alertas()` y volver a guarda
 `AlertaBoletinDTO.from_dict()` ya reconstruye desde la fila y `guardar_alerta_boletin()` ya
 persiste. **Con el tope de reintentos puesto desde el principio**, que es la lección de H-58:
 sin él, una alerta que degrade siempre se reintentaría en cada corrida para siempre.
+
+---
+
+**Reparación y cierre — 2026-08-27** *(bloque 10.B.2, segunda mitad)*.
+
+**Tres piezas**, y la tercera es la que importa a largo plazo:
+
+1. **Esquema v9**: `boletines_alertas` gana `intentos_analisis`. **El tope entra desde el
+   primer día**, que es la lección de H-58 aplicada antes de repetirla: sin él, una alerta que
+   degradara siempre se reintentaría en cada corrida para siempre, gastando cuota real. Las
+   filas que ya existían quedan a **0** y no a 3 — se analizaron cuando el motor estaba roto
+   por H-56, así que **merecen sus tres intentos con el motor reparado**.
+2. **`Memoria.obtener_alertas_diferidas()`**, el consumidor que faltaba, y el reintento en el
+   flujo del Centinela **después** de persistir lo ingerido: si el rescate falla, lo de hoy ya
+   está guardado. El intento se anota **antes** de gastarlo, porque anotarlo después dejaría
+   el contador sin subir si el proceso muere a mitad — y esa alerta se reintentaría
+   eternamente, que es justo el bucle que el tope evita.
+3. **`tests/test_vocabularios_de_estado.py`: la invariante deja de estar escrita y pasa a
+   ejecutarse.** Cada estado declara su naturaleza y, si es transitorio, **quién lo recoge por
+   su nombre**; la prueba resuelve ese consumidor y **lee su código** para exigir que
+   mencione el estado. Y un estado que el código escriba sin estar declarado también cae.
+
+> 🔑 **Por qué hacía falta la tercera pieza, y no es celo: la invariante ya estaba escrita
+> cuando ocurrió H-59.** El contrato del Paso 10 la declaró por la mañana, con H-58 delante, y
+> por la tarde el proyecto pisó la misma forma por cuarta vez. **Un texto correcto en un
+> documento que nadie relee al añadir un estado no protege de nada.**
+
+> 📌 **Y la prueba nueva encontró dos cosas en su primera ejecución**, que es la mejor
+> evidencia de que hacía falta:
+>
+> * **`ANALIZADA_IA` no estaba declarado en ninguna parte.** No es transitorio ni terminal:
+>   es un valor **en vuelo**, que existe dentro de una corrida y que el evaluador resuelve
+>   antes de persistir. Hubo que inventar la categoría, y con ella una prueba que **demuestra**
+>   que se resuelve — si dejara de hacerlo sería el quinto huérfano.
+> * **`ANALIZADA_IA` tampoco figura en `ESTADOS_BOLETIN_VALIDOS`**, y al mirarlo resultó que
+>   **eso es la protección, no el defecto**: estando fuera, cualquier intento de reconstruir
+>   una alerta con ese valor **falla en voz alta** *(C2)*; estando dentro, podría persistirse,
+>   releerse sin ruido y quedarse ahí para siempre. Se ha convertido de accidente en decisión,
+>   con su motivo escrito al lado. *El mismo comentario del código ya narraba este patrón para
+>   `DESCARTADA_POR_REGLAS`, que lo sufrió antes.*
+
+**Verificado sobre las cinco alertas reales del Cockpit**, contra el modelo:
+
+| | Antes | Después |
+|---|---|---|
+| Alertas con dictamen real | **0 de 5** | **5 de 5** |
+| Estado | Las 5 en `ANALISIS_DIFERIDO_BOLETIN` | Las 5 en `NUEVA_FASE_TEMPRANA` |
+| `modo_degradado` | `True` | **`False`** en las cinco |
+| `intentos_analisis` | — | **1** en las cinco |
+
+Los dictámenes: cuatro `PRESUPUESTO` y una `SUBVENCION`, todas con nivel `BAJO` — que es un
+veredicto real y no una degradación disfrazada, y por eso las cinco siguen en el canal en vez
+de desaparecer *(el umbral configurado es 30)*.
+
+**Regresiones**: **12** en `tests/test_h59_alertas_diferidas.py` y **12** en
+`tests/test_vocabularios_de_estado.py`. Suite **718 → 742**.
+
+> ⚠️ **Una prueba ajena tuvo que corregirse, y merece decirse por qué no es un parche.**
+> `test_migracion_v8.py` afirmaba `version == ESQUEMA_VERSION_ACTUAL == 8`. Lo que esa prueba
+> comprueba es que **migrar desde v7 añade la identidad del proceso**, no que el esquema se
+> quede en 8 para siempre: el `8` literal la hacía caer al llegar la v9 por un motivo que no
+> era el suyo. Se sustituye por `ESQUEMA_VERSION_ACTUAL` a secas.
+
 
 ---
 

@@ -320,7 +320,8 @@ def calcular_feed_hash(licitacion: Dict[str, Any]) -> str:
 # que ya estaba al día. Ahora sólo hay una fuente.
 #
 # v8 (2026-08-17, Capa 10 Paso 6): `ejecuciones` guarda quién la corría — ver H-40.
-ESQUEMA_VERSION_ACTUAL = 8
+# v9 (2026-08-27, Capa 10 Paso 10): `boletines_alertas` cuenta sus intentos de análisis — ver H-59.
+ESQUEMA_VERSION_ACTUAL = 9
 
 SQL_CREATE_METADATA = """
 CREATE TABLE IF NOT EXISTS metadata (
@@ -583,6 +584,10 @@ CREATE TABLE IF NOT EXISTS boletines_alertas (
     notas_usuario TEXT DEFAULT '',
     fecha_ingesta TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    -- Intentos de análisis semántico (esquema v9, repara H-59). Sin contador, una alerta
+    -- que degradara siempre se reintentaría en cada corrida para siempre: sería cambiar un
+    -- agujero por un bucle. Es la lección que dejó H-58, aplicada antes de repetirla.
+    intentos_analisis INTEGER DEFAULT 0,
     FOREIGN KEY (expediente_licitacion_vinculado) REFERENCES expedientes(id) ON DELETE SET NULL
 );
 """
@@ -1157,6 +1162,20 @@ class Memoria:
                                                     conn_mig.execute(
                                                         f"ALTER TABLE ejecuciones ADD COLUMN {columna} {tipo};"
                                                     )
+
+                                        # --- v9: las alertas cuentan sus intentos de análisis (H-59) ---
+                                        #
+                                        # Las filas que ya existen quedan con `intentos_analisis` a 0,
+                                        # y eso es lo correcto: son alertas que se analizaron cuando el
+                                        # motor estaba roto por H-56, así que **merecen sus tres
+                                        # intentos con el motor reparado**. Ponerlas a 3 las daría por
+                                        # perdidas por un fallo que no era suyo.
+                                        if version_actual < 9:
+                                            if not _columna_existe("boletines_alertas", "intentos_analisis"):
+                                                conn_mig.execute(
+                                                    "ALTER TABLE boletines_alertas "
+                                                    "ADD COLUMN intentos_analisis INTEGER DEFAULT 0;"
+                                                )
 
                                         # Re-crear índices (v2, v3, v4 y v5)
                                         for query in SQL_CREATE_INDICES:
@@ -3213,6 +3232,70 @@ class Memoria:
                         row_dict["dictamen_ia"] = None
                 alertas.append(AlertaBoletinDTO.from_dict(row_dict))
             return alertas
+
+    def obtener_alertas_diferidas(self, max_intentos: int = 3) -> List[Any]:
+        """
+        Devuelve las alertas en `ANALISIS_DIFERIDO_BOLETIN` que aún tienen intentos.
+
+        **Es el consumidor que faltaba (H-59).** `ANALISIS_DIFERIDO_BOLETIN` es un estado
+        **transitorio** —lo dice su nombre: *diferido*, no *descartado*— pero el flujo del
+        Centinela es *ingesta → filtro → análisis → score → persistencia* y **sólo analiza lo
+        que acaba de ingerir**. Una alerta que degradara se quedaba sin dictamen para siempre.
+
+        Se descubrió al verificar la reparación de H-56: el motor ya emitía dictámenes
+        completos y **las cinco alertas del canal seguían sin ninguno**. *Reparar el motor no
+        rescata a quien se quedó en la cuneta mientras estaba averiado.*
+
+        Es la **cuarta** vez que este proyecto pisa la misma forma —H-33, H-53 cara B con
+        `OCR_DIFERIDO`, H-58 con `DESCARGANDO`— y por eso la invariante dejó de estar sólo
+        escrita: `tests/test_vocabularios_de_estado.py` la comprueba ahora ejecutándola.
+
+        ⚠️ **El tope de intentos no es opcional**, y es la lección de H-58 aplicada antes de
+        repetirla: sin él, una alerta que degradara siempre se reintentaría en cada corrida
+        para siempre, gastando cuota real. Sería cambiar un agujero por un bucle.
+        """
+        sql = """
+        SELECT * FROM boletines_alertas
+        WHERE estado_operativo = 'ANALISIS_DIFERIDO_BOLETIN'
+          AND COALESCE(intentos_analisis, 0) < ?
+        ORDER BY fecha_publicacion DESC;
+        """
+        with self.conectar() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(sql, (max_intentos,))
+            return [self._fila_a_alerta_boletin(dict(r)) for r in cursor.fetchall()]
+
+    def anotar_intento_de_analisis(self, id_alerta: str) -> None:
+        """Suma uno al contador de intentos de análisis de una alerta (H-59)."""
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with self.db_lock():
+            with self.conectar() as conn:
+                with conn:
+                    conn.execute(
+                        "UPDATE boletines_alertas "
+                        "SET intentos_analisis = COALESCE(intentos_analisis, 0) + 1, updated_at = ? "
+                        "WHERE id_alerta = ?;",
+                        (now_str, id_alerta),
+                    )
+
+    def _fila_a_alerta_boletin(self, row_dict: Dict[str, Any]):
+        """Reconstruye un `AlertaBoletinDTO` desde una fila cruda de `boletines_alertas`."""
+        # Import diferido, como el resto de métodos de esta zona: `src.centinela` importa de
+        # `src.analista`, y subirlo a la cabecera acoplaría la memoria al Centinela entero.
+        from src.centinela import AlertaBoletinDTO, DictamenCentinelaDTO
+
+        if row_dict.get("motivos_score"):
+            try:
+                row_dict["motivos_score"] = json.loads(row_dict["motivos_score"])
+            except Exception:
+                row_dict["motivos_score"] = []
+        if row_dict.get("dictamen_ia_json"):
+            try:
+                row_dict["dictamen_ia"] = DictamenCentinelaDTO.from_json(row_dict["dictamen_ia_json"])
+            except Exception:
+                row_dict["dictamen_ia"] = None
+        return AlertaBoletinDTO.from_dict(row_dict)
 
     def vincular_alerta_a_expediente(self, id_alerta: str, expediente_id: str) -> bool:
         """

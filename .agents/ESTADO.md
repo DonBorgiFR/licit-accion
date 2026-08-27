@@ -29,7 +29,25 @@ está CERRADO** y la suite pasa de 688 a **708/708**.
 > 14)*. **10 regresiones** que afirman sobre la **petición** y no sobre la respuesta —dos de
 > ellas mirando el cuerpo HTTP que sale por el cable—, validadas con 5 mutaciones. Suite **718**.
 
-> 🚨 **Y verificarlo destapó H-59, que convierte a H-56 en media reparación.**
+> ✅ **H-59 cerrado también, y con él las 5 alertas del Cockpit tienen dictamen por primera
+> vez**: las cinco pasan de `ANALISIS_DIFERIDO_BOLETIN` a **`NUEVA_FASE_TEMPRANA`** con
+> `modo_degradado` a `False` —cuatro `PRESUPUESTO` y una `SUBVENCION`, todas de nivel `BAJO`,
+> que es un veredicto real y no una degradación disfrazada—. Esquema **v9** con
+> `intentos_analisis`, **el tope puesto desde el primer día** porque es la lección de H-58
+> aplicada antes de repetirla.
+
+> 🔑 **Y lo más duradero del bloque no es la reparación: es que la invariante dejó de estar
+> escrita.** El contrato del Paso 10 la declaró por la mañana, con H-58 delante, y por la
+> tarde el proyecto pisó la misma forma por cuarta vez. `tests/test_vocabularios_de_estado.py`
+> la ejecuta ahora: cada estado declara su naturaleza y, si es transitorio, **quién lo recoge
+> por su nombre**; la prueba resuelve ese consumidor y **lee su código** para exigir que lo
+> mencione. **Encontró dos cosas en su primera ejecución** — `ANALIZADA_IA` no estaba
+> declarado en ninguna parte *(hubo que inventar la categoría «en vuelo»)*, y descubrir que no
+> figura en `ESTADOS_BOLETIN_VALIDOS` reveló que **eso es la protección, no el defecto**:
+> estando fuera, reconstruir una alerta con ese valor **falla en voz alta**.
+
+> 📕 **Lo que decía este apartado antes de reparar H-59, y se conserva porque explica el
+> hallazgo:**
 > `ANALISIS_DIFERIDO_BOLETIN` **tampoco lo recoge nadie**: el flujo del Centinela sólo analiza lo
 > que acaba de ingerir, así que **las 5 alertas del canal seguirán sin dictamen para siempre**
 > aunque el motor ya funcione. *Reparar el motor no rescata a quien se quedó en la cuneta

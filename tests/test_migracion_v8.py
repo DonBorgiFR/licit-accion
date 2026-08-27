@@ -123,7 +123,10 @@ def test_la_migracion_v7_a_v8_anade_la_identidad_del_proceso(base_v7):
     try:
         assert {"pid", "pid_creado_en"} <= columnas(conn, "ejecuciones")
         version = conn.execute("SELECT MAX(version) FROM metadata;").fetchone()[0]
-        assert version == ESQUEMA_VERSION_ACTUAL == 8
+        # Lo que esta prueba afirma es que **migrar desde v7 añade la identidad del proceso**
+        # y deja la base al día, no que el esquema se haya quedado en 8 para siempre. Fijar
+        # el 8 literal la hacía caer al llegar la v9 (H-59) por un motivo que no era el suyo.
+        assert version == ESQUEMA_VERSION_ACTUAL
     finally:
         conn.close()
 

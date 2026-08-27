@@ -16,7 +16,7 @@ from typing import List, Optional, Dict, Any, Tuple
 
 from src import ruta_proyecto, ruta_datos
 from src.analista import verificar_esquema_cubre
-from src.rastro import estado_declarado_o_catalogo, registrar_evento_tolerante
+from src.rastro import EstadoEvento, estado_declarado_o_catalogo, registrar_evento, registrar_evento_tolerante
 
 
 # ==============================================================================
@@ -53,6 +53,22 @@ ESTADOS_BOLETIN_VALIDOS = {
     "DESCARTADA_POR_REGLAS",
     "ANALISIS_DIFERIDO_BOLETIN"
 }
+
+# ⚠️ **`ANALIZADA_IA` NO figura arriba, y desde el 2026-08-27 es una decisión y no un
+# descuido.** `analizar_alerta()` lo asigna por atributo —así que esquiva la validación del
+# `__post_init__`— y el evaluador lo resuelve a `NUEVA_FASE_TEMPRANA` o
+# `DESCARTADA_POR_REGLAS` antes de persistir. Es un valor **en vuelo**: existe dentro de una
+# corrida y nunca llega a la base.
+#
+# **Dejarlo fuera es la protección, no el problema.** Si estuviera en el conjunto, una alerta
+# podría persistirse con él, volver a leerse sin ruido y quedarse ahí para siempre: un quinto
+# estado transitorio sin nadie que lo recoja, que es el defecto que este proyecto ya ha
+# cometido cuatro veces (H-33, H-53 cara B, H-58, H-59). Estando fuera, cualquier intento de
+# reconstruirlo desde la base **falla en voz alta**, que es lo que manda la Convención C2.
+#
+# La contrapartida está cubierta: `tests/test_vocabularios_de_estado.py` exige que el
+# evaluador lo resuelva, así que si algún día dejara de hacerlo se sabría por una prueba y no
+# por una alerta desaparecida.
 
 CATEGORIAS_FASE_TEMPRANA_VALIDAS = {
     "PRESUPUESTO",
@@ -1357,6 +1373,48 @@ def ejecutar_pipeline_centinela_resiliente(
 
             metricas_globales["guardadas_db"] = guardadas
             metricas_globales["descartadas_db"] = descartadas
+
+            # 6. Volver a por lo que quedó diferido (H-59)
+            #
+            # Hasta aquí el flujo sólo ha analizado lo que acaba de ingerir, y ése era todo
+            # el defecto: una alerta cuyo análisis degradara se quedaba en
+            # `ANALISIS_DIFERIDO_BOLETIN` para siempre, aunque el motor se reparase al día
+            # siguiente. Se descubrió al verificar H-56, con el motor ya arreglado y las
+            # cinco alertas del canal todavía sin dictamen.
+            #
+            # Va **después** de persistir lo nuevo a propósito: si esta parte falla, lo
+            # ingerido hoy ya está guardado. Rescatar es una mejora, no una precondición.
+            try:
+                diferidas = memoria_svc.obtener_alertas_diferidas()
+                if diferidas:
+                    print(f"[~] [centinela] Reintentando el análisis de {len(diferidas)} alerta(s) diferida(s)...")
+                    rescatadas = 0
+                    for alerta_diferida in diferidas:
+                        # El intento se anota ANTES de gastarlo. Anotarlo después dejaría el
+                        # contador sin subir si el proceso muere a mitad, y esa alerta se
+                        # reintentaría eternamente: es justo el bucle que el tope evita.
+                        memoria_svc.anotar_intento_de_analisis(alerta_diferida.id_alerta)
+                        reanalizada = analista.analizar_alerta(alerta_diferida)
+                        if reanalizada.estado_operativo == "ANALIZADA_IA":
+                            memoria_svc.guardar_alerta_boletin(evaluador.evaluar_alerta(reanalizada))
+                            rescatadas += 1
+                    metricas_globales["diferidas_rescatadas"] = rescatadas
+                    registrar_evento(
+                        componente="centinela",
+                        evento="alertas_diferidas_reintentadas",
+                        estado=EstadoEvento.INFO if rescatadas == len(diferidas) else EstadoEvento.DEGRADADO,
+                        datos={"reintentadas": len(diferidas), "rescatadas": rescatadas},
+                    )
+            except Exception as e_dif:
+                # No puede costar la corrida: lo de hoy ya está guardado. Pero tampoco puede
+                # pasar desapercibido (Convención C2).
+                print(f"[!] [centinela] No se pudieron reintentar las alertas diferidas: {e_dif}")
+                registrar_evento(
+                    componente="centinela",
+                    evento="alertas_diferidas_reintento_fallido",
+                    estado=EstadoEvento.ERROR,
+                    datos={"error_tipo": type(e_dif).__name__, "error": str(e_dif)},
+                )
         except Exception as e_db:
             print(f"[!] Modo Degradado (Persistencia DB Centinela): {e_db}")
             trazabilidad.registrar_evento("boletin_pipeline_degraded", {"error_db": str(e_db)}, estado="WARNING")

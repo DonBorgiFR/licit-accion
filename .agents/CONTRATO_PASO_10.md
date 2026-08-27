@@ -1,8 +1,22 @@
 # Contrato de Servicio — Capa 10, Paso 10: Reparar, Verificar y Contar
 
-**Versión:** 1.1.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
-2026-08-27. **Bloque 10.B.1 cerrado**; quedan 10.B.2, 10.B.3, 10.C, 10.D *(verificación)*, 10.E,
-10.F y 10.G.
+**Versión:** 1.2.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
+2026-08-27. **Bloques 10.B.1 y 10.B.2 cerrados**; quedan 10.B.3, 10.C, 10.D *(verificación)*,
+10.E, 10.F y 10.G.
+
+> **Qué cambia en la v1.2.0 y por qué** *(2026-08-27, al verificar el bloque 10.B.2)*. Dos
+> cosas, y la primera vuelve a ser el papel corregido por el código:
+>
+> 1. **El esquema sí sube, y este documento presumía de lo contrario.** La sección H afirmaba
+>    *«una migración que no aporta un dato nuevo es riesgo sin contrapartida»*, y era cierto
+>    **para H-58**. Verificar H-56 destapó **H-59** —las alertas diferidas tampoco las recoge
+>    nadie—, y ahí el dato nuevo sí hace falta: sin contador de intentos, una alerta que
+>    degradara siempre se reintentaría en cada corrida para siempre. **Esquema v9.**
+> 2. **La invariante de la sección C.2 deja de estar sólo escrita.** Se declaró por la mañana,
+>    con H-58 delante, y por la tarde el proyecto pisó la misma forma por cuarta vez.
+>    `tests/test_vocabularios_de_estado.py` la ejecuta ahora, y **encontró dos cosas en su
+>    primera ejecución**. Un texto correcto en un documento que nadie relee al añadir un
+>    estado no protege de nada.
 
 > **Qué cambia en la v1.1.0 y por qué** *(2026-08-27, al implementar el bloque 10.B.1)*. Tres
 > cosas, y las tres nacen de escribir el código que debía obedecer al documento — no de releerlo.
@@ -419,7 +433,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | Artefacto | De | A | Motivo |
 |---|---|---|---|
 | Contrato del Paso 10 | — | **v1.0.0** | Este documento |
-| Esquema de base de datos | v8 | **v8**, sin cambio | H-58 no añade columnas: cambia **quién lee** un estado que ya existía |
+| Esquema de base de datos | v8 | **v9** *(corregido en la v1.2.0)* | H-58 no añadió columnas —cambió **quién lee** un estado que ya existía—, y este contrato llegó a presumir de ello. **H-59 sí las necesita**: `boletines_alertas.intentos_analisis`, el tope que impide cambiar un agujero por un bucle |
 | `MANUAL.md` | — | **v1.0.0** | Nace en este paso |
 
 > **El esquema no sube, y merece decirse.** La tentación era añadir una columna de «varado desde».
