@@ -1,8 +1,30 @@
 # Contrato de Servicio — Capa 10, Paso 10: Reparar, Verificar y Contar
 
-**Versión:** 1.2.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
-2026-08-27. **Bloques 10.B.1 y 10.B.2 cerrados**; quedan 10.B.3, 10.C, 10.D *(verificación)*,
+**Versión:** 1.3.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
+2026-09-01. **Bloques 10.B.1 y 10.B.2 cerrados**; quedan 10.B.3, 10.C, 10.D *(verificación)*,
 10.E, 10.F y 10.G.
+
+> **Qué cambia en la v1.3.0 y por qué** *(2026-09-01, al preparar el bloque 10.B.3)*. Otra vez
+> el papel corregido por la medición, y esta vez el papel era **este documento**.
+>
+> 1. **H-55 no parte líneas: pierde eventos enteros.** La sección B.3 lo describía como *«18
+>    líneas rotas de 6.354»*. Ejercitando el escritor con 16 hilos se pierde entre el **4,8 % y
+>    el 5,8 %** de los eventos, con sólo 0–2 líneas partidas. **Las roturas eran la parte
+>    visible, y es la pequeña**: un evento que nunca llegó a escribirse no deja hueco, y por eso
+>    dos diagnósticos midieron el 0,26 % contable. Toca la Regla 3 de frente — un rastro que
+>    pierde eventos bajo carga no es un registro determinista. La reparación no cambia; **su
+>    justificación sí**.
+> 2. **La Operación 5 se amplía a la rotación.** `rotar_log_si_excede_tamano()` renombra el
+>    fichero desde el pool de hilos, y **medido**: `os.rename()` sobre un fichero que otro hilo
+>    tiene abierto lanza `PermissionError`, que un `except Exception` traga imprimiendo. Con el
+>    Cockpit abierto la rotación falla en silencio. Es el mismo cerrojo y el mismo fichero.
+> 3. **El evento `rastro_escritura_contendida` se retira antes de existir.** Sería escribir en
+>    el rastro un evento sobre el hecho de escribir en el rastro, dentro del único punto de
+>    escritura del proyecto: **exactamente la autorreferencia que produjo H-60**. Se sustituye
+>    por un contador de módulo.
+> 4. **Entra la Operación 7: H-60.** Decisión de dirección del 2026-09-01. **No se cierra al
+>    reparar H-55** —las líneas ya rotas se quedan, así que el aviso seguiría saltando cada
+>    día—, y cerrar el bloque sin él lo dejaría técnicamente correcto y operativamente inútil.
 
 > **Qué cambia en la v1.2.0 y por qué** *(2026-08-27, al verificar el bloque 10.B.2)*. Dos
 > cosas, y la primera vuelve a ser el papel corregido por el código:
@@ -359,19 +381,30 @@ resultado sobre la base real, no darlo por bueno.
 > y esa prueba habría cazado H-58 el primer día. Es la Convención C4 en su forma más útil:
 > *ejercitar la ruta real* sin salir a la red.
 
-### Operación 5 — Escribir una línea entera o ninguna *(H-55)*
+### Operación 5 — Escribir una línea entera o ninguna, y no perder ninguna *(H-55)*
 
 | | |
 |---|---|
 | **Input** | Un evento canónico |
 | **Output** | Una línea completa y parseable en `data/pipeline.jsonl` |
 | **Precondición** | Ninguna |
-| **Postcondición** | **N hilos escribiendo a la vez dejan N líneas parseables**, ninguna partida |
+| **Postcondición** | **N hilos escribiendo a la vez dejan N líneas**, las N parseables y **cada evento exactamente una vez** |
 | **Alcance declarado** | **Sólo intra-proceso.** No promete nada sobre dos procesos escribiendo a la vez |
-| **Dónde** | `src/rastro.py`, `registrar_evento()` |
+| **Contención** | Se espera al cerrojo y se cuenta en `escrituras_contendidas`. **No se emite evento** *(ver F y G)* |
+| **Dónde** | `src/rastro.py`, `registrar_evento()`, **y la rotación de `src/api/dependencies.py`** |
 
-⚠️ **Las 18 líneas ya rotas no se tocan.** Borrarlas sería destruir rastro, y el lector del Paso 9
-ya las cuenta en vez de saltárselas. Lo que este paso promete es que **no crezcan**.
+> 📏 **La postcondición hay que tomarla al pie de la letra: contar N.** Está medido que con el
+> defecto vivo el banco de 16 hilos deja **906 líneas de 960 y todas parsean**. Una regresión que
+> sólo comprobara la parseabilidad **daría verde sobre el defecto entero**.
+
+⚠️ **Las 19 líneas ya rotas no se tocan.** Borrarlas sería destruir rastro, y el lector del Paso 9
+ya las cuenta en vez de saltárselas. Lo que este paso promete es que **no crezcan** — y que no
+desaparezca ninguna más.
+
+> 🔑 **El cerrojo ciñe la escritura, no la función.** `registrar_evento()` valida antes de
+> escribir y lanza `EventoInvalido`, que `registrar_evento_tolerante()` captura para **volver a
+> llamar** al escritor con un evento de rechazo. Un cerrojo que abarcara la validación se
+> encontraría con que su propia pila ya lo tiene tomado, y **el proceso se quedaría clavado**.
 
 ---
 
@@ -393,6 +426,38 @@ ya las cuenta en vez de saltárselas. Lo que este paso promete es que **no crezc
 > bloque sospechoso que revisar — hay una línea que parece correcta y un error que se evapora.
 > Queda anotado aquí para que el bloque 10.G decida si sube a convención.
 
+---
+
+### Operación 7 — Que el diagnóstico no se cuente a sí mismo *(H-60)*
+
+| | |
+|---|---|
+| **Input** | Una consulta a `GET /admin/prospeccion/diagnostico` sobre un rastro con líneas ilegibles |
+| **Output** | El hecho servido **en el cuerpo de la respuesta**, en `rastro_lineas_ilegibles`, donde ya viajaba |
+| **Precondición** | Ninguna |
+| **Postcondición** | **Consultar el diagnóstico no altera el diagnóstico.** Dos consultas seguidas sobre la misma corrida devuelven lo mismo |
+| **Side-effects** | **Ninguno**: es justamente lo que se viene a quitar. Deja de escribirse `RASTRO_LEIDO_DEGRADADO` |
+| **Dónde** | `src/api/routers/admin.py` *(camino B)* y `src/diagnostico.py` *(matiz A)* |
+
+**Las dos mitades, y por qué hacen falta las dos** *(decisión de dirección del 2026-09-01)*:
+
+* **Camino B — que el aviso del rastro no se escriba en el rastro.** Corta el bucle en su origen.
+  El dato no se pierde: **ya viaja en la respuesta** desde el Paso 9.
+* **Matiz A — que una degradación del componente `api` no cuente como avería de la corrida.**
+  Cierra la familia en vez de este caso. Sin él, el día que la API emita cualquier otra
+  degradación mientras hay una prospección en marcha, volvería a atribuírsele.
+
+> ⚠️ **Se descarta el camino C —atribuir por `run_id` en vez de por ventana temporal— y conviene
+> decir por qué**: es la atribución conceptualmente correcta, pero la mayoría de los eventos
+> históricos no declaran `run_id` y el filtro por ventana existe precisamente para eso. **Es
+> trabajo del tamaño de un paso, no de un bloque.**
+
+> 🚨 **El daño que esta operación repara no es el aviso: es que el aviso deje de significar
+> algo.** El Paso 9 existió para que la cabecera dejara de decir «Datos al día» en verde sobre
+> corridas ciegas *(H-45)*. Un distintivo en ámbar todos los días pase lo que pase cambia una
+> mentira cómoda por un ruido constante, y el día que el Centinela vuelva a quedarse ciego nadie
+> lo mirará. **Es el mismo motivo por el que el DOGC se desactivó en el Paso 9.**
+
 ## E · Errores tipados
 
 | Error | Cuándo | Estado resultante |
@@ -410,7 +475,9 @@ ya las cuenta en vez de saltárselas. Lo que este paso promete es que **no crezc
 | Un documento agota los 3 intentos desde `DESCARGANDO` | `ERROR_DESCARGA` terminal por tope, con el motivo | Rastro y Cockpit |
 | Gemini responde con esquema correcto pero contenido incompleto | Se degrada como hoy: `ANALISIS_DIFERIDO_BOLETIN`, **sin puntuar en ninguna dirección** *(C6)* | Distintivo del Centinela |
 | Tesseract desaparece del equipo | `ocr_ausente` y modo diferido, como hoy | Healthcheck |
-| El cerrojo del rastro no se puede tomar | **Se escribe igual y se registra el hecho.** Un rastro con una línea rota es peor que uno con una línea rara, pero **perder el evento es peor que las dos cosas** | Rastro |
+| Dos hilos escriben en el rastro a la vez | **Se espera al cerrojo y se escribe igual.** El hecho se cuenta en `escrituras_contendidas`, un contador de módulo; **no se emite evento** *(sería la autorreferencia de H-60 dentro del único punto de escritura)* | El contador, legible desde `tools/` |
+| La rotación no puede renombrar el fichero | **Se reintenta bajo el cerrojo.** Hoy falla con `PermissionError` y lo traga un `except` que sólo imprime *(C2)*, así que el fichero crece sin límite en silencio | Rastro |
+| El rastro trae líneas ilegibles | **Se sirve en la respuesta del diagnóstico y no se escribe ningún evento** *(Operación 7)*. Escribirlo en el fichero del que se queja es lo que produjo H-60 | `rastro_lineas_ilegibles` en el Cockpit |
 
 ---
 
@@ -424,7 +491,8 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | `documento_varado_recuperado` | `lector` | `DEGRADADO` | Un documento se recoge desde `DESCARGANDO` |
 | `documento_varado_agotado` | `lector` | `DEGRADADO` | Agota los 3 intentos |
 | `llm_esquema_aplicado` | `analista` · `centinela` | `INFO` | Se envía una consulta, con qué esquema |
-| `rastro_escritura_contendida` | `rastro` | `INFO` | El cerrojo estaba tomado y hubo que esperar |
+| ~~`rastro_escritura_contendida`~~ | — | — | **Retirado en la v1.3.0 antes de existir.** Un evento sobre el hecho de escribir un evento, dentro del único punto de escritura, es la autorreferencia de H-60. Se sustituye por el contador `escrituras_contendidas` |
+| ~~`RASTRO_LEIDO_DEGRADADO`~~ | ~~`api`~~ | — | **Se deja de emitir en la v1.3.0** *(Operación 7)*. Nació en el Paso 9 para que un diagnóstico servido sobre un fichero con agujeros no fuera indistinguible de uno íntegro; el efecto real fue que **el diagnóstico se contara a sí mismo como avería** |
 
 ---
 
@@ -432,7 +500,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 
 | Artefacto | De | A | Motivo |
 |---|---|---|---|
-| Contrato del Paso 10 | — | **v1.0.0** | Este documento |
+| Contrato del Paso 10 | v1.2.0 | **v1.3.0** | H-55 resulta ser pérdida de eventos y no sólo roturas; la Operación 5 se amplía a la rotación; el evento de contención se retira; **entra la Operación 7 (H-60)** |
 | Esquema de base de datos | v8 | **v9** *(corregido en la v1.2.0)* | H-58 no añadió columnas —cambió **quién lee** un estado que ya existía—, y este contrato llegó a presumir de ello. **H-59 sí las necesita**: `boletines_alertas.intentos_analisis`, el tope que impide cambiar un agujero por un bucle |
 | `MANUAL.md` | — | **v1.0.0** | Nace en este paso |
 
@@ -449,7 +517,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | **10.A · Estado de partida** | 🟢 **Hecho.** Suite, regresiones recolectadas, cifras del README corregidas, H-58 catalogado, H-55 y H-56 diagnosticados | Ya verificado |
 | **10.B.1 · H-58** | Operaciones 1, 2 y 3 | `count(*) WHERE estado='DESCARGANDO'` = 0, y los 6 procesados en la corrida siguiente |
 | **10.B.2 · H-56** | Operación 4 | La regresión de la petición, más **una llamada real desde `tools/`** que confirme un dictamen completo |
-| **10.B.3 · H-55** | Operación 5 | N hilos → N líneas parseables, y el contador de rotas **no sube** tras una corrida real |
+| **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | N hilos → **N líneas contadas** y parseables; el contador de rotas **no sube** tras una corrida real; y **dos consultas seguidas al diagnóstico devuelven lo mismo** |
 | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | Ejecutarlos con doble clic, sin consola visible |
 | **10.D · Tesseract** | 🟡 **Instalado y verificado**; falta la corrida | Los 4 `OCR_DIFERIDO` pasan a procesados solos |
 | **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | Ninguna consola, Cockpit con datos, tarea disparando corrida real |
@@ -527,8 +595,10 @@ El paso se cierra cuando **los nueve** se cumplen:
    del llamador**, y falla si se vuelve a fijar un esquema único.
 4. **Una llamada real desde `tools/`** produce un dictamen completo del Centinela:
    `boletin_llm_succeeded` deja de ser 0 por primera vez en el proyecto.
-5. El contador de líneas rotas del rastro **no sube** tras una corrida real, y la regresión de N
-   hilos pasa.
+5. El contador de líneas rotas del rastro **no sube** tras una corrida real; la regresión de N
+   hilos pasa **contando N**, no sólo comprobando que lo que haya parsee *(con el defecto vivo
+   quedan 906 líneas de 960 y todas parsean)*; y **dos consultas seguidas al diagnóstico de la
+   prospección devuelven lo mismo** *(H-60)*.
 6. Los **4 documentos en `OCR_DIFERIDO`** se procesan solos en la corrida siguiente.
 7. **El despertador y la preparación de un equipo nuevo se ejecutan con doble clic**, sin consola.
 8. **Verificación C7**: el `.vbs` de verdad, sin ninguna consola a la vista, Cockpit con datos, y

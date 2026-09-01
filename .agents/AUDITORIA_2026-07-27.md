@@ -2595,6 +2595,52 @@ hilos en cada petición»*—. `registrar_evento()` abre en modo `"a"`, escribe 
 > basta un cerrojo de módulo alrededor del append en `src/rastro.py`. La regresión que lo prueba
 > es directa: N hilos escribiendo a la vez deben dejar N líneas parseables.
 
+> 🚨 **Ampliación medida el 2026-09-01, y cambia el enunciado del hallazgo: el defecto no parte
+> líneas — PIERDE EVENTOS ENTEROS. Las líneas partidas son la parte visible, y es la pequeña.**
+>
+> Ejercitando `registrar_evento()` directamente contra un fichero temporal, con una barrera para
+> que los hilos arranquen a la vez:
+>
+> | Escenario | Eventos emitidos | Líneas en el fichero | Partidas | **Perdidos** |
+> |---|---|---|---|---|
+> | **1 hilo** *(control)* | 960 | 960 | 0 | **0** |
+> | 16 hilos, vuelta 1 | 960 | 914 | 0 | **46 (4,8 %)** |
+> | 16 hilos, vuelta 2 | 960 | 909 | 2 | **53 (5,5 %)** |
+> | 16 hilos, vuelta 3 | 960 | 906 | 2 | **56 (5,8 %)** |
+> | 4 hilos | 240 | 237 | 0 | **3 (1,2 %)** |
+>
+> Los perdidos se cuentan por identidad, no por resta: cada evento lleva su `(hilo, n)` y se
+> comprueba cuáles no aparecen. **El control de un solo hilo sale perfecto**, así que el escritor
+> no tiene ningún defecto propio: lo que falla es exclusivamente la concurrencia.
+>
+> **Por qué esto no se había visto en dos diagnósticos.** Una línea partida **se ve** leyendo el
+> fichero; un evento que nunca llegó a escribirse **no deja hueco**. El lector del Paso 9 cuenta
+> lo ilegible porque es lo único contable, y por eso el daño conocido hasta hoy era el **0,26 %**
+> visible en vez del que hay. **Es la forma clásica de este dosier —*no rompen, callan*— aplicada
+> al fichero con el que se investiga todo lo demás.**
+>
+> **El mecanismo compatible** *(propuesto, no medido: lo medido son las pérdidas)*: en Windows el
+> modo `"a"` no garantiza que el «situarse al final» y el «escribir» sean un solo paso indivisible
+> entre hilos. Dos hilos que resuelven el mismo final de fichero escriben **uno encima del otro**,
+> y eso **pierde** en lugar de partir. Encaja con la proporción observada: muchas pérdidas y muy
+> pocas roturas.
+>
+> ⚠️ **Lo que NO se afirma: que en producción se pierda el 5 %.** El banco es sintético —16 hilos
+> con barrera— y el pool de la API es más pequeño y con peticiones repartidas. Lo que sí consta es
+> que **la carrera ocurre en producción**, porque las 19 líneas partidas del fichero real son su
+> huella, y que cuando ocurre **el resultado más probable no es una línea rota sino un evento que
+> desaparece**. La tasa real es desconocida y no hay forma de medirla hacia atrás.
+>
+> 📏 **Y esto obliga a leer la verificación del bloque 10.B.3 al pie de la letra.** El contrato
+> pide *«N hilos → N líneas parseables»*: hay que **contar N**, no sólo comprobar que lo que haya
+> parsee. Con el defecto vivo, el banco de 16 hilos deja 906 líneas de 960 **y todas parsean**:
+> una prueba que sólo mirase la parseabilidad daría verde sobre el defecto entero.
+>
+> 🔑 **Consecuencia para la Regla 3 y para el propio Paso 9.** `src/rastro.py` se abre declarando
+> *«ninguna línea desaparece en silencio»*. Es cierto para lo que llega al fichero y falso para lo
+> que no llega, y **la Regla 3 exige registro determinista**: un rastro que pierde eventos bajo
+> carga no lo es. La reparación sigue siendo la misma y sigue siendo barata —un cerrojo de módulo—
+> pero **deja de ser cosmética**.
 ---
 
 ## Hallazgo de la reparación de H-45 — 2026-08-27 (Capa 10, Paso 9, bloque E)
@@ -3001,6 +3047,132 @@ de desaparecer *(el umbral configurado es 30)*.
 
 ---
 
+## Hallazgo de abrir la herramienta un día cualquiera — 2026-09-01 (Capa 10, Paso 10)
+
+### H-60 · El diagnóstico de la prospección cuenta su propio evento como una avería de la corrida 🔴 ABIERTO (2026-09-01)
+
+**Detectado el 2026-09-01 sin buscarlo**, abriendo el Cockpit por la mañana: la cabecera decía
+**«Al día, con 2 avisos»** sobre la corrida 23. **La corrida 23 no tuvo ni una incidencia.**
+
+El texto emergente, tal cual salió en pantalla:
+
+```
+La prospección nº 23 terminó, pero 2 cosas no se pudieron hacer.
+
+· api: RASTRO_LEIDO_DEGRADADO  (×2)
+
+Último registro: LANZADOR_PIPELINE_COMPLETADO (01 sept 2026)
+
+Aviso: el registro de auditoría tiene 19 líneas ilegibles.
+```
+
+Lo que la corrida 23 hizo de verdad, según su propia fila: **`COMPLETED`**, **`errores = 0`**, 10
+lotes evaluados, 7 alertas generadas, ventana `2026-09-01T07:27:37Z → 07:28:47Z`. Y su último
+registro es su propio cierre limpio, `LANZADOR_PIPELINE_COMPLETADO`. **No hay avería que contar.**
+
+#### El mecanismo, medido y no deducido
+
+Los dos eventos `DEGRADADO` que el distintivo cuenta **los escribió la propia pantalla**:
+
+| | |
+|---|---|
+| Quién los emite | `src/api/routers/admin.py:512-519`, dentro de `GET /admin/prospeccion/diagnostico` |
+| Cuándo | Siempre que el rastro traiga líneas ilegibles — es decir, **hoy siempre** |
+| Dónde los escribe | En `data/pipeline.jsonl`, **el mismo fichero del que se queja** |
+| Quién los vuelve a leer | `src/diagnostico.py:132-142`, que recoge todo evento `DEGRADADO` de la ventana de la corrida |
+| Qué los convierte en avería | La sección E.1 del `CONTRATO_PASO_9.md`: `COMPLETED` + ≥1 evento `DEGRADADO` en la corrida ⇒ `COMPLETADA_CON_DEGRADACION` |
+
+**El bucle está cerrado**: el canal de diagnóstico deja constancia de que el fichero está sucio
+escribiendo **en ese fichero**, y el diagnóstico siguiente lee esa constancia y la atribuye a la
+corrida que le tocara estar en marcha. **El termómetro se mide a sí mismo y publica el resultado
+como fiebre del paciente.**
+
+**Reproducción exacta** (`data/pipeline.jsonl`, 2026-09-01):
+
+| Evento | Instante | ¿Dentro de la ventana de la 23? |
+|---|---|---|
+| `RASTRO_LEIDO_DEGRADADO` | `07:27:38Z` | **sí** — un segundo después del arranque |
+| `RASTRO_LEIDO_DEGRADADO` | `07:28:39Z` | **sí** — ocho segundos antes del cierre |
+| `RASTRO_LEIDO_DEGRADADO` | `07:29:39Z` | no |
+| `RASTRO_LEIDO_DEGRADADO` | `07:32:03Z` | no |
+
+```bash
+python -c "import sqlite3;from src.diagnostico import diagnosticar;c=sqlite3.connect('file:data/licitaciones.db?mode=ro',uri=True);c.row_factory=sqlite3.Row;f=dict(c.execute('select * from ejecuciones order by id desc limit 1').fetchone());print(diagnosticar(f,ruta_rastro='data/pipeline.jsonl'))"
+```
+
+> 🔑 **La cifra no mide la corrida: mide al observador.** Cada llamada al canal de diagnóstico
+> deja un evento, así que **«2 cosas no se pudieron hacer» significa «alguien miró la pantalla dos
+> veces mientras la corrida estaba en marcha»**. Es la única variable de la que depende ese número.
+> Y el sondeo lo empeora por diseño: `useApiQueries.ts:43` refresca **cada 5 segundos mientras el
+> estado es `EN_CURSO`** y cada 60 el resto del tiempo, de modo que una corrida de tres minutos
+> mirada desde la pantalla anunciaría del orden de **36 «cosas que no se pudieron hacer»**. *(Esto
+> último es una predicción leída del código, no una medición: lo observado son los 2 de la corrida
+> 23, con el sondeo lento.)*
+
+#### Por qué NO se cierra solo al reparar H-55
+
+Es la parte que hay que leer despacio, porque la intuición dice lo contrario.
+
+`rastro_degradado` se calcula como `lineas_ilegibles > 0` **sobre el fichero entero**
+(`src/diagnostico.py:157`), no sobre la ventana de la corrida — y así está declarado a propósito
+en el docstring del campo. La Operación 5 del `CONTRATO_PASO_10.md` promete que las líneas rotas
+**no crezcan**, y dice con todas las letras que **las ya rotas no se tocan**, porque borrarlas
+sería destruir rastro.
+
+**Conclusión: las 19 líneas partidas seguirán ahí para siempre**, `rastro_degradado` seguirá
+valiendo `True` para siempre, la API seguirá emitiendo `RASTRO_LEIDO_DEGRADADO` en cada consulta
+para siempre, y el distintivo seguirá en ámbar para siempre. **H-60 sobrevive a H-55 intacto**, y
+hay que repararlo por su cuenta.
+
+#### Lo que este hallazgo NO es
+
+* **No contamina datos.** La corrida es correcta, la base es correcta y el `motivo` que se muestra
+  es cierto en su literalidad: hubo dos eventos degradados en la ventana. Lo que falla es la
+  **atribución**, no la medición.
+* **No es un defecto del `ProspeccionIndicator`.** La pantalla pinta fielmente lo que se le sirve;
+  el agrupamiento `(×2)` que añadió el Paso 9 funciona como debe. El defecto está en el criterio
+  de qué entra en `degradaciones`.
+* **No es H-55.** H-55 es que el fichero se rompe al escribirlo. H-60 es que **quien lo lee escribe
+  en él**, y se lee a sí mismo. Comparten fichero y nada más.
+
+> ⚠️ **Y hay un daño de segundo orden que es el que de verdad importa: un distintivo que avisa
+> siempre deja de avisar.** El Paso 9 existió para que la cabecera dejara de decir «Datos al día»
+> en verde sobre corridas ciegas *(H-45)*. Si ahora dice «con avisos» en ámbar todos los días
+> pase lo que pase, se habrá cambiado una mentira cómoda por un ruido constante, y el día que el
+> Centinela vuelva a quedarse ciego **nadie mirará el distintivo**. Es exactamente el motivo por
+> el que el DOGC se desactivó en el Paso 9: *«una degradación que saltaba 26 de 27 veces habría
+> dejado el distintivo nuevo diciendo "con avisos" a perpetuidad»*. **La misma trampa, entrando
+> esta vez por la puerta de atrás.**
+
+#### Un defecto menor que aparece de camino
+
+`Degradacion.detalle` sale **vacío** para estos eventos: `src/diagnostico.py:136-137` busca
+`error`, `motivo` o `reason` en los datos, y este evento trae `lineas_ilegibles` y `legible`. Por
+eso el texto emergente sólo puede enseñar el nombre técnico del evento, `RASTRO_LEIDO_DEGRADADO`,
+que no significa nada para quien lo lee. **No se repara por su cuenta**: si H-60 se cierra sacando
+este evento de las degradaciones, el punto deja de ejecutarse.
+
+#### Cómo se repara *(decidido por dirección el 2026-09-01)*
+
+**Asignado al bloque 10.B.3 como Operación 7**, junto a H-55: mismo fichero, mismo asunto.
+De los tres caminos que se estudiaron se toma **el B con el matiz del A**, y se descarta el C.
+
+| | Qué haría | Qué cuesta |
+|---|---|---|
+| **A · Que el diagnóstico no cuente eventos del componente `api`** | Las degradaciones son de la corrida, y la corrida son las capas 3 a 7. Un evento escrito por la pantalla nunca es una avería de la prospección | Es una lista de exclusión: hay que declarar el criterio, no colarlo. Y `api` **sí** puede tener degradaciones legítimas |
+| **B · Que el aviso del rastro no se escriba en el rastro** | Corta el bucle en su origen: el hecho se sirve en el propio cuerpo de la respuesta —donde ya viaja, en `rastro_lineas_ilegibles`— en vez de emitir un evento | Pierde la constancia histórica que la sección I del `CONTRATO_PASO_9.md` pedía a propósito |
+| **C · Que la degradación se atribuya por `run_id`, no por ventana temporal** | Es la atribución correcta de verdad: el evento de la API declara `run_id: null`, o sea *«no sé de qué corrida soy»*, y hoy se le asigna una por coincidir en el reloj | El más caro y el que más alcance tiene: la mayoría de los eventos históricos no declaran `run_id`, y el filtro por ventana existe precisamente para eso *(`src/rastro.py:207-209`)* |
+
+> 📌 **La recomendación de quien lo detecta es la B, y con un matiz de la A.** La B ataca la causa
+> —un canal de diagnóstico no debe escribir en el canal que diagnostica— y no toca ni la máquina
+> de estados ni el lector. El matiz: aunque se aplique la B, **un evento del componente `api`
+> seguirá pudiendo colarse** en la ventana de una corrida el día que la API emita cualquier otra
+> degradación, así que la A no sobra: cierra la familia entera en vez de este caso. La C es la
+> reparación conceptualmente correcta y **no procede hoy**: exige que los escritores declaren
+> `run_id`, que es trabajo del tamaño de un paso, no de un bloque.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
@@ -3040,4 +3212,5 @@ de desaparecer *(el umbral configurado es 30)*.
 | 2026-08-17 | **La precondición del Paso 6 es el cerrojo de EJECUCIÓN, no el de fichero** | El contrato v1.0.0 señalaba `db_lock()`, que se toma y se suelta en cada escritura: durante una corrida de minutos ese fichero está libre la mayor parte del tiempo, así que la comprobación se habría ejecutado siempre sin detectar casi nunca la corrida concurrente que dice impedir. El que abarca la corrida entera —y por tanto el que responde a "¿puedo prospectar?"— es el cerrojo lógico de la tabla `ejecuciones`. El estado del cerrojo de fichero se conserva como **contexto de diagnóstico**, nunca como criterio. Contrato corregido a v1.1.0, sección F. |
 | 2026-08-17 | **H-40 se repara dentro del Paso 6, con esquema v8** | Mismo precedente que H-37 en el Paso 2: el Paso 6 es literalmente el sitio donde se comprueba el cerrojo antes de prospectar, y sin la reparación el código `30` mentiría —anunciaría una omisión deliberada sobre el cadáver de una corrida muerta—. Se descartó la alternativa de que el lanzador escribiera su propio `pipeline.pid`, que evitaba tocar la Capa 3 pero sólo conocería las corridas que arrancó él: una lanzada a mano no dejaría marca y el lanzador se lanzaría encima. **Ante la duda se respeta el cerrojo**: sin PID anotado se conserva la regla de las seis horas. |
 | 2026-08-17 | **Hasta la demo, los datos de la base son material de prueba y no un activo** | Mientras el proyecto sea una beta, lo valioso es **ejercitar el ecosistema y detectar defectos**, no conservar registros: se puede ejecutar el pipeline real contra las fuentes públicas cuantas veces haga falta, y perder datos por el camino es aceptable **siempre que se sepa por qué se perdieron**. Lo inaceptable es un fallo que no se controla. **La decisión caduca en cuanto el sistema entre en demo o en uso operativo**, momento para el que la idea es haber atajado ya lo que hoy puede costar datos. No relaja ni una línea del código: la memoria comercial sigue sin purgarse jamás y la purga sigue exigiendo previsualización y confirmación explícita. Lo que cambia es cuánto duele perder la base de pruebas, no lo que el sistema tiene permitido hacer. |
+| 2026-09-01 | **H-60 se repara dentro del bloque 10.B.3, no en un paso propio** | Es el mismo fichero y el mismo asunto que H-55, y una tarde de trabajo. Y sobre todo: **H-60 no se cierra al reparar H-55** —las líneas ya rotas no se tocan, así que el aviso ámbar seguiría saltando cada día—, de modo que cerrar el bloque sin él lo dejaría técnicamente correcto y **operativamente inútil**: quien mira la pantalla vería exactamente lo mismo que antes. Se toma el camino **B** *(que el aviso del rastro no se escriba en el rastro)* con el matiz del **A** *(una degradación del componente `api` no es una avería de la corrida)*, y se descarta el **C** *(atribuir por `run_id`)*, que es la reparación conceptualmente correcta pero exige que todos los escritores declaren su corrida: trabajo del tamaño de un paso. |
 | 2026-08-17 | **El resultado del pipeline se lee de la base, no del código de salida del proceso** | `main.py` sale con `0` cuando falla a mitad (`main.py:392`), que es el modo de fallo más frecuente: traducir sólo el código del proceso dejaría el `31` sin emitirse nunca y el Programador registraría noches sanas sobre corridas rotas. `finalizar_ejecucion()` ya escribe `COMPLETED`/`FAILED` en la fila de la corrida, así que el lanzador anota el último `id` antes de invocar y consulta el estado al terminar. Es **medir el efecto en vez de dar por bueno que se ejecutó**, aplicado a los códigos de salida, y no toca una línea de la Capa 9. |

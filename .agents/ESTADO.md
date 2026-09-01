@@ -21,6 +21,34 @@
 bloques 10.A, 10.B.1, 10.B.2 y 10.D están cerrados.** La suite pasa de 688 a **742/742** y el
 esquema de base de datos de v8 a **v9**.
 
+### 🆕 Añadido el 2026-09-01 — un hallazgo nuevo, y nada codificado
+
+Al abrir el Cockpit por la mañana, el distintivo decía **«Al día, con 2 avisos»** sobre la
+corrida 23, que había terminado **sin una sola incidencia**. De ahí salen dos cosas, las dos ya
+escritas con su evidencia en [`AUDITORIA_2026-07-27.md`](AUDITORIA_2026-07-27.md):
+
+* **H-60, nuevo.** El canal de diagnóstico **escribe en el fichero que diagnostica**: cada
+  consulta deja un `RASTRO_LEIDO_DEGRADADO` en `pipeline.jsonl`, y la consulta siguiente lo lee
+  y se lo atribuye a la corrida que estuviera en marcha. **La cifra de avisos no mide la
+  corrida: mide cuántas veces se miró la pantalla mientras corría.**
+* **H-55 cambia de enunciado, y a peor.** Ejercitando el escritor con 16 hilos, tres vueltas:
+  **se pierde entre el 4,8 % y el 5,8 % de los eventos**, y sólo 0–2 líneas quedan partidas. Las
+  líneas rotas eran la parte visible, y es la pequeña. **Un evento que no llegó a escribirse no
+  deja hueco**, y por eso dos diagnósticos anteriores no lo vieron.
+
+> ⚠️ **Lo que hay que saber antes de tocar el bloque 10.B.3: H-60 NO se cierra al reparar H-55.**
+> Las 19 líneas ya rotas no se tocan —lo dice la Operación 5 del contrato—, así que
+> `rastro_degradado` seguirá valiendo `True` para siempre, la API seguirá emitiendo su evento y
+> **el distintivo seguirá en ámbar todos los días pase lo que pase**. Son dos reparaciones, no
+> una. Y un distintivo que avisa siempre deja de avisar, que es justo lo que el Paso 9 vino a
+> quitar.
+
+| | |
+|---|---|
+| **Suite** | **742/742** verificada hoy sin tocar nada *(114 s)* |
+| **Plan del bloque 10.B.3** | [`PLAN_10B3.md`](PLAN_10B3.md) — **validado por dirección el 2026-09-01**, con H-60 dentro. Contrato subido a **v1.3.0** |
+| **Código tocado** | **Ninguno.** Sólo documentación |
+
 ### 🎯 Lo primero que hay que saber: el paso ya no es el que estaba escrito
 
 Dirección tomó las **cuatro decisiones** que el `MANUAL.md` necesitaba, y la cuarta invirtió el
@@ -62,17 +90,18 @@ agotados, que es su terminal legítimo)*.
 
 | Bloque | Qué es | Estado |
 |---|---|---|
-| **10.B.3** | **H-55**, el cerrojo del rastro | 🔜 **Es lo siguiente.** Diagnosticado y es el más pequeño de los tres |
+| **10.B.3** | **H-55 y H-60**, el cerrojo del rastro y el diagnóstico que se cuenta a sí mismo | 🔜 **Es lo siguiente, y está listo para empezar.** Plan [`PLAN_10B3.md`](PLAN_10B3.md) **validado** el 2026-09-01; contrato en **v1.3.0**, Operaciones 5 y 7 |
 | **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🔴 Sin empezar. Lo exige la decisión D.1 |
 | **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🔴 Sin empezar. **Es la que de verdad cierra la capa** |
 | **10.F** | **`MANUAL.md`**, en catalán y sin terminal | 🔴 Sin empezar. Índice propuesto en el README |
 | **10.G** | Cierre de la capa y del recorrido | 🔴 Sin empezar |
 
-### 🔴 Hallazgos abiertos: quedan tres, y ninguno de los dos que se veían
+### 🔴 Hallazgos abiertos: quedan cuatro desde el 2026-09-01
 
 | Hallazgo | Estado | Qué hacer |
 |---|---|---|
-| **H-55** · Líneas partidas en el rastro | 🟠 **Diagnosticado**, 19 de 6.423 y creciendo | **Bloque 10.B.3.** Un cerrojo de módulo alrededor del append en `src/rastro.py` |
+| **H-60** · El diagnóstico cuenta su propio evento como avería de la corrida | 🔴 **Abierto** (2026-09-01) | **Bloque 10.B.3, Operación 7** *(decidido el 2026-09-01)*. Camino B + matiz A. **No se cierra al reparar H-55** |
+| **H-55** · El rastro **pierde eventos** bajo concurrencia | 🟠 **Ampliado el 2026-09-01**: además de partir líneas —19 de 7.344—, pierde **4,8–5,8 %** de los eventos con 16 hilos | **Bloque 10.B.3.** Un cerrojo de módulo alrededor del append en `src/rastro.py` |
 | **H-41** · Crash nativo | 🟠 **Acotado**, sin reaparecer | **Observar.** 8+ corridas `COMPLETED` con 0 errores y sin migaja `documento_en_curso.json`. Ocho corridas no cierran un crash intermitente |
 | **H-52** · OneDrive entre dos equipos | 🔴 Diferido por dirección | **No tocar.** Mitigado con el despertador en un solo equipo |
 
@@ -106,6 +135,13 @@ preguntarse **quién quedó atrapado mientras estaba roto** y si alguien volver�
   parches con emoji van en un fichero aparte, escritos con la herramienta de ficheros.
 * **La consola de Windows es cp1252**: `sys.stdout.reconfigure(errors="replace")` en toda
   herramienta que imprima.
+* **Y la ENTRADA también**: un script de Python pasado por la tubería —`python - <<EOF`—
+  llega decodificado en cp1252, así que **una tilde dentro de un literal de búsqueda no
+  sobrevive al viaje** y el ancla no encuentra nada. Los anclajes de un parche se eligen en
+  ASCII puro, o el script se escribe a un fichero y se ejecuta.
+* **Los ficheros de `.agents/` son CRLF.** Insertar un bloque con `\n` deja saltos mezclados
+  y ensucia el diff sin que se vea. Se lee en binario, se detecta el salto y se escribe con el
+  mismo — y se comprueba con `git diff --numstat` que sólo hay adiciones.
 * **Validar una regresión mutando, no revirtiendo.** Revertir no prueba nada cuando el símbolo no
   existía antes: media suite caería por `ImportError` en vez de por el defecto. Las 9 mutaciones
   de la sesión cayeron exactamente donde debían.
