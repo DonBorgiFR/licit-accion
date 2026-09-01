@@ -11,13 +11,18 @@ al LLM: lo que depende de datos reales se verifica aquí, a mano y cuando se qui
 1. **La conservación**: toda línea no vacía o se tradujo a un evento o se contó como ilegible.
    Ninguna se pierde por el camino. Es la invariante que H-39 incumplía.
 2. **Que las cuatro gramáticas siguen ahí** y el lector las reconoce todas.
-3. **Que aparecen las líneas partidas de H-55** en vez de desaparecer calladamente.
+3. **Que las líneas partidas de H-55 no crecen.** Hasta el 2026-09-01 este criterio sólo
+   exigía que no desaparecieran, porque el defecto seguía vivo y sólo podía ir a más. Reparado
+   el bloque 10.B.3, la exigencia se invierte: **19 y ni una más**. Si sube, o la reparación no
+   funciona —y entonces la carrera también es entre procesos, no sólo entre hilos, y hace falta
+   un cerrojo del sistema operativo— o queda un proceso anterior a la reparación escribiendo.
 4. **Que la última corrida se puede reconstruir**, incluido el `boletin_fetch_started` de la
    gramática D —la minoritaria, la que acotó H-41— atribuido por ventana temporal.
 
-Las cifras de la línea base son las medidas el 2026-08-27 y están escritas en la sección B del
-contrato. **El fichero crece**, así que se informa de la deriva en vez de exigir igualdad: lo
-que sí se exige es que nada de lo medido entonces haya desaparecido.
+Las cifras de la línea base se midieron el **2026-09-01**, al cerrar el bloque 10.B.3. **El
+fichero crece**, así que de casi todo se informa la deriva en vez de exigir igualdad: lo que sí
+se exige es que nada de lo medido entonces haya desaparecido, **y que las ilegibles se queden
+exactamente donde están**.
 
     python tools/verificar_rastro_real.py
 """
@@ -37,8 +42,11 @@ sys.stdout.reconfigure(errors="replace")
 from src import ruta_datos  # noqa: E402
 from src.rastro import EstadoEvento, Gramatica, a_instante, leer_rastro  # noqa: E402
 
-# Línea base medida el 2026-08-27 (sección B del contrato del Paso 9).
-BASE = {"lineas": 4768, "ilegibles": 14, "A": 2306, "B": 1965, "C": 378, "D": 105, "nombres": 84}
+# Línea base medida el 2026-09-01, al reparar H-55 (bloque 10.B.3). La anterior era del
+# 2026-08-27 —4.768 líneas y 14 ilegibles— y se quedó tres semanas atrás: el fichero había
+# crecido un 55 % y sus cifras ya no servían de referencia para nada.
+BASE = {"lineas": 7395, "ilegibles": 19, "A": 2306, "B": 1965, "C": 378, "D": 105,
+        "CANONICA": 2622, "nombres": 98}
 
 
 def encabezado(texto):
@@ -127,8 +135,11 @@ def main() -> int:
         ("Conservación: ninguna línea se pierde", conserva),
         ("Las cuatro gramáticas siguen reconociéndose",
          all(resultado.gramaticas.get(g, 0) > 0 for g in ("A", "B", "C", "D"))),
-        ("Las líneas partidas de H-55 se cuentan, no se saltan",
-         resultado.lineas_ilegibles >= BASE["ilegibles"]),
+        # El criterio de la reparación, no el del diagnóstico: **congeladas en 19**. Las ya
+        # rotas no se tocan —borrarlas sería destruir rastro—, así que lo que se vigila es que
+        # no aparezca ninguna nueva.
+        (f"Las líneas partidas de H-55 siguen congeladas en {BASE['ilegibles']}",
+         resultado.lineas_ilegibles == BASE["ilegibles"]),
         ("Se reconstruye el `boletin_fetch_started` de la gramática D",
          any(e.evento == "boletin_fetch_started" for e in resultado.eventos)),
         ("El catálogo resuelve algún DEGRADADO histórico",

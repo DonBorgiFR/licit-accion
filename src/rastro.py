@@ -41,7 +41,9 @@ Cuatro decisiones de diseño gobiernan el fichero, y ninguna es estilística:
 import json
 import os
 import sys
+import threading
 from collections import Counter, deque
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -452,7 +454,52 @@ def a_instante(valor: Any) -> Optional[datetime]:
 
 # ==============================================================================
 # Operación 2 — Escribir un evento canónico (bloque 9.C)
+# Operación 5 — Escribir una línea entera o ninguna, y no perder ninguna (H-55, bloque 10.B.3)
 # ==============================================================================
+
+#: El cerrojo del rastro (H-55). **Uno solo para todo el proceso**, y no uno por fichero: los
+#: destinos distintos son las rutas temporales de las pruebas, la escritura dura menos de un
+#: milisegundo, y un diccionario de cerrojos por ruta crecería sin nadie que lo vaciara.
+_CERROJO = threading.Lock()
+
+#: Cuántas veces hubo que esperar al cerrojo. **Es un contador, no un evento, y eso se decidió
+#: con un caso delante**: escribir en el rastro un evento sobre el hecho de escribir en el rastro
+#: es la autorreferencia que produjo H-60, y aquí ocurriría dentro del único punto de escritura
+#: del proyecto — justo cuando más carga hay. Se lee desde `tools/`, no desde el fichero.
+escrituras_contendidas = 0
+
+
+@contextmanager
+def cerrojo_rastro():
+    """Serializa el acceso al fichero de rastro dentro de este proceso.
+
+    **Por qué existe** *(H-55, medido el 2026-09-01)*. `registrar_evento()` abre en modo `"a"`,
+    escribe y cierra, y ese trío **no es atómico entre hilos** en Windows: dos hilos que resuelven
+    el mismo final de fichero escriben uno encima del otro. El resultado medido con 16 hilos es
+    que **se pierde entre el 4,8 % y el 5,8 % de los eventos**, y sólo 0-2 líneas quedan partidas.
+    Las roturas eran el síntoma catalogado; la pérdida es el daño.
+
+    **Alcance declarado: sólo intra-proceso.** No promete nada sobre dos procesos escribiendo a la
+    vez, y no hace falta: de las 19 líneas partidas del rastro real, **16 se produjeron sin
+    ninguna corrida activa**, es decir sin un segundo proceso al que culpar. Si el contador de
+    rotas volviera a subir tras esta reparación, la apuesta era falsa y haría falta un cerrojo de
+    fichero del sistema operativo (`msvcrt.locking`).
+
+    **Lo que este contexto NO debe abarcar nunca es la validación de un evento.**
+    `registrar_evento()` lanza `EventoInvalido` antes de escribir, y `registrar_evento_tolerante()`
+    lo captura para **volver a llamar** al escritor con un evento de rechazo. Si el cerrojo
+    abarcara la validación, esa segunda llamada se encontraría con que su propia pila ya lo tiene
+    tomado y **el proceso se quedaría clavado**.
+    """
+    global escrituras_contendidas
+    if not _CERROJO.acquire(blocking=False):
+        _CERROJO.acquire()
+        # Dentro del cerrojo, así que la suma no necesita protección propia.
+        escrituras_contendidas += 1
+    try:
+        yield
+    finally:
+        _CERROJO.release()
 
 
 class EventoInvalido(ValueError):
@@ -516,11 +563,17 @@ def registrar_evento(
         directorio = os.path.dirname(os.path.abspath(destino))
         if directorio:
             os.makedirs(directorio, exist_ok=True)
-        with open(destino, "a", encoding="utf-8") as fichero:
-            # `default=str` para que un valor no serializable —una fecha, un objeto del
-            # dominio— no convierta un evento en una excepción dentro del pipeline. El rastro
-            # registra lo que pasó; no es el sitio donde validar los tipos de negocio.
-            fichero.write(json.dumps(entrada, ensure_ascii=False, default=str) + "\n")
+        # `default=str` para que un valor no serializable —una fecha, un objeto del dominio— no
+        # convierta un evento en una excepción dentro del pipeline. El rastro registra lo que
+        # pasó; no es el sitio donde validar los tipos de negocio.
+        #
+        # Se serializa **fuera** del cerrojo: dentro sólo va lo que tiene que ser indivisible,
+        # que es abrir, escribir y cerrar. Serializar dentro alargaría la espera de los demás
+        # hilos sin ganar nada.
+        linea = json.dumps(entrada, ensure_ascii=False, default=str) + "\n"
+        with cerrojo_rastro():
+            with open(destino, "a", encoding="utf-8") as fichero:
+                fichero.write(linea)
     except (OSError, TypeError, ValueError) as exc:
         print(f"[!] No se pudo registrar el evento {evento}: {exc}", file=sys.stderr)
 

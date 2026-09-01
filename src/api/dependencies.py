@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Generator, Dict, Any, Optional
 
 from src import ruta_datos
-from src.rastro import registrar_evento_tolerante
+from src.rastro import cerrojo_rastro, registrar_evento_tolerante
 from src.memoria import Memoria, PROJECT_ROOT
 
 
@@ -44,30 +44,57 @@ class WALModeNotSupportedError(APIDependencyError):
 def rotar_log_si_excede_tamano(log_path: str, max_bytes: int = 10 * 1024 * 1024, max_archivos: int = 5) -> None:
     """
     Rota el archivo pipeline.jsonl si supera max_bytes (defecto 10MB) y purga logs antiguos manteniendo max_archivos.
+
+    **La rotación se hace bajo el cerrojo del rastro** *(H-55, bloque 10.B.3)*. Medido el
+    2026-09-01: `os.rename()` sobre un fichero que otro hilo tiene abierto lanza
+    `PermissionError` en Windows, y este `except` amplio lo tragaba imprimiendo por consola. Con
+    el Cockpit abierto —que es cuando hay varios hilos escribiendo— **la rotación fallaba en
+    silencio y el fichero crecía sin límite**: la Convención C2 incumplida dentro de la propia
+    rotación. Tomando el mismo cerrojo que la escritura, ningún hilo tiene el fichero abierto
+    mientras se renombra.
+
+    **La comprobación de tamaño se hace dos veces, y no es descuido.** La primera, fuera del
+    cerrojo, es la barata: esta función se invoca en **cada** evento y tomar el cerrojo siempre
+    duplicaría su coste para no hacer nada el 99,99 % de las veces. La segunda, ya dentro,
+    impide que dos hilos que pasaron a la vez el primer filtro roten uno detrás de otro y el
+    segundo archive un fichero recién nacido.
     """
     if not os.path.exists(log_path):
         return
     try:
-        if os.path.getsize(log_path) >= max_bytes:
+        if os.path.getsize(log_path) < max_bytes:
+            return
+
+        with cerrojo_rastro():
+            if not os.path.exists(log_path) or os.path.getsize(log_path) < max_bytes:
+                return
+
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             log_dir = os.path.dirname(os.path.abspath(log_path))
             base_name = os.path.basename(log_path).replace(".jsonl", "")
             archived_path = os.path.join(log_dir, f"{base_name}_{timestamp}.jsonl")
-            
+
             os.rename(log_path, archived_path)
-            
+
             archivos = sorted([
                 os.path.join(log_dir, f) for f in os.listdir(log_dir)
                 if f.startswith(f"{base_name}_") and f.endswith(".jsonl")
             ], key=os.path.getmtime)
-            
+
             while len(archivos) > max_archivos:
                 viejo = archivos.pop(0)
                 try:
                     os.remove(viejo)
                 except Exception:
                     pass
-    except Exception as e:
+    except OSError as e:
+        # **Sólo los fallos previstos del sistema de ficheros** —renombrar, listar, borrar— se
+        # degradan a un aviso por consola. Lo demás se propaga a propósito.
+        #
+        # Aquí ponía `except Exception`, y el 2026-09-01 se tragó un `NameError` de esta misma
+        # función: la rotación no ocurría y lo único que se veía eran miles de líneas iguales en
+        # la consola, indistinguibles del `PermissionError` legítimo que había un minuto antes.
+        # Es la Convención C2 aplicada a la pieza que menos se mira del proyecto.
         print(f"[!] Error en rotación defensiva de logs JSONL: {e}")
 
 

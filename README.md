@@ -23,11 +23,18 @@
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
 > **3 (identidad y foco)** están cerrados, con la suite en **742/742** *(2026-08-27)*. De
-> **59 hallazgos** catalogados, **56 están cerrados**. Quedan abiertos **tres**:
+> **60 hallazgos** catalogados, **56 están cerrados**. Quedan abiertos **cuatro**:
 >
-> * **H-55** — el rastro de auditoría tiene **19 líneas partidas y sigue partiéndose**. Contenido
->   *(el lector las cuenta en vez de saltarlas)* y **diagnosticado**: es una carrera entre hilos de
->   un mismo proceso, así que basta un cerrojo de módulo. **Es la tarea siguiente.**
+> * **H-55** — el rastro de auditoría **perdía eventos enteros**, no sólo partía líneas. Medido el
+>   2026-09-01 con 16 hilos: **se perdía entre el 4,8 % y el 5,8 % de los eventos**, con sólo 0-2
+>   líneas rotas. Las roturas eran la parte visible y era la pequeña — *un evento que nunca llegó a
+>   escribirse no deja hueco*, y por eso dos diagnósticos midieron sólo el 0,26 % contable.
+>   🟡 **Reparado el 2026-09-01** con un cerrojo de módulo *(bloque 10.B.3)*; **falta confirmarlo en
+>   una corrida real** antes de darlo por cerrado.
+> * 🆕 **H-60** — el diagnóstico de la prospección **se cuenta a sí mismo como avería**. El canal
+>   que lee el rastro deja un evento en el propio rastro, y la consulta siguiente se lo atribuye a
+>   la corrida que estuviera en marcha: la cifra de avisos del Cockpit **no mide la corrida, mide
+>   cuántas veces se miró la pantalla**. 🟡 **En reparación**, misma tarea que H-55.
 > * **H-41** — un crash nativo del pipeline sobre datos reales. **Acotado el 2026-08-25** —no
 >   ocurrió leyendo un pliego, sino descargando el feed del DOGC— y **sin reaparecer** en más de 8
 >   corridas. No se cierra: ocho corridas limpias no caracterizan un fallo intermitente.
@@ -1670,6 +1677,19 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
      lugar de saltárselas. Los **siete** puntos de escritura de las Capas 3 a 7 y la 10 emiten ya
      el esquema canónico, con `estado` obligatorio, un solo formato de fecha y la versión del
      esquema estampada en cada línea.
+
+   > 🔧 **Cómo opera la escritura del rastro desde el 2026-09-01** *(bloque 10.B.3)*. Los siete
+   > escritores del proyecto pasan por `registrar_evento()`, y esa función escribe ahora **bajo un
+   > cerrojo de módulo**: abrir, escribir y cerrar es indivisible dentro del proceso, de modo que
+   > dos hilos no pueden resolver el mismo final de fichero y pisarse. **La rotación a los 10 MB
+   > toma el mismo cerrojo** —antes fallaba con `PermissionError` cada vez que había alguien
+   > mirando el Cockpit, y el fallo se imprimía por consola sin que nadie lo viera, así que el
+   > fichero podía crecer sin límite—. El cerrojo **ciñe la escritura y no la validación**: un
+   > evento inválido se rechaza antes de tomarlo, porque el rechazo se registra con una segunda
+   > llamada al escritor y abarcar la validación clavaría el proceso. **Alcance declarado:
+   > intra-proceso.** Si el contador de líneas rotas volviera a subir, la carrera también sería
+   > entre procesos y haría falta un cerrojo del sistema operativo — se comprueba con
+   > `python tools/verificar_rastro_real.py`, que vigila que sigan **congeladas en 19**.
    * **Enterarse de que una corrida terminó sin poder mirar.** El estado
      `COMPLETADA_CON_DEGRADACION` separa *«terminó»* de *«terminó pudiendo hacerlo todo»*, y el
      distintivo de cabecera dice **qué** no se pudo hacer. Antes pintaba verde encima.
@@ -1767,7 +1787,8 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
     | 🆕 **H-58** · `DESCARGANDO` no lo lee nadie | Se escribe en `src/lector.py` y **no aparecía en ninguna consulta de recogida**. **6 pliegos atrapados** de la corrida 17 —PCA, PPT, quadre, memòria—, con `intentos = 0`, en una corrida que consta `COMPLETED` con `errores = 0` | 🟢 **CERRADO.** Al repararlo aparecieron **dos** defectos encadenados: una carpeta terminada en espacio que Windows no crea, y un `Future` que nadie recogía |
     | **H-56** · El análisis del Centinela nunca funcionó | `GeminiProvider` forzaba siempre el esquema del analista de licitaciones, y la factoría es la misma para los dos consumidores. **Intersección de campos: vacía.** No podía funcionar nunca | 🟢 **CERRADO.** Verificado contra el modelo real: dictamen completo, `modo_degradado` a `False` |
     | 🆕 **H-59** · `ANALISIS_DIFERIDO_BOLETIN` tampoco lo recoge nadie | Lo destapó verificar H-56: el motor ya funcionaba y **las 5 alertas del canal seguían sin dictamen**, porque el Centinela sólo analiza lo que acaba de ingerir. **Cuarta vez con la misma forma** | 🟢 **CERRADO.** Esquema **v9** con tope de reintentos, el consumidor que faltaba, y **la invariante deja de estar escrita y pasa a ejecutarse** |
-    | **H-55** · Líneas partidas en el rastro | Ya **18**, y creciendo. La línea 6251 parsea entera y la 6252 es la cola de otra: escritura concurrente desde el pool de hilos de la API | **Reparar** |
+    | **H-55** · El rastro **pierde eventos** | El enunciado era *«líneas partidas»* y se quedaba corto. Medido el 2026-09-01 con 16 hilos: **se pierde el 4,8-5,8 % de los eventos** y sólo 0-2 líneas quedan rotas. Carrera entre hilos del mismo proceso — **16 de las 19 roturas del fichero real se produjeron sin ninguna corrida activa**, o sea sin un segundo proceso al que culpar | 🟡 **Reparado**, falta la corrida real |
+    | 🆕 **H-60** · El diagnóstico se cuenta a sí mismo | El canal que lee el rastro escribe en el rastro. Sobre la corrida 23 —`COMPLETED`, `errores = 0`— el Cockpit anunciaba *«Al día, con 2 avisos»*, y los 2 avisos eran **sus propias consultas** | 🟡 **En reparación** con H-55 |
     | **H-53** · El OCR nunca ha funcionado | **Media cara ya estaba cerrada el 2026-08-25**: la consulta mira ya `OCR_DIFERIDO`. La otra media se cerró hoy: **Tesseract v5.5.3 instalado**, con `cat` y `spa`, y el Lector reporta ya `ocr_disponible` | 🟡 **Falta la corrida** que recupere los 4 diferidos |
     | **H-41** · Crash nativo | **8 corridas seguidas `COMPLETED` con 0 errores** y sin migaja `documento_en_curso.json`; 4 de ellas ya sin DOGC | **Observar**, no cerrar: 8 corridas no cierran un crash intermitente |
     | **H-52** · OneDrive entre dos equipos | Mitigado con el despertador en un solo equipo | **No tocar** |
@@ -1777,7 +1798,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
     | Bloque | Qué entrega | Por qué va aquí y no después |
     |---|---|---|
     | **10.A · Estado de partida verificado** | 🟢 **CERRADO.** Las 128 regresiones recolectadas, las cinco confirmadas una a una, y corregidas las cifras del README que ya no eran ciertas | Un manual escrito sobre cifras de papel hereda sus errores. En el Paso 9 el papel falló dos veces y lo corrigió el código |
-    | **10.B · Los arreglos** | 🟡 **Dos bloques de tres.** **10.B.1 · H-58** 🟢 *(eran dos defectos encadenados, no uno)*; **10.B.2 · H-56 + H-59** 🟢 *(el esquema lo pone ya el llamador, y las 5 alertas del canal tienen dictamen por primera vez)*; **10.B.3 · H-55** 🔴 *(un cerrojo alrededor del append del rastro)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y **cada uno destapó otro**: H-58 traía dos defectos encadenados, verificar H-56 destapó H-59, y la prueba escrita para que no hubiera un quinto caso encontró dos cosas más |
+    | **10.B · Los arreglos** | 🟡 **Dos bloques de tres.** **10.B.1 · H-58** 🟢 *(eran dos defectos encadenados, no uno)*; **10.B.2 · H-56 + H-59** 🟢 *(el esquema lo pone ya el llamador, y las 5 alertas del canal tienen dictamen por primera vez)*; **10.B.3 · H-55 + H-60** 🟡 *(el cerrojo del rastro, puesto y probado; falta la corrida real)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y **cada uno destapó otro**: H-58 traía dos defectos encadenados, verificar H-56 destapó H-59, y la prueba escrita para que no hubiera un quinto caso encontró dos cosas más |
     | **10.C · Cero terminal** | 🔴 **Pendiente.** Envoltorio de doble clic para el despertador y para la preparación de un equipo nuevo | Es lo que hace verdadera la decisión D.1. Sin esto, un manual sin terminal no podría cubrir su propio alcance |
     | **10.D · Tesseract** | 🟢 **CERRADO.** Instalado *(v5.5.3, `cat`+`spa`)* y **los 4 documentos que llevaban meses en `OCR_DIFERIDO` se recuperaron solos**: 88 páginas rasterizadas, 0 errores. `metodo_extraccion = 'tesseract'` aparece en la base por primera vez | Sólo verificable con una corrida posterior, así que se instaló pronto y se comprobó al final. **Cierra H-53** |
     | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | 🔴 **Pendiente.** Ejecutar el `.vbs` de verdad: ninguna consola a la vista, el Cockpit abriendo con datos, y la tarea programada disparando una corrida real | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal |
@@ -1840,7 +1861,11 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
   la ficha quedó sin corregir hasta el Paso 9.)*
 - `src/api/main.py`: montaje del bundle del Cockpit como estáticos y traslado del JSON de raíz. 🟢 Paso 4.
 - `frontend/src/components/ProspeccionIndicator.tsx`: estado de la prospección en la cabecera. 🟢 Paso 7, **reescrito en el Paso 9** sobre los nueve estados del diagnóstico.
-- `src/rastro.py`: el lector y el escritor canónicos del rastro. 🟢 Paso 9.
+- `src/rastro.py`: el lector y el escritor canónicos del rastro, **y su cerrojo**. 🟢 Paso 9,
+  **serializado en el Paso 10** *(bloque 10.B.3)*.
+- `tests/test_paso10_rastro_concurrente.py`: las 5 regresiones de la escritura concurrente.
+  🟡 **Paso 10**. **Cuentan** en vez de comprobar que lo escrito se lea: con el defecto vivo
+  quedaban 906 líneas de 960 **y todas parseaban**.
 - `src/diagnostico.py`: la máquina de estados del diagnóstico y el estado de las fuentes. 🟢 Paso 9.
 - `frontend/src/components/FuentesCentinela.tsx`: por qué el canal Centinela está como está. 🟢 Paso 9.
 - `tools/verificar_rastro_real.py`: el lector, medido contra el rastro de verdad. 🟢 Paso 9.
