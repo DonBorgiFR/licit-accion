@@ -509,15 +509,19 @@ def get_diagnostico_prospeccion(db: sqlite3.Connection = Depends(get_db)):
     ruta_rastro = os.path.join(os.path.dirname(memoria.db_path), "pipeline.jsonl")
     diagnostico = diagnosticar(items[0] if items else None, ruta_rastro=ruta_rastro)
 
-    if diagnostico.rastro_degradado or not diagnostico.rastro_legible:
-        # Evento del contrato (sección I). Sin él, un diagnóstico servido sobre un fichero con
-        # agujeros sería indistinguible de uno servido sobre un fichero íntegro.
-        trazabilidad_api.registrar_evento(
-            "RASTRO_LEIDO_DEGRADADO",
-            {"lineas_ilegibles": diagnostico.rastro_lineas_ilegibles,
-             "legible": diagnostico.rastro_legible},
-            estado="DEGRADADO",
-        )
+    # ⛔ **Aquí se emitía `RASTRO_LEIDO_DEGRADADO`, y se retiró el 2026-09-01 (H-60, Operación 7).**
+    #
+    # El evento nació en el Paso 9 con una intención correcta: que un diagnóstico servido sobre un
+    # fichero con agujeros no fuera indistinguible de uno servido sobre un fichero íntegro. Su
+    # efecto real fue otro. Se escribía **en el mismo `pipeline.jsonl` que se acababa de leer**, de
+    # modo que la consulta siguiente lo encontraba dentro de la ventana de la corrida en curso y se
+    # lo atribuía como avería suya. Sobre la corrida 23 —`COMPLETED`, `errores = 0`— el Cockpit
+    # anunciaba «Al día, con 2 avisos»; sobre la 25, mirada con insistencia, llegó a decir **49**.
+    # **La cifra no medía la corrida: medía cuántas veces se había mirado la pantalla.**
+    #
+    # El hecho no se pierde: viaja en `rastro_degradado` y `rastro_lineas_ilegibles` dentro de esta
+    # misma respuesta, que es donde el Cockpit ya lo leía. Lo que desaparece es la constancia que
+    # se convertía en avería ajena.
 
     trazabilidad_api.registrar_evento(
         "API_PROSPECCION_DIAGNOSTICO",

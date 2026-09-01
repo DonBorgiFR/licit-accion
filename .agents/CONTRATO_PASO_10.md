@@ -454,7 +454,7 @@ desaparezca ninguna más.
 | **Input** | Una consulta a `GET /admin/prospeccion/diagnostico` sobre un rastro con líneas ilegibles |
 | **Output** | El hecho servido **en el cuerpo de la respuesta**, en `rastro_lineas_ilegibles`, donde ya viajaba |
 | **Precondición** | Ninguna |
-| **Postcondición** | **Consultar el diagnóstico no altera el diagnóstico.** Dos consultas seguidas sobre la misma corrida devuelven lo mismo |
+| **Postcondición** | **Consultar el diagnóstico no altera el diagnóstico.** Dos consultas seguidas sobre la misma corrida devuelven lo mismo. 🟢 **Verificado el 2026-09-01**: tres consultas seguidas contra la API real devuelven lo mismo, y el distintivo pasa de *«Al día, con 49 avisos»* a **«Datos al día»** en verde |
 | **Side-effects** | **Ninguno**: es justamente lo que se viene a quitar. Deja de escribirse `RASTRO_LEIDO_DEGRADADO` |
 | **Dónde** | `src/api/routers/admin.py` *(camino B)* y `src/diagnostico.py` *(matiz A)* |
 
@@ -538,7 +538,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | **10.A · Estado de partida** | 🟢 **Hecho.** Suite, regresiones recolectadas, cifras del README corregidas, H-58 catalogado, H-55 y H-56 diagnosticados | Ya verificado |
 | **10.B.1 · H-58** | Operaciones 1, 2 y 3 | `count(*) WHERE estado='DESCARGANDO'` = 0, y los 6 procesados en la corrida siguiente |
 | **10.B.2 · H-56** | Operación 4 | La regresión de la petición, más **una llamada real desde `tools/`** que confirme un dictamen completo |
-| **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | 🟡 **H-55 cerrado el 2026-09-01**: 6 regresiones, y la corrida 25 escribió **4.884 líneas bajo carga máxima con 0 roturas nuevas** y **2.000 eventos de sonda sin perder uno**. Falta la Operación 7: **dos consultas seguidas al diagnóstico devuelven lo mismo** |
+| **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | 🟢 **CERRADO el 2026-09-01.** H-55: la corrida 25 escribió **4.884 líneas bajo carga máxima con 0 roturas** y **2.000 sondas sin perder una**. H-60: **tres consultas seguidas devuelven lo mismo** y el distintivo vuelve a verde sobre una corrida limpia. **12 regresiones**, suite 742 → **754** |
 | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | Ejecutarlos con doble clic, sin consola visible |
 | **10.D · Tesseract** | 🟡 **Instalado y verificado**; falta la corrida | Los 4 `OCR_DIFERIDO` pasan a procesados solos |
 | **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | Ninguna consola, Cockpit con datos, tarea disparando corrida real |

@@ -3103,7 +3103,7 @@ de desaparecer *(el umbral configurado es 30)*.
 
 ## Hallazgo de abrir la herramienta un día cualquiera — 2026-09-01 (Capa 10, Paso 10)
 
-### H-60 · El diagnóstico de la prospección cuenta su propio evento como una avería de la corrida 🔴 ABIERTO (2026-09-01)
+### H-60 · El diagnóstico de la prospección se contaba a sí mismo como avería 🟢 CERRADO (Capa 10, Paso 10, bloque B.3)
 
 **Detectado el 2026-09-01 sin buscarlo**, abriendo el Cockpit por la mañana: la cabecera decía
 **«Al día, con 2 avisos»** sobre la corrida 23. **La corrida 23 no tuvo ni una incidencia.**
@@ -3225,6 +3225,47 @@ De los tres caminos que se estudiaron se toma **el B con el matiz del A**, y se 
 > reparación conceptualmente correcta y **no procede hoy**: exige que los escritores declaren
 > `run_id`, que es trabajo del tamaño de un paso, no de un bloque.
 
+> 🟢 **CERRADO el 2026-09-01, el mismo día en que se detectó.** Operación 7 del contrato v1.3.0,
+> con el camino **B** y el matiz del **A**, tal y como dirección decidió.
+>
+> **Camino B** — `src/api/routers/admin.py` deja de emitir `RASTRO_LEIDO_DEGRADADO`. El hecho no
+> se pierde: viaja en `rastro_degradado` y `rastro_lineas_ilegibles` dentro de la misma respuesta,
+> que es donde el Cockpit ya lo leía. Lo que desaparece es la constancia que se convertía en
+> avería ajena.
+>
+> **Matiz A** — `src/diagnostico.py` declara `COMPONENTES_AJENOS_A_LA_CORRIDA = {"api"}`. No es
+> una lista de excepciones sino la distinción que el defecto había borrado: **la corrida la
+> ejecutan las Capas 3 a 7 y el lanzador; la API es quien la mira.** Mientras la atribución sea
+> por ventana temporal, cualquier evento de la API cae dentro por coincidir en el reloj, así que
+> el filtro cierra la familia entera y no sólo este caso.
+>
+> **La verificación, mirando la pantalla** *(Convención C7)*:
+>
+> | | Antes | Después |
+> |---|---|---|
+> | Distintivo sobre la corrida 25 *(limpia)* | **«Al día, con 49 avisos»** en ámbar | **«Datos al día»** en verde |
+> | Tres consultas seguidas al diagnóstico | Devuelven cosas distintas | **Idénticas** |
+> | `rastro_degradado` / `rastro_lineas_ilegibles` | `true` / 21 | **`true` / 21** — el dato sigue |
+> | `RASTRO_LEIDO_DEGRADADO` nuevos en el fichero | Uno por consulta | **Ninguno** *(quedan 676 históricos)* |
+>
+> **Regresiones**: **6** en `tests/test_paso10_diagnostico_h60.py`. Suite **748 → 754**.
+>
+> ⚠️ **Y una trampa de las pruebas que merece quedar escrita, porque habría dado un verde falso.**
+> En la suite, el fichero que el endpoint **lee** —resuelto contra el directorio de la base— y el
+> que **escribe** —el del gestor de trazabilidad de la API— son **dos ficheros distintos**. En
+> producción son el mismo, y ahí es donde vivía el defecto. Una regresión escrita sobre la
+> separación habría pasado sin reparar nada. La fixture los iguala a propósito, y las corridas se
+> siembran **con la ventana alrededor del instante actual**, porque el evento que la API escribe
+> lleva la hora de ahora y sobre una corrida del pasado no caería dentro. **Es la Convención C4:
+> si la prueba no ejercita la ruta real, no prueba la ruta real.**
+>
+> 🔑 **La lección: un canal de diagnóstico no puede escribir en el canal que diagnostica.** El
+> evento nació en el Paso 9 con una intención correcta —que un diagnóstico servido sobre un
+> fichero con agujeros no fuera indistinguible de uno íntegro— y el efecto fue el contrario del
+> buscado: **cambió una mentira cómoda por un ruido constante**. El distintivo existía para que
+> nadie dijera «Datos al día» sobre una corrida ciega *(H-45)*; en ámbar todos los días pase lo
+> que pase, habría dejado de mirarse. Es el mismo motivo por el que el DOGC se desactivó en el
+> Paso 9, entrando por la puerta de atrás.
 ---
 
 ## Hallazgo de verificar el cierre de H-55 — 2026-09-01 (Capa 10, Paso 10)

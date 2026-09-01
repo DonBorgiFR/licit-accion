@@ -60,6 +60,22 @@ class EstadoProspeccion(str, Enum):
     es inventar, y la Convención C6 lo prohíbe en las dos direcciones."""
 
 
+#: Componentes cuya degradación **no** es una avería de la corrida *(H-60, Operación 7)*.
+#:
+#: No es una lista de excepciones: es una distinción que se había borrado. **La corrida la
+#: ejecutan las Capas 3 a 7 y el lanzador; la API es quien la mira.** Un fallo del observador no
+#: es un fallo de lo observado, y confundirlos puso el distintivo en ámbar sobre prospecciones
+#: impecables — «Al día, con 2 avisos» sobre la corrida 23, y con **49** sobre la 25, que sólo
+#: medían cuántas veces se había mirado la pantalla mientras corrían.
+#:
+#: La atribución correcta de verdad sería por `run_id`, no por ventana temporal; se descartó en
+#: el contrato v1.3.0 porque exige que todos los escritores lo declaren, y eso es trabajo del
+#: tamaño de un paso. Mientras la atribución sea temporal, **cualquier evento de la API cae en la
+#: ventana de la corrida por coincidir en el reloj**, así que el filtro cierra la familia entera
+#: y no sólo el caso de `RASTRO_LEIDO_DEGRADADO`.
+COMPONENTES_AJENOS_A_LA_CORRIDA = frozenset({"api"})
+
+
 @dataclass(frozen=True)
 class Degradacion:
     """Algo que la corrida no pudo hacer, tal y como lo dejó escrito quien no pudo hacerlo."""
@@ -139,6 +155,7 @@ def diagnosticar(
         )
         for evento in eventos
         if evento.estado is EstadoEvento.DEGRADADO
+        and evento.componente not in COMPONENTES_AJENOS_A_LA_CORRIDA
     ]
     ultimo = eventos[-1] if eventos else None
 

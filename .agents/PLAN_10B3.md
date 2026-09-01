@@ -166,6 +166,7 @@ pide *«N hilos → N líneas parseables»*: **hay que contar N**, no comprobar 
 | **R4** | Un solo hilo sigue funcionando igual | El control; y protege de arreglar la concurrencia rompiendo el caso normal |
 | **R5** | Rotar bajo carga no pierde el fichero ni eventos | Antes fallaba en silencio |
 | **R6** | **Dos procesos de verdad** no pierden ni parten eventos | Lo añadió la corrida 24 al refutar el alcance. Usa `subprocess`: simularlo con hilos daría un verde que no significa nada |
+| **R7-R12** *(H-60)* | Dos consultas seguidas devuelven lo mismo; el diagnóstico no escribe su evento; el hecho sigue viajando en la respuesta; una degradación de `api` no cuenta y una del pipeline sí | **La fixture iguala el fichero leído y el escrito**: en la suite son distintos y en producción son el mismo, así que una prueba escrita sobre la separación pasaría hoy sin reparar nada *(Convención C4)* |
 
 **Todas offline y en directorio temporal** *(Convenciones C5)*. **Ninguna necesita red, base de
 datos ni cuota.**
@@ -213,7 +214,7 @@ carrera.
 **El paso 6 es el que de verdad cierra el bloque**, y es el único que no se puede acelerar: hay
 que esperar a una prospección de verdad.
 
-## 9. H-60 entra en este bloque *(decidido el 2026-09-01)*
+## 9. H-60 entra en este bloque *(decidido y CERRADO el 2026-09-01)*
 
 **H-60 no se cierra al reparar H-55.** Las 19 líneas rotas se quedan, `rastro_degradado` seguirá
 valiendo `True` para siempre, la API seguirá emitiendo `RASTRO_LEIDO_DEGRADADO` en cada consulta y
