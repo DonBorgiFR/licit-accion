@@ -151,17 +151,37 @@ preguntarse **quién quedó atrapado mientras estaba roto** y si alguien volver�
 * **No fijar números de versión de esquema en las pruebas.** `test_migracion_v8.py` afirmaba
   `== 8` y cayó al llegar la v9 por un motivo que no era el suyo.
 
-### 📎 Pendientes menores anotados y no tocados
+### 🎯 Para mañana: cerrar antes de documentar *(triaje del 2026-09-01)*
 
-* **Por acotar**: al terminar la corrida por doble clic, el lanzador **apagó el servidor** con
-  `nivel alcanzado: endpoint`, aunque el Cockpit se había abierto. Puede ser la conducta correcta
-  —apaga cuando se cierra la ventana que vigilaba— o puede que la detección de *«ventana sin
-  vigilar»* no cubra el caso de un navegador ya abierto, y entonces estaría cerrando el Cockpit
-  por debajo de quien lo mira. **No se ha diagnosticado**: se anota para acotarlo con un arranque
-  limpio antes del bloque 10.F.
-* El `except Exception` de `analizar_alerta` convierte errores de programación en modo degradado.
-* `lector.py` imprime *«versión: tesseract»* en vez de *«5.5.3»* — `split(' ')[0]` sobre
-  `"tesseract v5.5.3..."`. Cosmético.
+> ⚠️ **Por qué esta sección deja de ser una lista.** El 2026-09-01 dirección señaló algo que la
+> aritmética confirma: ese día se **cerraron tres** hallazgos y se **abrieron tres**, así que el
+> pendiente no bajó. Una lista que sólo crece deja de leerse, y entonces da igual lo que ponga.
+> **Cada cosa lleva aquí una disposición**, y una disposición válida incluye *«no se hace, y por
+> esto»*. Lo que no tenga disposición no se anota: se resuelve o se decide.
+>
+> 📌 **Y el ejemplo de lo que hay que evitar es propio y de ese mismo día**: el plan del bloque
+> 10.C dejó escrito que el arranque en frío se verificaría en el 10.E con un entorno desechable.
+> El 10.E se cerró sin hacerlo. **Escribir que algo queda pendiente no es haberlo planificado.**
+
+| | Qué | Tipo | ¿Bloquea el `MANUAL.md`? | Disposición |
+|---|---|---|---|---|
+| **1** | Al terminar la corrida por doble clic, el lanzador **apagó el servidor** *(`nivel alcanzado: endpoint`)* con el Cockpit abierto. Puede ser correcto —apaga cuando se cierra la ventana que vigilaba— o puede que la detección de *«ventana sin vigilar»* no cubra un navegador ya abierto | Sin diagnosticar | 🔴 **Sí — sección 2**, *«el doble clic: qué pasa y qué verás»* | **Acotar** con un arranque limpio. Es lo primero |
+| **2** | `Preparar equipo` **nunca se ha ejecutado sobre un equipo que necesitara prepararse**. Lo verificado es la idempotencia, que no es lo mismo que instalar | Verificación debida | 🔴 **Sí — sección 5**, *«instalar en un equipo nuevo»* | **Verificar** en un `venv` desechable |
+| **3** | **H-61** · el diagnóstico relee los 5,1 MB del rastro en cada llamada *(241 ms, sondeado cada 5 s durante una corrida)* | Hallazgo abierto | No | **Decidir**: reparar leyendo hacia atrás, o diferir **con el motivo escrito** |
+| **4** | El `except Exception` de `analizar_alerta` convierte errores de programación en modo degradado | Incumple C2 | No | **Reparar o cerrar por decisión.** No puede seguir un mes más «anotado» |
+| **5** | `lector.py` imprime *«versión: tesseract»* en vez de *«5.5.3»* *(`split(' ')[0]` sobre `"tesseract v5.5.3…"`, líneas 433 y 443)* | Cosmético | No | **Reparar o cerrar por decisión** |
+| **6** | **H-41** · crash nativo, sin reaparecer en 12 corridas | **Vigilancia, no trabajo** | No | **No se hace nada.** Se mira. Contarlo como deuda pendiente infla la lista sin motivo |
+| **7** | **H-52** · OneDrive entre dos equipos | **Decisión ya tomada** *(diferido por dirección, mitigado)* | No | **No se hace nada.** Tampoco es deuda: es una decisión |
+
+**Leído así, el pendiente real es más pequeño de lo que la lista sugería**: dos comprobaciones que
+bloquean el manual *(1 y 2)*, tres cosas que hay que resolver o cerrar *(3, 4 y 5)*, y dos que no
+son trabajo *(6 y 7)*. Es una mañana, no un mes.
+
+> 🔑 **La regla que sale de esto, y va contra la costumbre de quien escribe**: *anotar no es
+> gestionar*. Un hallazgo entra en la auditoría con su evidencia —eso no se negocia— pero **no
+> puede quedarse en «anotado, no reparado» sin una fecha o una decisión de dirección**. La
+> Convención D.4 dice *reparar antes que documentar*; su reverso es que **la sección de averías
+> del manual sólo puede contener lo que se decidió no arreglar**, no lo que se dejó para luego.
 
 ---
 
