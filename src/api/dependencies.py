@@ -65,7 +65,9 @@ def rotar_log_si_excede_tamano(log_path: str, max_bytes: int = 10 * 1024 * 1024,
         if os.path.getsize(log_path) < max_bytes:
             return
 
-        with cerrojo_rastro():
+        # Con `log_path`: también entre procesos. Renombrar el rastro mientras el pipeline le
+        # está añadiendo una línea es la misma carrera que la escritura, con peor final.
+        with cerrojo_rastro(log_path):
             if not os.path.exists(log_path) or os.path.getsize(log_path) < max_bytes:
                 return
 

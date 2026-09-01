@@ -90,18 +90,18 @@ agotados, que es su terminal legítimo)*.
 
 | Bloque | Qué es | Estado |
 |---|---|---|
-| **10.B.3** | **H-55 y H-60**, el cerrojo del rastro y el diagnóstico que se cuenta a sí mismo | 🔜 **Es lo siguiente, y está listo para empezar.** Plan [`PLAN_10B3.md`](PLAN_10B3.md) **validado** el 2026-09-01; contrato en **v1.3.0**, Operaciones 5 y 7 |
+| **10.B.3** | **H-55 y H-60** | 🟡 **H-55 CERRADO** el 2026-09-01, las dos mitades, verificado con las corridas 24 y 25. Falta la **Operación 7** (H-60). Contrato en **v1.4.0** |
 | **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🔴 Sin empezar. Lo exige la decisión D.1 |
 | **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🔴 Sin empezar. **Es la que de verdad cierra la capa** |
 | **10.F** | **`MANUAL.md`**, en catalán y sin terminal | 🔴 Sin empezar. Índice propuesto en el README |
 | **10.G** | Cierre de la capa y del recorrido | 🔴 Sin empezar |
 
-### 🔴 Hallazgos abiertos: quedan cuatro desde el 2026-09-01
+### 🔴 Hallazgos abiertos: quedan cuatro *(H-55 cerrado el 2026-09-01; entra H-61)*
 
 | Hallazgo | Estado | Qué hacer |
 |---|---|---|
 | **H-60** · El diagnóstico cuenta su propio evento como avería de la corrida | 🔴 **Abierto** (2026-09-01) | **Bloque 10.B.3, Operación 7** *(decidido el 2026-09-01)*. Camino B + matiz A. **No se cierra al reparar H-55** |
-| **H-55** · El rastro **pierde eventos** bajo concurrencia | 🟠 **Ampliado el 2026-09-01**: además de partir líneas —19 de 7.344—, pierde **4,8–5,8 %** de los eventos con 16 hilos | **Bloque 10.B.3.** Un cerrojo de módulo alrededor del append en `src/rastro.py` |
+| **H-61** · El diagnóstico relee los 5,1 MB del rastro en cada llamada | 🔴 **Abierto** (2026-09-01) | **Medido**: 241 ms frente a 30 ms de los demás endpoints, y el Cockpit lo sondea **cada 5 s** mientras hay corrida. El fichero sólo crece. **Sin asignar** |
 | **H-41** · Crash nativo | 🟠 **Acotado**, sin reaparecer | **Observar.** 8+ corridas `COMPLETED` con 0 errores y sin migaja `documento_en_curso.json`. Ocho corridas no cierran un crash intermitente |
 | **H-52** · OneDrive entre dos equipos | 🔴 Diferido por dirección | **No tocar.** Mitigado con el despertador en un solo equipo |
 

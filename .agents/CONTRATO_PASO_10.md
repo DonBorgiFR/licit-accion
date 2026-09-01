@@ -1,7 +1,26 @@
 # Contrato de Servicio — Capa 10, Paso 10: Reparar, Verificar y Contar
 
-**Versión:** 1.3.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
-2026-09-01. **Bloques 10.B.1 y 10.B.2 cerrados**; quedan 10.B.3, 10.C, 10.D *(verificación)*,
+**Versión:** 1.4.0 · **Redactado:** 2026-08-27 · **Estado:** 🛠️ **Validado por dirección** el
+2026-09-01.
+
+> **Qué cambia en la v1.4.0 y por qué** *(2026-09-01, al verificar el bloque 10.B.3 contra una
+> corrida real)*. **El alcance declarado de la Operación 5 era falso, y lo destapó el criterio
+> que este mismo plan había escrito para destaparlo.**
+>
+> La v1.3.0 declaraba *«sólo intra-proceso»* apoyándose en una evidencia real: **16 de las 19
+> líneas rotas del rastro se produjeron sin ninguna corrida activa**. Cierto e incompleto. Con el
+> cerrojo de módulo ya puesto, la **corrida 24** produjo **dos roturas nuevas** —líneas 9595 y
+> 10346— y las dos con la firma contraria: un evento del pipeline encajado entre dos del
+> servidor. **La API y el pipeline escriben a la vez todos los días.**
+>
+> Medido antes de reparar: dos procesos de cuatro hilos perdían entre el **1,3 % y el 5,5 %** de
+> los eventos **sin una sola línea rota** — otra vez la pérdida sin huella. La Operación 5 pasa a
+> declarar alcance **inter-proceso**, con un cerrojo de fichero del sistema operativo.
+>
+> 🔑 **La lección, y es de método: un criterio de refutación escrito por adelantado vale más que
+> la evidencia que lo motivó.** La apuesta intra-proceso estaba bien razonada y estaba mal. Lo
+> único que la corrigió en horas en vez de en meses fue haber dejado escrito, antes de codificar,
+> *qué medición la refutaría* — y haberla hecho. **Bloques 10.B.1 y 10.B.2 cerrados**; quedan 10.B.3, 10.C, 10.D *(verificación)*,
 10.E, 10.F y 10.G.
 
 > **Qué cambia en la v1.3.0 y por qué** *(2026-09-01, al preparar el bloque 10.B.3)*. Otra vez
@@ -389,9 +408,9 @@ resultado sobre la base real, no darlo por bueno.
 | **Output** | Una línea completa y parseable en `data/pipeline.jsonl` |
 | **Precondición** | Ninguna |
 | **Postcondición** | **N hilos escribiendo a la vez dejan N líneas**, las N parseables y **cada evento exactamente una vez** |
-| **Alcance declarado** | **Sólo intra-proceso.** No promete nada sobre dos procesos escribiendo a la vez |
+| **Alcance declarado** | **Intra-proceso e inter-proceso** *(ampliado en la v1.4.0 tras refutarse la apuesta anterior)*. Cerrojo de módulo entre hilos, cerrojo de fichero del sistema entre procesos |
 | **Contención** | Se espera al cerrojo y se cuenta en `escrituras_contendidas`. **No se emite evento** *(ver F y G)* |
-| **Dónde** | `src/rastro.py`, `registrar_evento()`, **y la rotación de `src/api/dependencies.py`** |
+| **Dónde** | `src/rastro.py`, `registrar_evento()`, **y la rotación de `src/api/dependencies.py`**. El cerrojo entre procesos vive en un fichero aparte, `pipeline.jsonl.lock`, que se crea y **no se borra nunca** |
 
 > 📏 **La postcondición hay que tomarla al pie de la letra: contar N.** Está medido que con el
 > defecto vivo el banco de 16 hilos deja **906 líneas de 960 y todas parsean**. Una regresión que
@@ -477,6 +496,7 @@ desaparezca ninguna más.
 | Tesseract desaparece del equipo | `ocr_ausente` y modo diferido, como hoy | Healthcheck |
 | Dos hilos escriben en el rastro a la vez | **Se espera al cerrojo y se escribe igual.** El hecho se cuenta en `escrituras_contendidas`, un contador de módulo; **no se emite evento** *(sería la autorreferencia de H-60 dentro del único punto de escritura)* | El contador, legible desde `tools/` |
 | La rotación no puede renombrar el fichero | **Se reintenta bajo el cerrojo.** Hoy falla con `PermissionError` y lo traga un `except` que sólo imprime *(C2)*, así que el fichero crece sin límite en silencio | Rastro |
+| No se puede tomar el cerrojo entre procesos | **Se escribe igual y se cuenta** en `escrituras_sin_cerrojo_de_fichero`. Perder el evento es peor que escribirlo sin protección | El contador |
 | El rastro trae líneas ilegibles | **Se sirve en la respuesta del diagnóstico y no se escribe ningún evento** *(Operación 7)*. Escribirlo en el fichero del que se queja es lo que produjo H-60 | `rastro_lineas_ilegibles` en el Cockpit |
 
 ---
@@ -500,6 +520,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 
 | Artefacto | De | A | Motivo |
 |---|---|---|---|
+| Contrato del Paso 10 | v1.3.0 | **v1.4.0** | El alcance intra-proceso de la Operación 5 se midió insuficiente en la corrida 24: la API y el pipeline escriben a la vez a diario. Entra el cerrojo de fichero |
 | Contrato del Paso 10 | v1.2.0 | **v1.3.0** | H-55 resulta ser pérdida de eventos y no sólo roturas; la Operación 5 se amplía a la rotación; el evento de contención se retira; **entra la Operación 7 (H-60)** |
 | Esquema de base de datos | v8 | **v9** *(corregido en la v1.2.0)* | H-58 no añadió columnas —cambió **quién lee** un estado que ya existía—, y este contrato llegó a presumir de ello. **H-59 sí las necesita**: `boletines_alertas.intentos_analisis`, el tope que impide cambiar un agujero por un bucle |
 | `MANUAL.md` | — | **v1.0.0** | Nace en este paso |
@@ -517,7 +538,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | **10.A · Estado de partida** | 🟢 **Hecho.** Suite, regresiones recolectadas, cifras del README corregidas, H-58 catalogado, H-55 y H-56 diagnosticados | Ya verificado |
 | **10.B.1 · H-58** | Operaciones 1, 2 y 3 | `count(*) WHERE estado='DESCARGANDO'` = 0, y los 6 procesados en la corrida siguiente |
 | **10.B.2 · H-56** | Operación 4 | La regresión de la petición, más **una llamada real desde `tools/`** que confirme un dictamen completo |
-| **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | N hilos → **N líneas contadas** y parseables; el contador de rotas **no sube** tras una corrida real; y **dos consultas seguidas al diagnóstico devuelven lo mismo** |
+| **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | 🟡 **H-55 cerrado el 2026-09-01**: 6 regresiones, y la corrida 25 escribió **4.884 líneas bajo carga máxima con 0 roturas nuevas** y **2.000 eventos de sonda sin perder uno**. Falta la Operación 7: **dos consultas seguidas al diagnóstico devuelven lo mismo** |
 | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | Ejecutarlos con doble clic, sin consola visible |
 | **10.D · Tesseract** | 🟡 **Instalado y verificado**; falta la corrida | Los 4 `OCR_DIFERIDO` pasan a procesados solos |
 | **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | Ninguna consola, Cockpit con datos, tarea disparando corrida real |

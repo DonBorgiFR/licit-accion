@@ -2507,7 +2507,7 @@ copia—; cada mutación la caza la prueba que le corresponde. Suite **569/569**
 
 ---
 
-### H-55 · El rastro de auditoría tiene líneas partidas, y sigue partiéndose 🟠 DIAGNOSTICADO (2026-08-27)
+### H-55 · El rastro de auditoría perdía eventos bajo concurrencia 🟢 CERRADO (Capa 10, Paso 10, bloque B.3)
 
 > ⚠️ **Corregido el 2026-08-27, en el bloque 9.B del Paso 9. Sigue abierto, pero su enunciado y
 > su mecanismo estaban equivocados en dos cosas.**
@@ -2641,6 +2641,60 @@ hilos en cada petición»*—. `registrar_evento()` abre en modo `"a"`, escribe 
 > que no llega, y **la Regla 3 exige registro determinista**: un rastro que pierde eventos bajo
 > carga no lo es. La reparación sigue siendo la misma y sigue siendo barata —un cerrojo de módulo—
 > pero **deja de ser cosmética**.
+> 🟢 **CERRADO el 2026-09-01, y fueron DOS reparaciones, no una.** Lo que se creía un solo defecto
+> —una carrera entre hilos— eran dos carreras superpuestas, y la segunda sólo se vio al tapar la
+> primera.
+>
+> **Mitad 1 · Entre hilos.** Cerrojo de módulo en `src/rastro.py`, alrededor del `open`+`write`+
+> `close`. Ciñe la escritura y **no** la validación: `registrar_evento_tolerante()` vuelve a
+> llamar al escritor para registrar un rechazo, y abarcar la validación habría clavado el proceso.
+> La rotación de `src/api/dependencies.py` toma el mismo cerrojo — antes fallaba con
+> `PermissionError` siempre que alguien tuviera el Cockpit abierto, y el fallo se imprimía por
+> consola sin que nadie lo mirase.
+>
+> **Mitad 2 · Entre procesos, y la destapó el criterio escrito para destaparla.** El contrato
+> declaraba *«alcance: sólo intra-proceso»* sobre evidencia real —16 de las 19 roturas sin corrida
+> activa—, y el plan dejó escrito qué lo refutaría: *«si el contador de rotas vuelve a subir…»*.
+> **Subió en la primera corrida real.** La corrida 24 produjo las líneas **9595 y 10346**, las dos
+> con la firma contraria a las 19 históricas:
+>
+> ```
+> 9594   radar   doc_detected                          <- el pipeline
+> 9595   ROTA    's\\Antigravity\\...\\licitaciones.db", "directorio_accesible"...'
+> 9596   api     API_DEPENDENCIES_HEALTHCHECK_PASSED   <- el servidor
+> ```
+>
+> Medido a continuación en banco aislado **con el cerrojo de módulo ya puesto**: dos procesos de
+> cuatro hilos pierden entre el **1,3 % y el 5,5 %** de los eventos **sin una sola línea rota**.
+> Se añadió un cerrojo de fichero del sistema operativo sobre `pipeline.jsonl.lock` —byte 0,
+> `msvcrt.locking` en Windows y `fcntl.flock` fuera—, tomado **después** del de módulo.
+>
+> **La verificación, en producción y no en banco:**
+>
+> | | |
+> |---|---|
+> | Corrida 25, `COMPLETED` con 0 errores | **4.884 líneas nuevas** bajo carga máxima *(48 hilos de sonda + el pipeline)* |
+> | Líneas rotas nuevas | **0** — el contador sigue en 21 |
+> | Sondas con `X-Request-ID` único, durante la corrida | **2.000 enviadas, 2.000 en el rastro, 0 perdidas** |
+> | Banco entre procesos, con los dos cerrojos | 2, 3 y 5 procesos → **0 perdidos, 0 roturas** |
+> | Coste | **0,556 ms por evento** *(0,26 sin ningún cerrojo; 0,59 con sólo el de módulo)* |
+>
+> **Regresiones**: **6** en `tests/test_paso10_rastro_concurrente.py`, una de ellas con procesos de
+> verdad *(`subprocess`)* porque simular con hilos una carrera entre espacios de memoria daría un
+> verde que no significa nada. Suite **742 → 748**. Validadas por mutación: anulando el cerrojo,
+> caen.
+>
+> ⚠️ **Las 21 líneas rotas se quedan.** Las 19 históricas y las 2 de la corrida 24: borrarlas sería
+> destruir rastro, y el lector las cuenta desde el Paso 9. Lo que se promete es que **no crezcan**,
+> y `tools/verificar_rastro_real.py` lo comprueba en cada ejecución.
+>
+> 🔑 **La lección, y es de método antes que técnica: un criterio de refutación escrito por
+> adelantado vale más que la evidencia que lo motivó.** La apuesta intra-proceso estaba razonada,
+> apoyada en datos reales del propio fichero, y estaba mal. Lo único que la corrigió en horas en
+> vez de en meses fue haber dejado escrito, **antes de codificar**, qué medición la tumbaría — y
+> haberla hecho el mismo día. Es la forma general de la lección del Paso 9 *(«el papel dice lo que
+> se sabía; el código obliga a saber más»)*, con una vuelta más: **el papel puede además decir de
+> antemano cómo se sabrá que se equivocaba.**
 ---
 
 ## Hallazgo de la reparación de H-45 — 2026-08-27 (Capa 10, Paso 9, bloque E)
@@ -3170,6 +3224,43 @@ De los tres caminos que se estudiaron se toma **el B con el matiz del A**, y se 
 > degradación, así que la A no sobra: cierra la familia entera en vez de este caso. La C es la
 > reparación conceptualmente correcta y **no procede hoy**: exige que los escritores declaren
 > `run_id`, que es trabajo del tamaño de un paso, no de un bloque.
+
+---
+
+## Hallazgo de verificar el cierre de H-55 — 2026-09-01 (Capa 10, Paso 10)
+
+### H-61 · El diagnóstico de la prospección relee el rastro entero en cada llamada 🔴 ABIERTO (2026-09-01)
+
+**Detectado el 2026-09-01** midiendo latencias mientras se verificaba H-55, no buscándolo.
+
+| Endpoint | Mediana de 12 llamadas |
+|---|---|
+| `GET /api/v1/health` | **31 ms** |
+| `GET /api/v1/kpis` | **30 ms** |
+| `GET /api/v1/admin/prospeccion/diagnostico` | **241 ms** |
+
+**Por qué.** `diagnosticar()` llama a `leer_rastro()`, que **abre `pipeline.jsonl` y lo recorre
+entero** para quedarse con los eventos de la ventana de la corrida. El fichero va hoy por **5,1 MB
+y 16.919 líneas**, y sólo crece: la rotación no entra hasta los 10 MB.
+
+**Por qué importa y no es sólo lentitud.** `useApiQueries.ts:43` sondea ese endpoint **cada 5
+segundos mientras el estado es `EN_CURSO`**, es decir justo durante la corrida, que es cuando el
+pipeline está escribiendo en ese mismo fichero. Cada sondeo relee los 5,1 MB.
+
+> 📌 **Cota conocida y por qué no es una tranquilidad**: la rotación acota el fichero a 10 MB, así
+> que el peor caso está en el doble de lo medido, ~480 ms. Pero eso es el peor caso **de hoy**, con
+> un histórico de un mes; el crecimiento real depende de cuántas peticiones HTTP se atiendan, y
+> cada una escribe su línea.
+
+**Lo que NO es**: no es una avería. Nadie pierde datos y nadie ve una cifra falsa. Es de la familia
+de *«esto no se va a sostener»*, que es la que dirección pidió atacar el 2026-09-01 mientras se
+está aún desarrollando.
+
+**Qué habría que mirar, sin decidirlo aquí**: `leer_rastro()` ya acepta un `tope` que conserva los
+**últimos** N eventos, pero sigue recorriendo el fichero entero para llegar a ellos. Leer hacia
+atrás desde el final, o indexar por corrida, son las dos direcciones evidentes. **La segunda
+depende de que los escritores declaren `run_id`**, que es el mismo trabajo del que depende el
+camino C de [[H-60]] — conviene decidirlos juntos.
 
 ---
 

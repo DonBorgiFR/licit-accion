@@ -23,11 +23,35 @@ que es el 99 % de las escrituras del proyecto.
 
 import json
 import os
+import subprocess
+import sys
 import threading
 
 import pytest
 
 from src.rastro import registrar_evento
+
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+#: El guion que ejecuta cada proceso hijo de `test_varios_procesos_no_pierden_eventos`.
+#: **Tiene que ser un proceso de verdad**: la carrera que mide es entre espacios de memoria
+#: distintos, y ahí un cerrojo de módulo no llega por definición. Simularla con hilos daría un
+#: verde que no significa nada.
+GUION_ESCRITOR = """
+import sys, threading
+sys.path.insert(0, sys.argv[1])
+from src.rastro import registrar_evento
+ruta, proceso, hilos, eventos = sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+barrera = threading.Barrier(hilos)
+def trabajo(h):
+    barrera.wait()
+    for n in range(eventos):
+        registrar_evento("prueba", "EVENTO_MULTIPROCESO", "INFO",
+                         {"hilo": h, "n": n, "proceso": proceso}, ruta=ruta)
+ts = [threading.Thread(target=trabajo, args=(i,)) for i in range(hilos)]
+[t.start() for t in ts]
+[t.join() for t in ts]
+"""
 
 #: Suficientes hilos para que la carrera se produzca siempre. Medido: con esta configuración el
 #: código sin cerrojo perdió eventos en las cinco vueltas que se le dieron el 2026-09-01, entre
@@ -153,6 +177,64 @@ def test_ninguna_linea_queda_partida(tmp_path):
     _, ilegibles, _ = leer_crudo(str(ruta))
 
     assert ilegibles == 0, f"{ilegibles} líneas quedaron partidas por la mitad"
+
+
+# ==============================================================================
+# R6 · Entre procesos, que es lo que la corrida real destapó el 2026-09-01
+# ==============================================================================
+
+
+def test_varios_procesos_no_pierden_eventos(tmp_path):
+    """El cerrojo de módulo no bastaba, y esto lo comprobó una corrida real.
+
+    **Cómo se descubrió**, y merece contarse porque el contrato afirmaba lo contrario. La
+    Operación 5 declaraba *«alcance: sólo intra-proceso»*, con la evidencia de que **16 de las 19
+    líneas rotas del rastro real se produjeron sin ninguna corrida activa**. Era cierto y era
+    incompleto: en la corrida 24, con el cerrojo de módulo ya puesto, aparecieron **dos líneas
+    rotas nuevas**, y las dos con la misma firma —un evento del pipeline encajado entre dos del
+    servidor—:
+
+        9594   radar   doc_detected
+        9595   ROTA    's\\\\Antigravity\\\\...\\\\licitaciones.db", "directorio_accesible"...'
+        9596   api     API_DEPENDENCIES_HEALTHCHECK_PASSED
+
+    **La API y el pipeline escriben a la vez todos los días.** El plan dejó escrito el criterio
+    que refutaría la apuesta —*«si el contador de rotas vuelve a subir, la carrera también es
+    entre procesos»*— y saltó a la primera corrida real.
+
+    Medido antes de reparar, con el cerrojo de módulo puesto: dos procesos de cuatro hilos
+    perdían entre el **1,3 % y el 5,5 %** de los eventos, **sin una sola línea rota** en tres
+    vueltas. Otra vez el mismo patrón: la pérdida no deja huella, y por eso hay que contar.
+    """
+    ruta = tmp_path / "pipeline.jsonl"
+    procesos, hilos, eventos = 2, 4, 150
+
+    hijos = [
+        subprocess.Popen(
+            [sys.executable, "-c", GUION_ESCRITOR, RAIZ, str(ruta), str(p), str(hilos), str(eventos)]
+        )
+        for p in range(procesos)
+    ]
+    for hijo in hijos:
+        assert hijo.wait(timeout=120) == 0, "un escritor hijo terminó mal"
+
+    esperados = {
+        (p, h, n) for p in range(procesos) for h in range(hilos) for n in range(eventos)
+    }
+    vistos, ilegibles = set(), 0
+    with open(str(ruta), encoding="utf-8", errors="replace") as fichero:
+        for linea in fichero:
+            if not linea.strip():
+                continue
+            try:
+                datos = json.loads(linea)["datos"]
+                vistos.add((datos["proceso"], datos["hilo"], datos["n"]))
+            except (ValueError, KeyError, TypeError):
+                ilegibles += 1
+
+    perdidos = esperados - vistos
+    assert not perdidos, f"{len(perdidos)} de {len(esperados)} eventos no llegaron al fichero"
+    assert ilegibles == 0, f"{ilegibles} líneas quedaron partidas entre procesos"
 
 
 # ==============================================================================

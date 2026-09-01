@@ -127,12 +127,27 @@ evento, la forma segura es emitirlo **una sola vez por proceso y fuera del cerro
 
 ### 5.4 · El alcance, y cómo se comprobará que la apuesta era correcta
 
-Se mantiene **intra-proceso**, con la evidencia de la sección 3. Y se deja escrito el criterio que
-lo refutaría, para que nadie tenga que volver a deducirlo:
+Se mantuvo **intra-proceso**, con la evidencia de la sección 3, y se dejó escrito el criterio que
+lo refutaría:
 
 > **Si tras la reparación el contador de líneas rotas vuelve a subir, la carrera también es entre
 > procesos** y hace falta un cerrojo de fichero del sistema operativo (`msvcrt.locking`). La
 > medición está disponible: `python tools/verificar_rastro_real.py`.
+
+> 🚨 **SALTÓ, en la primera corrida real** *(corrida 24, 2026-09-01)*. Dos roturas nuevas —líneas
+> 9595 y 10346— con la firma contraria a las 19 históricas: un evento del pipeline encajado entre
+> dos del servidor. Medido a continuación en banco aislado, **con el cerrojo de módulo puesto**:
+> dos procesos de cuatro hilos pierden entre el **1,3 % y el 5,5 %** de los eventos, sin una sola
+> línea rota.
+>
+> **Se añadió el cerrojo de fichero** *(contrato v1.4.0)*: `pipeline.jsonl.lock`, byte 0, con
+> `msvcrt.locking` en Windows y `fcntl.flock` fuera. Resultado: **2, 3 y 5 procesos → 0 perdidos y
+> 0 roturas**, y **0,556 ms por evento** frente a los 0,59 que ya costaba el cerrojo de módulo
+> solo: el cerrojo de fichero **no añade coste medible**.
+>
+> 📌 **Esta sección es el mayor rendimiento del plan.** La apuesta intra-proceso estaba bien
+> razonada, apoyada en evidencia real, y estaba mal. Lo que la corrigió en horas fue haber escrito
+> **antes de codificar** qué medición la refutaría.
 
 ## 6. Las pruebas, y una trampa medida que hay que esquivar
 
@@ -149,7 +164,8 @@ pide *«N hilos → N líneas parseables»*: **hay que contar N**, no comprobar 
 | **R2** | **Cada evento aparece una vez**, identificado por su payload | Un recuento correcto con un duplicado y una pérdida también sumaría bien |
 | **R3** | Las N×M líneas parsean, y `lineas_ilegibles` da **0** | Lo que el contrato pide literalmente |
 | **R4** | Un solo hilo sigue funcionando igual | El control; y protege de arreglar la concurrencia rompiendo el caso normal |
-| **R5** *(si se acepta 5.2)* | Rotar bajo carga no pierde el fichero ni eventos | Hoy falla en silencio |
+| **R5** | Rotar bajo carga no pierde el fichero ni eventos | Antes fallaba en silencio |
+| **R6** | **Dos procesos de verdad** no pierden ni parten eventos | Lo añadió la corrida 24 al refutar el alcance. Usa `subprocess`: simularlo con hilos daría un verde que no significa nada |
 
 **Todas offline y en directorio temporal** *(Convenciones C5)*. **Ninguna necesita red, base de
 datos ni cuota.**
@@ -172,7 +188,8 @@ pérdidas que se espera, no con un error cualquiera— y sólo después se añad
 | | Tiempo | Perdidos | Rotas |
 |---|---|---|---|
 | 960 eventos, 16 hilos, **sin cerrojo** | 253 ms | **41** | 1 |
-| 960 eventos, 16 hilos, **con cerrojo** | 570 ms | **0** | 0 |
+| 960 eventos, 16 hilos, **con cerrojo de módulo** | 570 ms | **0** | 0 |
+| 960 eventos, 16 hilos, **con los dos cerrojos** | 533 ms | **0** | 0 |
 
 **+0,33 ms por evento** en el peor caso de contención que se puede construir. La propia API
 registra latencias de **10 a 25 ms** por petición HTTP en el rastro real, así que el sobrecoste

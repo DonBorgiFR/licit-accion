@@ -12,10 +12,16 @@ al LLM: lo que depende de datos reales se verifica aquí, a mano y cuando se qui
    Ninguna se pierde por el camino. Es la invariante que H-39 incumplía.
 2. **Que las cuatro gramáticas siguen ahí** y el lector las reconoce todas.
 3. **Que las líneas partidas de H-55 no crecen.** Hasta el 2026-09-01 este criterio sólo
-   exigía que no desaparecieran, porque el defecto seguía vivo y sólo podía ir a más. Reparado
-   el bloque 10.B.3, la exigencia se invierte: **19 y ni una más**. Si sube, o la reparación no
-   funciona —y entonces la carrera también es entre procesos, no sólo entre hilos, y hace falta
-   un cerrojo del sistema operativo— o queda un proceso anterior a la reparación escribiendo.
+   exigía que no desaparecieran, porque el defecto seguía vivo y sólo podía ir a más. Cerrado el
+   bloque 10.B.3, la exigencia se invierte: **21 y ni una más**.
+
+   > 📌 **Por qué 21 y no 19, que es la cifra que este fichero llegó a declarar.** El bloque se
+   > reparó en dos mitades. Con la primera puesta —el cerrojo entre hilos— la corrida 24 produjo
+   > **dos roturas nuevas**, y las dos con la firma contraria a las 19 históricas: un evento del
+   > pipeline encajado entre dos del servidor. Ese es literalmente el criterio de refutación que
+   > el plan había dejado escrito, y sirvió para lo que se escribió. La segunda mitad —el cerrojo
+   > entre procesos— cerró esa vía, y la corrida 25 escribió **4.884 líneas bajo carga máxima sin
+   > una sola rotura**. Las dos de la 24 se quedan: borrarlas sería destruir rastro.
 4. **Que la última corrida se puede reconstruir**, incluido el `boletin_fetch_started` de la
    gramática D —la minoritaria, la que acotó H-41— atribuido por ventana temporal.
 
@@ -42,11 +48,12 @@ sys.stdout.reconfigure(errors="replace")
 from src import ruta_datos  # noqa: E402
 from src.rastro import EstadoEvento, Gramatica, a_instante, leer_rastro  # noqa: E402
 
-# Línea base medida el 2026-09-01, al reparar H-55 (bloque 10.B.3). La anterior era del
-# 2026-08-27 —4.768 líneas y 14 ilegibles— y se quedó tres semanas atrás: el fichero había
-# crecido un 55 % y sus cifras ya no servían de referencia para nada.
-BASE = {"lineas": 7395, "ilegibles": 19, "A": 2306, "B": 1965, "C": 378, "D": 105,
-        "CANONICA": 2622, "nombres": 98}
+# Línea base medida el 2026-09-01 **tras cerrar las dos mitades de H-55** y verificarlas con las
+# corridas reales 24 y 25. Las gramáticas históricas A-D están congeladas desde el Paso 9 —nadie
+# escribe ya en ellas—, así que cualquier cambio en esas cuatro cifras sería una lectura mal
+# hecha, no un fichero distinto.
+BASE = {"lineas": 16919, "ilegibles": 21, "A": 2306, "B": 1965, "C": 378, "D": 105,
+        "CANONICA": 12144, "nombres": 98}
 
 
 def encabezado(texto):

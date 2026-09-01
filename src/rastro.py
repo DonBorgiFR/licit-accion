@@ -42,6 +42,7 @@ import json
 import os
 import sys
 import threading
+import time
 from collections import Counter, deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -462,6 +463,111 @@ def a_instante(valor: Any) -> Optional[datetime]:
 #: milisegundo, y un diccionario de cerrojos por ruta crecería sin nadie que lo vaciara.
 _CERROJO = threading.Lock()
 
+try:  # pragma: no cover - depende del sistema operativo
+    import msvcrt
+except ImportError:  # pragma: no cover
+    msvcrt = None
+try:  # pragma: no cover
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
+
+#: Sufijo del fichero de cerrojo. **Se crea y no se borra nunca**: borrarlo abriría la carrera
+#: clásica —un proceso elimina el fichero que otro acaba de abrir y los dos creen tenerlo—, y su
+#: coste es un fichero vacío junto al rastro.
+SUFIJO_CERROJO = ".lock"
+
+#: Cuánto se espera al cerrojo entre procesos antes de rendirse y escribir igual. Cinco segundos
+#: son tres órdenes de magnitud por encima de lo que dura una escritura: si no se ha soltado en
+#: ese plazo, lo que pasa no es contención, es que algo está mal.
+TOPE_ESPERA_CERROJO = 5.0
+
+
+if msvcrt is not None:  # pragma: no cover - rama de Windows
+    def _bloquear(descriptor):
+        """Toma el byte 0 del fichero de cerrojo, reintentando hasta el tope.
+
+        Se usa `LK_NBLCK` en un bucle propio y **no `LK_LOCK`**, que reintenta diez veces con un
+        segundo de separación: con esperas reales de microsegundos, esa granularidad convertiría
+        una espera trivial en un segundo entero, o en un fallo tras diez.
+        """
+        limite = time.monotonic() + TOPE_ESPERA_CERROJO
+        espera = 0.0002
+        while True:
+            try:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if time.monotonic() >= limite:
+                    raise
+                time.sleep(espera)
+                espera = min(espera * 2, 0.01)
+
+    def _desbloquear(descriptor):
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+
+elif fcntl is not None:  # pragma: no cover - rama POSIX
+    def _bloquear(descriptor):
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+
+    def _desbloquear(descriptor):
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+else:  # pragma: no cover - sistema sin ninguno de los dos
+    _bloquear = _desbloquear = None
+
+#: Veces que no se pudo tomar el cerrojo entre procesos **y se escribió igual**. Es la conducta
+#: que fija la sección F del contrato: un rastro con una línea rara es peor que uno limpio, pero
+#: **perder el evento es peor que las dos cosas**.
+escrituras_sin_cerrojo_de_fichero = 0
+
+
+@contextmanager
+def _cerrojo_entre_procesos(destino):
+    """Serializa el acceso al rastro **entre procesos distintos**, con un cerrojo del sistema.
+
+    **Por qué hizo falta, y cómo se supo.** El contrato declaraba *«alcance: sólo intra-proceso»*
+    sobre una evidencia real —16 de las 19 líneas rotas del rastro se produjeron sin ninguna
+    corrida activa—, y esa evidencia era cierta e incompleta. En la corrida 24 del 2026-09-01, ya
+    con el cerrojo de módulo puesto, aparecieron **dos líneas rotas nuevas** y las dos con la
+    firma contraria: un evento del pipeline encajado entre dos del servidor. **La API y el
+    pipeline escriben a la vez todos los días.** Medido: dos procesos de cuatro hilos perdían
+    entre el 1,3 % y el 5,5 % de los eventos, sin una sola línea rota — la pérdida no deja huella.
+
+    **El cerrojo no es el fichero del rastro, es un fichero aparte.** Bloquear un rango del propio
+    `pipeline.jsonl` abierto en modo añadir sería bloquear una posición que cada proceso resuelve
+    por su cuenta; el byte 0 de un fichero de cerrojo dedicado es una referencia común y estable.
+    """
+    global escrituras_sin_cerrojo_de_fichero
+
+    if _bloquear is None:
+        yield
+        return
+
+    descriptor = None
+    try:
+        descriptor = os.open(destino + SUFIJO_CERROJO, os.O_RDWR | os.O_CREAT)
+        _bloquear(descriptor)
+    except OSError:
+        # Ni crear el fichero de cerrojo ni tomarlo. **Se escribe igual y se cuenta** (sección F).
+        # La suma no necesita protección: aquí ya se tiene el cerrojo de módulo.
+        escrituras_sin_cerrojo_de_fichero += 1
+        if descriptor is not None:
+            os.close(descriptor)
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        try:
+            _desbloquear(descriptor)
+        except OSError:
+            pass
+        os.close(descriptor)
+
 #: Cuántas veces hubo que esperar al cerrojo. **Es un contador, no un evento, y eso se decidió
 #: con un caso delante**: escribir en el rastro un evento sobre el hecho de escribir en el rastro
 #: es la autorreferencia que produjo H-60, y aquí ocurriría dentro del único punto de escritura
@@ -470,8 +576,9 @@ escrituras_contendidas = 0
 
 
 @contextmanager
-def cerrojo_rastro():
-    """Serializa el acceso al fichero de rastro dentro de este proceso.
+def cerrojo_rastro(destino=None):
+    """Serializa el acceso al fichero de rastro: entre hilos siempre, y entre procesos si se le
+    dice sobre qué fichero *(`destino=None` toma sólo el de módulo)*.
 
     **Por qué existe** *(H-55, medido el 2026-09-01)*. `registrar_evento()` abre en modo `"a"`,
     escribe y cierra, y ese trío **no es atómico entre hilos** en Windows: dos hilos que resuelven
@@ -479,11 +586,13 @@ def cerrojo_rastro():
     que **se pierde entre el 4,8 % y el 5,8 % de los eventos**, y sólo 0-2 líneas quedan partidas.
     Las roturas eran el síntoma catalogado; la pérdida es el daño.
 
-    **Alcance declarado: sólo intra-proceso.** No promete nada sobre dos procesos escribiendo a la
-    vez, y no hace falta: de las 19 líneas partidas del rastro real, **16 se produjeron sin
-    ninguna corrida activa**, es decir sin un segundo proceso al que culpar. Si el contador de
-    rotas volviera a subir tras esta reparación, la apuesta era falsa y haría falta un cerrojo de
-    fichero del sistema operativo (`msvcrt.locking`).
+    **Y no basta con los hilos**, aunque el contrato lo dio por bueno con evidencia real: de las
+    19 líneas partidas históricas, 16 se produjeron sin ninguna corrida activa. La corrida 24 del
+    2026-09-01 refutó la apuesta a la primera —dos roturas nuevas, las dos con un evento del
+    pipeline entre dos del servidor—, así que con `destino` se toma además
+    `_cerrojo_entre_procesos()`. **Los dos cerrojos, y en este orden**: primero el de módulo,
+    después el de fichero, de modo que los hilos de un proceso hacen cola sin llegar a tocar el
+    sistema de ficheros.
 
     **Lo que este contexto NO debe abarcar nunca es la validación de un evento.**
     `registrar_evento()` lanza `EventoInvalido` antes de escribir, y `registrar_evento_tolerante()`
@@ -497,7 +606,11 @@ def cerrojo_rastro():
         # Dentro del cerrojo, así que la suma no necesita protección propia.
         escrituras_contendidas += 1
     try:
-        yield
+        if destino is None:
+            yield
+        else:
+            with _cerrojo_entre_procesos(destino):
+                yield
     finally:
         _CERROJO.release()
 
@@ -571,7 +684,7 @@ def registrar_evento(
         # que es abrir, escribir y cerrar. Serializar dentro alargaría la espera de los demás
         # hilos sin ganar nada.
         linea = json.dumps(entrada, ensure_ascii=False, default=str) + "\n"
-        with cerrojo_rastro():
+        with cerrojo_rastro(destino):
             with open(destino, "a", encoding="utf-8") as fichero:
                 fichero.write(linea)
     except (OSError, TypeError, ValueError) as exc:
