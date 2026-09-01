@@ -539,7 +539,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | **10.B.1 · H-58** | Operaciones 1, 2 y 3 | `count(*) WHERE estado='DESCARGANDO'` = 0, y los 6 procesados en la corrida siguiente |
 | **10.B.2 · H-56** | Operación 4 | La regresión de la petición, más **una llamada real desde `tools/`** que confirme un dictamen completo |
 | **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | 🟢 **CERRADO el 2026-09-01.** H-55: la corrida 25 escribió **4.884 líneas bajo carga máxima con 0 roturas** y **2.000 sondas sin perder una**. H-60: **tres consultas seguidas devuelven lo mismo** y el distintivo vuelve a verde sobre una corrida limpia. **12 regresiones**, suite 742 → **754** |
-| **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | Ejecutarlos con doble clic, sin consola visible |
+| **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | 🟢 **CERRADO el 2026-09-01.** `Preparar equipo.vbs` y `Despertador.vbs`, lanzados como los lanza el doble clic: **dos ventanas, cero procesos con consola**. 19 regresiones, suite 754 → **773** |
 | **10.D · Tesseract** | 🟡 **Instalado y verificado**; falta la corrida | Los 4 `OCR_DIFERIDO` pasan a procesados solos |
 | **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | Ninguna consola, Cockpit con datos, tarea disparando corrida real |
 | **10.F · `MANUAL.md`** | El manual, en catalán y sin terminal | Que cada cifra que afirme proceda de los bloques anteriores |

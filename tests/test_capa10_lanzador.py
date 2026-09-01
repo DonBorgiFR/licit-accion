@@ -1778,22 +1778,29 @@ def test_no_existe_acceso_directo_para_el_modo_pipeline():
 def test_los_accesos_directos_se_crean_de_verdad_y_repetirlo_no_los_duplica(tmp_path):
     """Convención C4: se ejecuta `cscript` de verdad sobre una carpeta temporal, en vez de
     comprobar que generamos el texto que creemos. El fichero `.lnk` es binario y lo escribe
-    Windows: o se crea o no se crea."""
-    from tools.crear_accesos_directos import alta, baja, estado
+    Windows: o se crea o no se crea.
+
+    ⚠️ **Eran 2 y son 3 desde el bloque 10.C**, y merece decirse por qué no es un parche. Lo que
+    esta prueba protege es que los accesos **se creen de verdad y que repetirlo no los duplique**,
+    no que sean exactamente dos para siempre. El tercero es el del despertador, que sólo va al
+    menú de inicio *(decisión 5.4)* — y aquí se pasa una sola carpeta, que hace de menú.
+    """
+    from tools.crear_accesos_directos import ACCESOS, ACCESOS_SOLO_MENU, alta, baja, estado
 
     carpeta = str(tmp_path / "accesos")
     os.makedirs(carpeta)
+    esperados = len(ACCESOS) + len(ACCESOS_SOLO_MENU)
 
     creados, _ = alta([carpeta])
-    assert len(creados) == 2
+    assert len(creados) == esperados
     assert all(os.path.isfile(ruta) for ruta in creados)
 
-    alta([carpeta])  # idempotente: dar de alta dos veces no deja cuatro iconos
-    assert len(os.listdir(carpeta)) == 2
+    alta([carpeta])  # idempotente: dar de alta dos veces no deja el doble de iconos
+    assert len(os.listdir(carpeta)) == esperados
     assert all(existe for _, existe in estado([carpeta]))
 
     retirados = baja([carpeta])
-    assert len(retirados) == 2
+    assert len(retirados) == esperados
     assert os.listdir(carpeta) == []
 
 

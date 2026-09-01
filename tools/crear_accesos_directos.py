@@ -54,11 +54,26 @@ NOMBRE_ICONO = "Incoop.ico"
 LOGO_ORIGEN = "logo sin letras.png"
 
 #: Nombre del acceso, modo que invoca y descripción que Windows muestra al pasar el ratón.
+#: **Son los del uso diario**, y por eso van al escritorio y al menú de inicio.
 ACCESOS = (
     ("Incoop", "completo",
      "Abre el Cockpit de licitaciones y prospecta las novedades del dia"),
     ("Incoop (solo Cockpit)", "cockpit",
      "Abre el Cockpit de licitaciones sin lanzar la prospeccion"),
+)
+
+#: Accesos que **sólo van al menú de inicio** *(bloque 10.C, decisión 5.4)*. Nombre, envoltorio
+#: al que apuntan y descripción.
+#:
+#: **El escritorio es para lo que se usa cada día**, y llenarlo de iconos de una-sola-vez le
+#: quita valor al que sí se usa. Activar la prospección nocturna se hace una vez y se olvida.
+#:
+#: *«Preparar equipo» no está aquí y no es un olvido*: se ejecuta **antes** de que existan los
+#: accesos directos —de hecho es quien los crea—, así que en un PC recién copiado no habría
+#: ningún icono al que ir. Vive en la carpeta del proyecto, junto a `Incoop.vbs`.
+ACCESOS_SOLO_MENU = (
+    ("Despertador (prospeccion nocturna)", "Despertador.vbs",
+     "Activa o desactiva la prospeccion automatica de cada noche"),
 )
 
 #: Tamaños que Windows usa según el contexto: la lista de detalles, el escritorio, la barra
@@ -133,18 +148,23 @@ def generar_icono(destino=None, origen=None) -> str:
     return destino
 
 
-def _codigo_alta(rutas_lnk, ruta_lanzadera, ruta_icono):
-    """VBScript que crea los accesos. Se genera aquí para que sea auditable en una prueba."""
+def _codigo_alta(rutas_lnk, ruta_icono):
+    """VBScript que crea los accesos. Se genera aquí para que sea auditable en una prueba.
+
+    Cada fila trae **su propio envoltorio**: desde el bloque 10.C no todos apuntan a
+    `Incoop.vbs` — el del despertador abre `Despertador.vbs`.
+    """
     wscript = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "wscript.exe")
     lineas = ['Set sh = CreateObject("WScript.Shell")',
               'Set fso = CreateObject("Scripting.FileSystemObject")']
-    for destino, modo, descripcion in rutas_lnk:
+    for destino, lanzadera, modo, descripcion in rutas_lnk:
         carpeta = os.path.dirname(destino)
+        argumentos = f'"""{lanzadera}"" {modo}"'.rstrip() if modo else f'"""{lanzadera}"""'
         lineas += [
             f'If Not fso.FolderExists("{carpeta}") Then fso.CreateFolder("{carpeta}")',
             f'Set acceso = sh.CreateShortcut("{destino}")',
             f'acceso.TargetPath = "{wscript}"',
-            f'acceso.Arguments = """{ruta_lanzadera}"" {modo}"',
+            f'acceso.Arguments = {argumentos}',
             f'acceso.WorkingDirectory = "{PROJECT_ROOT}"',
             f'acceso.IconLocation = "{ruta_icono}"',
             f'acceso.Description = "{descripcion}"',
@@ -155,11 +175,24 @@ def _codigo_alta(rutas_lnk, ruta_lanzadera, ruta_icono):
 
 
 def _rutas(carpetas):
-    """Dónde va cada acceso. Mismos nombres siempre: dar de alta dos veces no duplica nada."""
+    """Dónde va cada acceso. Mismos nombres siempre: dar de alta dos veces no duplica nada.
+
+    **La última carpeta es el menú de inicio**, que es como la devuelve `carpetas_del_sistema()`,
+    y es la única que recibe además los accesos de `ACCESOS_SOLO_MENU`.
+    """
     destinos = []
+    lanzadera_diaria = ruta_proyecto(NOMBRE_LANZADERA)
     for carpeta in carpetas:
         for nombre, modo, descripcion in ACCESOS:
-            destinos.append((os.path.join(carpeta, f"{nombre}.lnk"), modo, descripcion))
+            destinos.append(
+                (os.path.join(carpeta, f"{nombre}.lnk"), lanzadera_diaria, modo, descripcion)
+            )
+    if carpetas:
+        menu = carpetas[-1]
+        for nombre, envoltorio, descripcion in ACCESOS_SOLO_MENU:
+            destinos.append(
+                (os.path.join(menu, f"{nombre}.lnk"), ruta_proyecto(envoltorio), "", descripcion)
+            )
     return destinos
 
 
@@ -176,14 +209,14 @@ def alta(carpetas=None):
         icono = generar_icono()
 
     destinos = _rutas(carpetas)
-    salida = _ejecutar_vbs(_codigo_alta(destinos, lanzadera, icono))
+    salida = _ejecutar_vbs(_codigo_alta(destinos, icono))
     return [d[0] for d in destinos], salida
 
 
 def baja(carpetas=None):
     carpetas = carpetas or list(carpetas_del_sistema())
     retirados = []
-    for destino, _, _ in _rutas(carpetas):
+    for destino, *_ in _rutas(carpetas):
         if os.path.isfile(destino):
             os.remove(destino)
             retirados.append(destino)
@@ -196,7 +229,7 @@ def baja(carpetas=None):
 
 def estado(carpetas=None):
     carpetas = carpetas or list(carpetas_del_sistema())
-    return [(destino, os.path.isfile(destino)) for destino, _, _ in _rutas(carpetas)]
+    return [(destino, os.path.isfile(destino)) for destino, *_ in _rutas(carpetas)]
 
 
 def main(argv=None) -> int:

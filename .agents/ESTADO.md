@@ -91,7 +91,7 @@ agotados, que es su terminal legítimo)*.
 | Bloque | Qué es | Estado |
 |---|---|---|
 | **10.B.3** | **H-55 y H-60** | 🟢 **CERRADO** el 2026-09-01, verificado con las corridas 24 y 25 y con el distintivo mirado en pantalla *(C7)*. Contrato en **v1.4.0** |
-| **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🔴 Sin empezar. Lo exige la decisión D.1 |
+| **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🟢 **CERRADO** el 2026-09-01. Plan [`PLAN_10C.md`](PLAN_10C.md). Verificado con doble clic real: dos ventanas, **ninguna consola** |
 | **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🔴 Sin empezar. **Es la que de verdad cierra la capa** |
 | **10.F** | **`MANUAL.md`**, en catalán y sin terminal | 🔴 Sin empezar. Índice propuesto en el README |
 | **10.G** | Cierre de la capa y del recorrido | 🔴 Sin empezar |
