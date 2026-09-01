@@ -541,7 +541,7 @@ estado declarado sube; es el modo correcto de subirla según el propio Paso 9)*.
 | **10.B.3 · H-55 y H-60** | Operaciones 5 y **7** | 🟢 **CERRADO el 2026-09-01.** H-55: la corrida 25 escribió **4.884 líneas bajo carga máxima con 0 roturas** y **2.000 sondas sin perder una**. H-60: **tres consultas seguidas devuelven lo mismo** y el distintivo vuelve a verde sobre una corrida limpia. **12 regresiones**, suite 742 → **754** |
 | **10.C · Cero terminal** | Envoltorio de doble clic para el despertador y para preparar un equipo nuevo | 🟢 **CERRADO el 2026-09-01.** `Preparar equipo.vbs` y `Despertador.vbs`, lanzados como los lanza el doble clic: **dos ventanas, cero procesos con consola**. 19 regresiones, suite 754 → **773** |
 | **10.D · Tesseract** | 🟡 **Instalado y verificado**; falta la corrida | Los 4 `OCR_DIFERIDO` pasan a procesados solos |
-| **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | Ninguna consola, Cockpit con datos, tarea disparando corrida real |
+| **10.E · Verificación en vivo (C7)** | El `.vbs` de verdad | 🟢 **CERRADO el 2026-09-01**, y **destapó H-62**: el Cockpit anunciaba *«quedó sin terminar»* sobre una corrida en marcha, y detrás había un cerrojo de ejecución que llevaba desde agosto sin proteger. Verificado: **0 consolas**, Cockpit con 46 expedientes, corrida 27 diciendo `EN_CURSO` mientras corría, y la tarea programada disparando la corrida 28 con **último resultado 0** |
 | **10.F · `MANUAL.md`** | El manual, en catalán y sin terminal | Que cada cifra que afirme proceda de los bloques anteriores |
 | **10.G · Cierre** | README, `ESTADO.md`, auditoría | Capa 10 cerrada, y con ella las diez |
 
@@ -623,7 +623,9 @@ El paso se cierra cuando **los nueve** se cumplen:
 6. Los **4 documentos en `OCR_DIFERIDO`** se procesan solos en la corrida siguiente.
 7. **El despertador y la preparación de un equipo nuevo se ejecutan con doble clic**, sin consola.
 8. **Verificación C7**: el `.vbs` de verdad, sin ninguna consola a la vista, Cockpit con datos, y
-   la tarea programada disparando una corrida real que termine bien.
+   la tarea programada disparando una corrida real que termine bien. 🟢 **Cumplido el 2026-09-01**:
+   corridas 26, 27 y 28 —las dos primeras por doble clic, la tercera por el Programador—, cero
+   procesos con consola en ninguna, y `Último resultado: 0` en el Programador de tareas.
 9. `MANUAL.md` existe, en catalán, **sin mencionar una terminal**, y **cada cifra que afirma
    procede de los bloques anteriores** — ninguna deducida.
 

@@ -57,26 +57,70 @@ from typing import Optional
 _ACCESO_CONSULTA = 0x1000
 
 
+#: `ERROR_INVALID_PARAMETER`. Es lo que `OpenProcess` devuelve cuando **el número no
+#: corresponde a ningún proceso**: es el único código que permite afirmar que no vive.
+_ERROR_PARAMETRO_INVALIDO = 87
+
+#: `ERROR_ACCESS_DENIED`. El proceso existe y no se deja consultar. Existe, que es lo que
+#: aquí se pregunta.
+_ERROR_ACCESO_DENEGADO = 5
+
+
 def es_pid_activo(pid: int) -> bool:
     """¿Existe hoy un proceso con este número? Windows y POSIX, sin librerías externas.
 
     **Es sólo la primera mitad de la identidad**: contesta por el número, que se recicla.
     Para saber si sigue vivo *el mismo* proceso que anotamos, ver `es_el_mismo_proceso()`.
+
+    ⚠️ **En Windows NO se puede preguntar con `os.kill(pid, 0)`, y este módulo lo hacía**
+    *(H-62, medido el 2026-09-01 verificando en vivo el bloque 10.E)*. `os.kill` abre el
+    proceso pidiendo `PROCESS_ALL_ACCESS`, y sobre cualquier proceso que no sea hijo del que
+    pregunta falla con `WinError 87`. Medido sobre tres procesos vivos a la vez —la API del
+    Cockpit, el lanzador y `explorer.exe`—: los tres daban **`False` estando vivos**, mientras
+    `instante_creacion_proceso()`, en este mismo fichero, los encontraba sin problema.
+
+    Se pregunta con `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`, que es exactamente lo
+    que ya hacía la otra mitad del módulo y sí acierta.
     """
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return _existe_en_windows(pid)
     try:
         os.kill(pid, 0)
         return True
     except OSError as e:
-        # WinError 5 / EACCES significan "existe, pero no me dejas tocarlo": el proceso
-        # está vivo y pertenece a otro usuario o tiene más privilegios. Tratarlo como
-        # muerto sería reclamar un cerrojo cuyo dueño sigue trabajando.
-        if getattr(e, 'winerror', None) == 5 or getattr(e, 'errno', None) == 13:
+        # EACCES significa "existe, pero no me dejas tocarlo": el proceso está vivo y
+        # pertenece a otro usuario. Tratarlo como muerto sería reclamar un cerrojo cuyo
+        # dueño sigue trabajando.
+        if getattr(e, 'errno', None) == 13:
             return True
         return False
     except Exception:
         return False
+
+
+def _existe_en_windows(pid: int) -> bool:
+    """Existencia por `OpenProcess`, con el criterio de la duda escrito.
+
+    **Ante la duda se dice que vive**, y no es prudencia genérica: quien consume esto es el
+    cerrojo de ejecución, y afirmar la muerte de un dueño que no lo está significa **dos
+    pipelines archivando y purgando ficheros sobre la misma base**. Sólo un código
+    —`ERROR_INVALID_PARAMETER`— permite afirmar que el número no corresponde a nadie.
+    """
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        manejador = kernel32.OpenProcess(_ACCESO_CONSULTA, False, pid)
+        if manejador:
+            kernel32.CloseHandle(manejador)
+            return True
+        return kernel32.GetLastError() != _ERROR_PARAMETRO_INVALIDO
+    except Exception:
+        # Ni siquiera se pudo preguntar. No es una respuesta, así que no se inventa una:
+        # se respeta el cerrojo.
+        return True
 
 
 def instante_creacion_proceso(pid: int) -> Optional[int]:

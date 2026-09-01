@@ -92,11 +92,11 @@ agotados, que es su terminal legítimo)*.
 |---|---|---|
 | **10.B.3** | **H-55 y H-60** | 🟢 **CERRADO** el 2026-09-01, verificado con las corridas 24 y 25 y con el distintivo mirado en pantalla *(C7)*. Contrato en **v1.4.0** |
 | **10.C** | **Cero terminal**: envoltorios de doble clic para el despertador y la instalación | 🟢 **CERRADO** el 2026-09-01. Plan [`PLAN_10C.md`](PLAN_10C.md). Verificado con doble clic real: dos ventanas, **ninguna consola** |
-| **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🔴 Sin empezar. **Es la que de verdad cierra la capa** |
+| **10.E** | **Verificación en vivo del doble clic** *(Convención C7)* | 🟢 **CERRADO** el 2026-09-01, y **destapó H-62**, el hallazgo más grave del día: el cerrojo de ejecución llevaba desde agosto sin proteger |
 | **10.F** | **`MANUAL.md`**, en catalán y sin terminal | 🔴 Sin empezar. Índice propuesto en el README |
 | **10.G** | Cierre de la capa y del recorrido | 🔴 Sin empezar |
 
-### 🔴 Hallazgos abiertos: quedan tres *(H-55 y H-60 cerrados el 2026-09-01; entra H-61)*
+### 🔴 Hallazgos abiertos: quedan tres *(cerrados hoy H-55, H-60 y H-62; entra H-61)*
 
 | Hallazgo | Estado | Qué hacer |
 |---|---|---|
@@ -153,6 +153,12 @@ preguntarse **quién quedó atrapado mientras estaba roto** y si alguien volver�
 
 ### 📎 Pendientes menores anotados y no tocados
 
+* **Por acotar**: al terminar la corrida por doble clic, el lanzador **apagó el servidor** con
+  `nivel alcanzado: endpoint`, aunque el Cockpit se había abierto. Puede ser la conducta correcta
+  —apaga cuando se cierra la ventana que vigilaba— o puede que la detección de *«ventana sin
+  vigilar»* no cubra el caso de un navegador ya abierto, y entonces estaría cerrando el Cockpit
+  por debajo de quien lo mira. **No se ha diagnosticado**: se anota para acotarlo con un arranque
+  limpio antes del bloque 10.F.
 * El `except Exception` de `analizar_alerta` convierte errores de programación en modo degradado.
 * `lector.py` imprime *«versión: tesseract»* en vez de *«5.5.3»* — `split(' ')[0]` sobre
   `"tesseract v5.5.3..."`. Cosmético.

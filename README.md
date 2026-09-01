@@ -23,7 +23,7 @@
 >
 > **Remediación**: los Bloques 1 (cimientos de infraestructura), 2 (coherencia de negocio LCSP) y
 > **3 (identidad y foco)** están cerrados, con la suite en **742/742** *(2026-08-27)*. De
-> **61 hallazgos** catalogados, **58 están cerrados**. Quedan abiertos **tres**:
+> **62 hallazgos** catalogados, **59 están cerrados**. Quedan abiertos **tres**:
 >
 > * 🆕 **H-61** — el diagnóstico de la prospección **relee el rastro entero en cada llamada**.
 >   Medido: **241 ms** frente a los 30 ms de los demás endpoints, sobre un fichero de 5,1 MB que
@@ -1807,7 +1807,7 @@ disco.** Eso cambia lo que significa lanzarlo de forma desatendida:
     | **10.B · Los arreglos** | 🟡 **Dos bloques de tres.** **10.B.1 · H-58** 🟢 *(eran dos defectos encadenados, no uno)*; **10.B.2 · H-56 + H-59** 🟢 *(el esquema lo pone ya el llamador, y las 5 alertas del canal tienen dictamen por primera vez)*; **10.B.3 · H-55 + H-60** 🟢 *(los dos cerrojos y el diagnóstico que ya no se cuenta a sí mismo, verificados en corrida real y en pantalla)* | Van antes del manual porque **cambian lo que el manual tiene que contar**. Y **cada uno destapó otro**: H-58 traía dos defectos encadenados, verificar H-56 destapó H-59, y la prueba escrita para que no hubiera un quinto caso encontró dos cosas más |
     | **10.C · Cero terminal** | 🟢 **CERRADO.** `Preparar equipo.vbs` deja un PC listo —dependencias, base, accesos directos— y `Despertador.vbs` activa o desactiva la prospección nocturna. Los dos con ventana propia y **sin una sola consola** | Es lo que hace verdadera la decisión D.1. Sin esto, un manual sin terminal no podría cubrir su propio alcance |
     | **10.D · Tesseract** | 🟢 **CERRADO.** Instalado *(v5.5.3, `cat`+`spa`)* y **los 4 documentos que llevaban meses en `OCR_DIFERIDO` se recuperaron solos**: 88 páginas rasterizadas, 0 errores. `metodo_extraccion = 'tesseract'` aparece en la base por primera vez | Sólo verificable con una corrida posterior, así que se instaló pronto y se comprobó al final. **Cierra H-53** |
-    | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | 🔴 **Pendiente.** Ejecutar el `.vbs` de verdad: ninguna consola a la vista, el Cockpit abriendo con datos, y la tarea programada disparando una corrida real | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal |
+    | **10.E · Verificación en vivo del doble clic** *(Convención C7)* | 🟢 **CERRADO.** Tres corridas reales —dos por doble clic y una por el Programador—, **cero procesos con consola**, Cockpit con datos y `Último resultado: 0`. **Y destapó H-62**, el defecto más grave del día | **Va antes del manual, no después.** Lo que una persona ve al hacer doble clic es exactamente lo que el manual tiene que contar: escribirlo sin haberlo mirado es describir el sistema ideal. **Se pagó sola otra vez**: mirar la pantalla encontró en diez minutos lo que 773 pruebas en verde no veían |
     | **10.F · `MANUAL.md`** | 🔴 **Pendiente.** El manual de operación, en catalán y sin terminal *(índice abajo)* | Se escribe el último porque sólo puede afirmar lo que los cinco bloques anteriores hayan dejado comprobado |
     | **10.G · Cierre de la capa y del recorrido** | 🔴 **Pendiente.** Capa 10 cerrada y con ella las diez | Lo que no se anota al cerrar se pierde entre sesiones: es la razón por la que `ESTADO.md` existe |
 

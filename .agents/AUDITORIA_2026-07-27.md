@@ -3305,6 +3305,102 @@ camino C de [[H-60]] — conviene decidirlos juntos.
 
 ---
 
+## Hallazgo de la verificación en vivo del Paso 10 — 2026-09-01 (Capa 10, bloque 10.E)
+
+### H-62 · `es_pid_activo()` daba por muertos a los procesos vivos, y con ello el cerrojo dejaba de proteger 🟢 CERRADO (Capa 10, Paso 10, bloque E)
+
+**Detectado el 2026-09-01 arrancando el sistema con doble clic**, que es para lo que existe el
+bloque 10.E. El Cockpit, sobre una prospección que estaba corriendo y terminó sin una incidencia,
+anunciaba:
+
+> *«La prospección nº 26 quedó sin terminar: su proceso ya no existe.»*
+
+El proceso existía. Windows lo listaba, la fila decía `RUNNING` con su PID, y sesenta segundos
+después la corrida terminó `COMPLETED` con cero errores.
+
+#### La causa, medida sobre tres procesos vivos a la vez
+
+`es_pid_activo()` preguntaba con **`os.kill(pid, 0)`**. En Windows eso abre el proceso pidiendo
+`PROCESS_ALL_ACCESS`, y **sobre cualquier proceso que no haya creado quien pregunta falla con
+`WinError 87`** *(`ERROR_INVALID_PARAMETER`)*. La función trataba ese error como *«no existe»*.
+
+| Proceso, vivo y comprobado con Windows | `es_pid_activo()` | `instante_creacion_proceso()` |
+|---|---|---|
+| La API del Cockpit *(pid 3880, respondiendo HTTP 200)* | **`False`** | lo encuentra |
+| El lanzador *(pid 19676)* | **`False`** | lo encuentra |
+| `explorer.exe` *(pid 17800)* | **`False`** | lo encuentra |
+
+> 🔑 **El módulo se contradecía a sí mismo, en el mismo fichero y en el mismo instante.** Una
+> mitad de la identidad encontraba procesos que la otra daba por muertos. `src/proceso.py` existe
+> precisamente para que las dos mitades vivan juntas y no diverjan *(se creó al reparar H-40)*; lo
+> que faltaba era que **contestaran lo mismo**.
+
+#### Lo que costaba, que no era cosmético
+
+**1. En pantalla**: una corrida en marcha se anunciaba como interrumpida. Es la familia de H-43 —
+*«un `RUNNING` no dice si hay alguien prospectando»*— reaparecida por otra puerta.
+
+**2. En el cerrojo, y esto es lo grave**: `motivo_ejecucion_huerfana()` pregunta por aquí **antes
+que por nada**, porque saber que el dueño murió es un hecho y las seis horas son una conjetura.
+Reproducido con un proceso vivo cualquiera:
+
+```
+Corrida ficticia: arrancada ahora, dueño pid=17800 (VIVO)
+motivo_ejecucion_huerfana -> 'el proceso 17800 que la lanzó ya no existe'
+```
+
+**El cerrojo se reclamaba sobre corridas cuyo dueño seguía trabajando**: dos pipelines archivando
+y purgando ficheros sobre la misma base, que es exactamente el daño que H-40 vino a impedir. La
+reparación de H-40 llevaba desde el 2026-08-17 **inutilizada por su propia primitiva**.
+
+#### La prueba que existía pasaba en verde, y por qué
+
+```python
+def test_es_pid_activo():
+    my_pid = os.getpid()
+    assert es_pid_activo(my_pid) is True
+    assert es_pid_activo(-1) is False
+    assert es_pid_activo(9999999) is False
+```
+
+Tres afirmaciones correctas que dejan fuera **el único caso que le importa a quien la usa**: un
+proceso vivo que no es el que pregunta. En Windows, `os.kill` acierta sobre uno mismo y sobre lo
+que uno ha creado, y falla sobre todo lo demás — así que la prueba miraba justo donde no estaba el
+defecto. **Es la Convención C4 en su forma más cara**: ejercitar la ruta real no es sólo llamar a
+la función de verdad, es llamarla **con la entrada que el sistema le va a dar**.
+
+#### La reparación
+
+`OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`, que es lo que la otra mitad del módulo ya hacía
+y sí acierta, con el criterio de la duda escrito:
+
+| Respuesta de `OpenProcess` | Veredicto | Por qué |
+|---|---|---|
+| Abre | **vive** | — |
+| `ERROR_INVALID_PARAMETER` (87) | **no vive** | Es el único código que permite afirmar que el número no es de nadie |
+| `ERROR_ACCESS_DENIED` (5) | **vive** | Existe y no se deja consultar |
+| Cualquier otro | **vive** | No es una respuesta. **Ante la duda se respeta el cerrojo**: afirmar la muerte de un dueño vivo cuesta dos pipelines a la vez |
+
+**Verificado en vivo**, que es como se encontró: relanzado el ecosistema con doble clic, el Cockpit
+dice ahora **«La prospección nº 27 está en marcha»** mientras corre, y `COMPLETADA` al terminar.
+
+**Regresiones**: **7** en `tests/test_file_lock.py`, más el docstring de la vieja explicando su
+propio punto ciego. Suite **773 → 780**. Validadas por mutación: volviendo al criterio anterior —sólo el
+error 5 significa *existe*— cae la del código 299.
+
+> ⚠️ **Y la primera versión de esa regresión pasaba por casualidad, que es el segundo hallazgo de
+> esta ficha.** Se escribió engendrando un proceso «nieto» —para no medir el propio andamiaje, como
+> avisa la cabecera de `src/proceso.py`— y afirmando que se veía vivo. Pasaba. Al comprobarlo con
+> Windows resultó que **el nieto moría en menos de un segundo** y la prueba lo alcanzaba vivo por
+> los pelos: no afirmaba lo que decía afirmar, y habría empezado a fallar sola cualquier día. Se
+> sustituyó por el **cuadro de decisión** con un `kernel32` de mentira, que es determinista.
+>
+> **La lección**: una prueba sobre procesos o concurrencia que depende de ganar una carrera **no es
+> una prueba, es una moneda**. Y la forma de descubrirlo no fue releerla: fue preguntarle a Windows
+> si el proceso que decía vivo estaba vivo.
+
+---
+
 ## Registro de decisiones tomadas
 
 | Fecha | Decisión | Motivo |
