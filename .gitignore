@@ -49,6 +49,12 @@ data/licitaciones.db*
 data/documents/
 data/backups/
 data/pipeline.jsonl
+# Y sus dos acompanantes, que la linea de arriba NO cubre porque es una ruta exacta y no un
+# prefijo. Detectado el 2026-09-01 al cerrar H-55, con el fichero de cerrojo recien creado
+# asomando en `git status`: es la misma familia que el descuido de `alertas_tempranas.csv` de
+# aqui abajo, y la rotacion a los 10 MB habria traido el segundo caso sin avisar.
+data/pipeline.jsonl.lock
+data/pipeline_*.jsonl
 data/reports/*.csv
 # Informe del Centinela. Vive en la raíz de data/ y no en data/reports/, así que se escapaba de
 # la línea de arriba y quedó versionado por descuido en el cierre de la Capa 9. Es un artefacto
